@@ -1,0 +1,29 @@
+# Corpus config — round-trippable.
+# The dashboard loads this as its defaults; a run writes it back next to the outputs so the
+# config always matches what produced the data. Copy to config/corpus.yaml and edit the paths.
+
+input_root: /path/to/vendor_outputs        # folder holding the raw vendor outputs
+output_root: /path/to/apb_outputs           # where the hierarchical output tree is written
+
+# Per module: vendor, the APB parsing-rule TOML, the levels to produce, the ProteoBench folder
+# whose TOMLs supply the obs annotations, and the datasets (each = one vendor output file).
+# Vendor is DECLARED here (not auto-detected).
+modules:
+
+  quant_lfq_ion_DIA_AIF:
+    vendor: diann
+    rule: /path/to/anndata_proteomics_bridge/parsing_rules/diann/report.toml
+    annotation_dir: /Users/wolski/projects/ProteoBench/test/data/quant/quant_lfq_ion_DIA_AIF
+    levels: [ion]                           # produce only ion here — cheap, no mudata needed
+    datasets:
+      - name: run1
+        input: quant_lfq_ion_DIA_AIF/run1/report.tsv
+
+  quant_lfq_ion_DDA_QExactive:
+    vendor: maxquant
+    rule: /path/to/anndata_proteomics_bridge/parsing_rules/maxquant/evidence.toml
+    annotation_dir: /Users/wolski/projects/ProteoBench/test/data/quant/quant_lfq_ion_DDA_QExactive
+    levels: [ion, peptide]                  # multiple levels → can also assemble a mudata
+    datasets:
+      - name: runA
+        input: quant_lfq_ion_DDA_QExactive/runA/evidence.txt

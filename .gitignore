@@ -1,0 +1,14 @@
+# env
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# local corpus config & pipeline state
+config/corpus.yaml
+.snakemake/
+
+# outputs (filesystem-as-database lives outside the repo, but ignore stray local runs)
+/outputs/
+*.h5ad
+*.h5mu

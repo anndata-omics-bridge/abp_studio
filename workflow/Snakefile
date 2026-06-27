@@ -1,0 +1,85 @@
+# apb_studio pipeline.
+#
+# The stage registry (config/registry.yaml) is the conceptual single source of truth; the rules
+# below mirror it and pull their command shape from it so the two cannot drift. The corpus config
+# (config/corpus.yaml, or the bundled example) declares the actual datasets.
+#
+# State lives entirely in the output tree (filesystem-as-database):
+#   output_root/<module>/<dataset>/<level>.h5ad        convert (primary, per-level)
+#   output_root/<module>/<dataset>/mudata.h5mu         assemble-mudata (optional)
+#   output_root/<module>/<dataset>/annotated/<target>  annotate (container-agnostic, obs)
+
+import yaml
+from pathlib import Path
+
+configfile: "config/corpus.example.yaml"   # override on the CLI: --configfile config/corpus.yaml
+
+# --- registry: single source of truth, also read by the dashboard ----------------------------
+_REGISTRY = yaml.safe_load((Path(workflow.basedir).parent / "config" / "registry.yaml").read_text())
+STAGES = {s["name"]: s for s in _REGISTRY["stages"]}
+
+INPUT_ROOT = Path(config["input_root"])
+OUTPUT_ROOT = Path(config["output_root"])
+
+# --- enumerate the corpus: LOOKUP[(module, dataset)] = {input, rule, annotation_dir, levels} --
+LOOKUP = {
+    (mod, ds["name"]): {
+        "input": INPUT_ROOT / ds["input"],
+        "rule": m["rule"],
+        "annotation_dir": m["annotation_dir"],
+        "levels": m["levels"],
+        "vendor": m["vendor"],
+    }
+    for mod, m in config["modules"].items()
+    for ds in m["datasets"]
+}
+
+def convert_targets():
+    return [
+        str(OUTPUT_ROOT / mod / ds / f"{lvl}.h5ad")
+        for (mod, ds), meta in LOOKUP.items()
+        for lvl in meta["levels"]
+    ]
+
+# Default goal: bring every declared per-level conversion up to date.
+rule all:
+    input:
+        convert_targets()
+
+# --- convert: per-level, primary artifact -----------------------------------------------------
+rule convert:
+    output:
+        OUTPUT_ROOT / "{module}/{dataset}/{level}.h5ad"
+    params:
+        src=lambda wc: LOOKUP[(wc.module, wc.dataset)]["input"],
+        rule_toml=lambda wc: LOOKUP[(wc.module, wc.dataset)]["rule"],
+    shell:
+        "apb convert --input {params.src} --level {wildcards.level} "
+        "--rule {params.rule_toml} --output {output}"
+
+# --- assemble-mudata: optional; combine the dataset's existing levels into one MuData ----------
+rule assemble_mudata:
+    input:
+        lambda wc: expand(
+            str(OUTPUT_ROOT / "{module}/{dataset}/{level}.h5ad"),
+            module=wc.module,
+            dataset=wc.dataset,
+            level=LOOKUP[(wc.module, wc.dataset)]["levels"],
+        )
+    output:
+        OUTPUT_ROOT / "{module}/{dataset}/mudata.h5mu"
+    shell:
+        "apb assemble-mudata --input {input} --output {output}"
+
+# --- annotate: container-agnostic; writes obs onto a level .h5ad OR the mudata -----------------
+# NOTE: {target} is a single basename (e.g. ion.h5ad or mudata.h5mu); a ruleorder/constraint will
+# be needed to disambiguate from `convert` once real outputs exist. Skeleton intent only.
+rule annotate:
+    input:
+        OUTPUT_ROOT / "{module}/{dataset}/{target}"
+    output:
+        OUTPUT_ROOT / "{module}/{dataset}/annotated/{target}"
+    params:
+        ann=lambda wc: LOOKUP[(wc.module, wc.dataset)]["annotation_dir"],
+    shell:
+        "apb annotate --input {input} --annotation {params.ann} --output {output}"

@@ -1,0 +1,44 @@
+# Stage registry — the SINGLE SOURCE OF TRUTH for pipeline stages.
+# Read by BOTH workflow/Snakefile and src/apb_studio/dashboard.py.
+#
+# Adding a pipeline step = one entry here + one Snakemake rule + one `apb` CLI subcommand.
+# The dashboard re-derives its grid columns and scope/stage pickers from this file.
+#
+# Fields:
+#   name            stage id (also the Snakemake rule name, dashes→underscores)
+#   scope           dataset | module | corpus  — drives grid aggregation & clean/run scoping
+#   output_pattern  glob, relative to output_root; {placeholders} filled per dataset/level
+#   command         the `apb` CLI template the Snakemake `shell:` runs (and the GUI previews)
+#   depends_on      upstream stage names
+#   optional        if true, not part of the default `all` target
+#   container_agnostic  annotate-style: operates on whatever object it's given
+
+stages:
+
+  - name: convert
+    scope: dataset
+    per_level: true
+    output_pattern: "{module}/{dataset}/{level}.h5ad"
+    command: "apb convert --input {input} --level {level} --rule {rule} --output {output}"
+    depends_on: []
+
+  - name: assemble-mudata
+    scope: dataset
+    optional: true
+    output_pattern: "{module}/{dataset}/mudata.h5mu"
+    command: "apb assemble-mudata --input {level_inputs} --output {output}"
+    depends_on: [convert]
+
+  - name: annotate
+    scope: dataset
+    container_agnostic: true        # a level .h5ad → its obs; a mudata.h5mu → shared obs, once
+    output_pattern: "{module}/{dataset}/annotated/{target}"
+    command: "apb annotate --input {input} --annotation {annotation_dir} --output {output}"
+    depends_on: [convert]           # or assemble-mudata, depending on the chosen target
+
+  # Future — the extension example (var-level, protein only, one FASTA per module/organism):
+  # - name: fasta-annotate
+  #   scope: module
+  #   output_pattern: "{module}/{dataset}/annotated/protein.h5ad"
+  #   command: "apb annotate-fasta --input {input} --fasta {fasta} --output {output}"
+  #   depends_on: [convert]
