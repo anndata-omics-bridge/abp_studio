@@ -2,15 +2,17 @@
 name = "apb-studio"
 version = "0.0.0"
 description = "Corpus dashboard + Snakemake pipeline driving the anndata_proteomics (APB) conversion CLI."
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "snakemake>=8",
     "marimo",
+    "plotly",
     "pyyaml",
     "mudata",
     "anndata",
-    # APB itself is consumed via its `apb` CLI (a sibling editable install in dev):
-    #   uv pip install -e ../anndata_proteomics_bridge
+    # APB: conversion is run by shelling out to its `apb` CLI; the test-data browser also imports
+    # APB's pure read-only helpers (catalog/metadata) — it never reimplements rule resolution.
+    "anndata-proteomics",
 ]
 
 [project.optional-dependencies]
@@ -22,3 +24,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/apb_studio"]
+
+[tool.uv.sources]
+# Local sibling editable install (also installable manually: uv pip install -e ../apb).
+anndata-proteomics = { path = "../apb", editable = true }

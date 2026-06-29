@@ -39,8 +39,19 @@ dashboard re-derives its grid columns and pickers from the registry — no imper
 
 ## Status
 
-Scaffold only — the `apb` CLI it shells out to does not exist yet (APB is mid-rebuild). The
-Snakefile `shell:` commands encode the intended contract.
+The `apb` CLI now exists (`apb convert/annotate/fasta/validate/list`). On 2026-06-28 the marimo
+**test-data browser** was relocated here from apb (apb is now a pure library + CLI):
+- `src/apb_studio/ui/test_tool.py` (`make test-tool`) — browse the ProteoBench corpus, convert a
+  dataset by shelling out to `apb convert` (`conversion/subprocess_adapter.py` + `conversion/runner.py`),
+  inspect the result. `ui/anndataview.py` is the standalone `.h5ad` viewer; `ui/panels.py` the marimo
+  status/summary panels; `support.py` the catalog + converted-runs + summary logic.
+- Read-only catalog/metadata reuses apb's pure helpers (`converters.pipeline`, `params.anndata_io`);
+  conversion always runs via the CLI, never in-process.
+
+**Known mismatch to fix:** the corpus dashboard's `config/registry.yaml` + `workflow/Snakefile`
+still call `apb convert --input/--level/--rule` and `apb assemble-mudata`, which the real CLI does
+not accept (it is `apb convert <data> [level] --params/--software/--rule-toml/--output`). The new
+`subprocess_adapter` already uses the correct form; the Snakefile/registry need realigning.
 
 ## Development
 
