@@ -1,0 +1,25 @@
+{
+  "convert": {
+    "stage": "convert",
+    "artifact": "ion.h5ad",
+    "command": [
+      "apb",
+      "convert",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/5691d485356c1abcd8efd2320a1666752a19f50b/input_file.csv",
+      "--software",
+      "peaks",
+      "--params",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/5691d485356c1abcd8efd2320a1666752a19f50b/param_0..txt",
+      "--output",
+      "apb_outputs/Results_quant_ion_DIA_diaPASEF/peaks-5691d485/ion.h5ad",
+      "--level",
+      "ion"
+    ],
+    "inputs": [
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/5691d485356c1abcd8efd2320a1666752a19f50b/input_file.csv",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/5691d485356c1abcd8efd2320a1666752a19f50b/param_0..txt"
+    ],
+    "apb_version": "0.1.0",
+    "timestamp": "2026-07-01T20:26:24.262022+00:00"
+  }
+}

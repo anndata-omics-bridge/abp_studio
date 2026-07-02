@@ -1,0 +1,25 @@
+{
+  "convert": {
+    "stage": "convert",
+    "artifact": "ion.h5ad",
+    "command": [
+      "apb",
+      "convert",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA/b9f217a22df2e15b1144830498fcb65f1dbcff57/input_file.tsv",
+      "--software",
+      "fragpipe",
+      "--params",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA/b9f217a22df2e15b1144830498fcb65f1dbcff57/param_0..workflow",
+      "--output",
+      "apb_outputs/Results_quant_ion_DDA/fragpipe-b9f217a2/ion.h5ad",
+      "--level",
+      "ion"
+    ],
+    "inputs": [
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA/b9f217a22df2e15b1144830498fcb65f1dbcff57/input_file.tsv",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA/b9f217a22df2e15b1144830498fcb65f1dbcff57/param_0..workflow"
+    ],
+    "apb_version": "0.1.0",
+    "timestamp": "2026-07-01T15:24:41.802726+00:00"
+  }
+}

@@ -1,29 +1,34 @@
 # Corpus config — round-trippable.
 # The dashboard loads this as its defaults; a run writes it back next to the outputs so the
-# config always matches what produced the data. Copy to config/corpus.yaml and edit the paths.
+# config always matches what produced the data. Copy to config/corpus.yaml and edit the paths,
+# or generate it from a data tree with `make scaffold DATA=<root>`.
 
 input_root: /path/to/vendor_outputs        # folder holding the raw vendor outputs
 output_root: /path/to/apb_outputs           # where the hierarchical output tree is written
 
-# Per module: vendor, the APB parsing-rule TOML, the levels to produce, the ProteoBench folder
-# whose TOMLs supply the obs annotations, and the datasets (each = one vendor output file).
-# Vendor is DECLARED here (not auto-detected).
+# A MODULE is a ProteoBench benchmark (the shared raw runs). Its datasets are the different tools'
+# outputs of those runs, so `vendor` and `level` live on EACH DATASET (not the module). `annotation`
+# (the `apb annotate` TOML, optional) and `fasta` (the `apb fasta` FASTA, optional) are per module
+# because the runs — hence the obs annotation — are shared.
+#
+# Per dataset: `vendor` (→ apb convert --software); `level` REQUIRED for single-level vendors
+# (maxquant/fragpipe/peaks/wombat) → <level>.h5ad, OMIT for multi-level (diann/spectronaut) →
+# mudata.h5mu (decision 16); `input` (the vendor file) + `params` (its parameter file → --params).
 modules:
 
   quant_lfq_ion_DIA_AIF:
-    vendor: diann
-    rule: /path/to/anndata_proteomics_bridge/parsing_rules/diann/report.toml
-    annotation_dir: /Users/wolski/projects/ProteoBench/test/data/quant/quant_lfq_ion_DIA_AIF
-    levels: [ion]                           # produce only ion here — cheap, no mudata needed
+    annotation: /Users/wolski/projects/ProteoBench/test/data/quant/quant_lfq_ion_DIA_AIF/annotation.toml
     datasets:
-      - name: run1
+      - name: diann-run1
+        vendor: diann                      # multi-level → no level → mudata.h5mu
         input: quant_lfq_ion_DIA_AIF/run1/report.tsv
+        params: quant_lfq_ion_DIA_AIF/run1/report.log.txt
 
   quant_lfq_ion_DDA_QExactive:
-    vendor: maxquant
-    rule: /path/to/anndata_proteomics_bridge/parsing_rules/maxquant/evidence.toml
-    annotation_dir: /Users/wolski/projects/ProteoBench/test/data/quant/quant_lfq_ion_DDA_QExactive
-    levels: [ion, peptide]                  # multiple levels → can also assemble a mudata
+    annotation: /Users/wolski/projects/ProteoBench/test/data/quant/quant_lfq_ion_DDA_QExactive/annotation.toml
     datasets:
-      - name: runA
+      - name: maxquant-runA
+        vendor: maxquant                   # single-level → declare level
+        level: ion
         input: quant_lfq_ion_DDA_QExactive/runA/evidence.txt
+        params: quant_lfq_ion_DDA_QExactive/runA/parameters.txt

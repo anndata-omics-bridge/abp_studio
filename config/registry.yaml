@@ -2,43 +2,64 @@
 # Read by BOTH workflow/Snakefile and src/apb_studio/dashboard.py.
 #
 # Adding a pipeline step = one entry here + one Snakemake rule + one `apb` CLI subcommand.
-# The dashboard re-derives its grid columns and scope/stage pickers from this file.
+# The dashboard re-derives its baskets (columns + flow) from this file — no GUI code (decision 5).
 #
 # Fields:
 #   name            stage id (also the Snakemake rule name, dashes→underscores)
-#   scope           dataset | module | corpus  — drives grid aggregation & clean/run scoping
-#   output_pattern  glob, relative to output_root; {placeholders} filled per dataset/level
+#   scope           dataset | module | corpus  — drives aggregation & clean/run scoping
+#   basket          the kanban basket a dataset reaches AFTER this stage runs (display label, §8/§13)
+#   output_pattern  glob, relative to output_root; {placeholders} filled per dataset
+#   artifact        output basename (no suffix) for a NON-root stage → f"{artifact}{suffix}"; the
+#                   suffix tracks the dataset's convert artifact (.h5mu/.h5ad). The root (convert)
+#                   omits it — pipeline.convert_artifact is authoritative for its name (decision 16).
 #   command         the `apb` CLI template the Snakemake `shell:` runs (and the GUI previews)
-#   depends_on      upstream stage names
+#   depends_on      upstream stage names (a list); [] marks the root, which reads the raw dataset.
+#                   pipeline.expand_targets derives each stage's INPUT edge from this (decision 5) —
+#                   no hardcoded edges — and reconnects to the nearest emitted upstream (§13.1).
+#   resource        module-level corpus key this stage consumes (fills the same-named {placeholder})
+#                   AND gates emission: a module lacking it simply doesn't get this stage.
 #   optional        if true, not part of the default `all` target
-#   container_agnostic  annotate-style: operates on whatever object it's given
+#   container_agnostic  operates on whatever object it's given (a level .h5ad or the .h5mu)
+#
+# These templates ARE the real `apb` CLI — there is one conversion command (`apb convert`); it
+# reads the vendor file ONCE and emits the multi-level MuData. There is no `assemble-mudata`.
 
 stages:
 
+  # The one conversion command and the DAG root (depends_on: []). `apb convert` with no level wraps
+  # every level the file provides into a MuData (.h5mu) on a shared run axis. Single-level vendors
+  # declare `level` in the corpus config → the studio appends `--level <level>` and the artifact is
+  # `<level>.h5ad` (decision 16). The `--level` token is NOT in the template: `expand_targets`
+  # appends it when the DATASET declares a level, and `pipeline.convert_artifact` — not this literal
+  # `output_pattern` — is authoritative for the suffix (the pattern below is the multi-level default).
   - name: convert
     scope: dataset
-    per_level: true
-    output_pattern: "{module}/{dataset}/{level}.h5ad"
-    command: "apb convert --input {input} --level {level} --rule {rule} --output {output}"
+    basket: converted
+    output_pattern: "{module}/{dataset}/mudata.h5mu"
+    command: "apb convert {input} --software {vendor} --params {params} --output {output}"
     depends_on: []
 
-  - name: assemble-mudata
-    scope: dataset
-    optional: true
-    output_pattern: "{module}/{dataset}/mudata.h5mu"
-    command: "apb assemble-mudata --input {level_inputs} --output {output}"
-    depends_on: [convert]
-
+  # Join sample annotations onto obs. Container-agnostic: takes the .h5mu (or a level .h5ad) and
+  # one annotation TOML; writes obs once. Gated on the module-level `annotation:` (its resource).
   - name: annotate
     scope: dataset
-    container_agnostic: true        # a level .h5ad → its obs; a mudata.h5mu → shared obs, once
-    output_pattern: "{module}/{dataset}/annotated/{target}"
-    command: "apb annotate --input {input} --annotation {annotation_dir} --output {output}"
-    depends_on: [convert]           # or assemble-mudata, depending on the chosen target
+    basket: sample annotated
+    container_agnostic: true
+    output_pattern: "{module}/{dataset}/annotated.h5mu"
+    artifact: annotated
+    command: "apb annotate {input} {annotation} --output {output}"
+    depends_on: [convert]
+    resource: annotation
 
-  # Future — the extension example (var-level, protein only, one FASTA per module/organism):
-  # - name: fasta-annotate
-  #   scope: module
-  #   output_pattern: "{module}/{dataset}/annotated/protein.h5ad"
-  #   command: "apb annotate-fasta --input {input} --fasta {fasta} --output {output}"
-  #   depends_on: [convert]
+  # Protein var enrichment from FASTA (one FASTA per organism/module). Optional — only the
+  # protein modality is touched; ion-only datasets skip it. Gated on the module-level `fasta:`.
+  - name: fasta
+    scope: dataset
+    basket: fasta annotated
+    optional: true
+    container_agnostic: true
+    output_pattern: "{module}/{dataset}/annotated_fasta.h5mu"
+    artifact: annotated_fasta
+    command: "apb fasta {input} {fasta} --output {output}"
+    depends_on: [annotate]
+    resource: fasta

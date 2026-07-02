@@ -1,0 +1,94 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.23.11",
+    "script_metadata_hash": null
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "e820352ce5ef577e6e143b78946afe11",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "8e4ddb3e4c42bc0280aa56829b43f550",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"apb_studio-corpus-kanban\">apb_studio \u2014 corpus kanban</h1>\n<span class=\"paragraph\">A dataset flows left\u2192right through the baskets; the basket it sits in is the furthest stage it\nhas reached. <strong>Run</strong> a basket to advance the selected rows to the next stage; <strong>Clean</strong> drops them\nback one basket. Select rows one-by-one, or use the table's search + header checkbox to grab all\nof a software/module at once. Hit <strong>\u21bb reload</strong> after a run finishes to see rows move.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "vblA",
+      "code_hash": "c949a02b4d7ef606356330cf42ed25ba",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "f11715d159ce15d4dd687fdd5813ecbd",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "lEQa",
+      "code_hash": "6e093ceddd44c4a169b6bfdf74f56ce2",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "PKri",
+      "code_hash": "fa9673766b073d96d9d8aa0fc974f619",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Xref",
+      "code_hash": "fbfba660434af5064d0a467c642328f9",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "SFPL",
+      "code_hash": "ea87715da2489f367ff281f90964d15a",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "BYtC",
+      "code_hash": "309919b612471134fa4e317f9243dd94",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "cde12a4c95816338a2eefc79318b6b06",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "9213aca40882b7edf64ceb72dae2d1c4",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "emfo",
+      "code_hash": "b7d3458ace2f895509419da88a4f7b4c",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Hstk",
+      "code_hash": "778e9b6dabb1a80e0ada4d86db8f428e",
+      "outputs": [],
+      "console": []
+    }
+  ]
+}

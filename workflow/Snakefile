@@ -1,85 +1,137 @@
-# apb_studio pipeline.
+# apb_studio pipeline — registry-driven (decision 5).
 #
-# The stage registry (config/registry.yaml) is the conceptual single source of truth; the rules
-# below mirror it and pull their command shape from it so the two cannot drift. The corpus config
-# (config/corpus.yaml, or the bundled example) declares the actual datasets.
+# Every target's output path and command come from `apb_studio.pipeline.expand_targets`, which reads
+# the stage registry (config/registry.yaml) and the corpus config. This file restates NO stage
+# knowledge: the three rules below are generic shells that look each concrete target up in the core.
+# Because the convert artifact's basename varies per module (`mudata.h5mu` vs `<level>.h5ad`,
+# decision 16), each rule uses a path-wildcard `{artifact}` output disambiguated by a per-stage
+# wildcard_constraint (the three regexes are disjoint). See TODO/TODO_workflow_dashboard_plan.md §7.3.
 #
 # State lives entirely in the output tree (filesystem-as-database):
-#   output_root/<module>/<dataset>/<level>.h5ad        convert (primary, per-level)
-#   output_root/<module>/<dataset>/mudata.h5mu         assemble-mudata (optional)
-#   output_root/<module>/<dataset>/annotated/<target>  annotate (container-agnostic, obs)
+#   output_root/<module>/<dataset>/mudata.h5mu | <level>.h5ad   convert
+#   output_root/<module>/<dataset>/annotated.{h5mu,h5ad}        annotate (obs; container-agnostic)
+#   output_root/<module>/<dataset>/annotated_fasta.{h5mu,h5ad}  fasta    (protein var; optional)
 
-import yaml
+import shlex
+import sys
 from pathlib import Path
 
-configfile: "config/corpus.example.yaml"   # override on the CLI: --configfile config/corpus.yaml
+# Make the in-repo package importable from a plain checkout (no install required).
+sys.path.insert(0, str(Path(workflow.basedir).parent / "src"))
+from apb_studio.pipeline import (
+    ANNOTATE_ARTIFACT_RE,
+    CONVERT_ARTIFACT_RE,
+    FASTA_ARTIFACT_RE,
+    expand_targets,
+    load_registry,
+)
 
-# --- registry: single source of truth, also read by the dashboard ----------------------------
-_REGISTRY = yaml.safe_load((Path(workflow.basedir).parent / "config" / "registry.yaml").read_text())
-STAGES = {s["name"]: s for s in _REGISTRY["stages"]}
+# Corpus config is REQUIRED via --configfile. There is deliberately NO in-Snakefile `configfile:`
+# default: Snakemake MERGES a default configfile with --configfile (scalars override, but dicts like
+# `modules` merge), which leaks the example's modules into a user's corpus. Pass e.g.
+#   snakemake -s workflow/Snakefile --configfile config/corpus.example.yaml
+if "output_root" not in config or "modules" not in config:
+    raise ValueError("apb_studio: pass --configfile <corpus.yaml> (see config/corpus.example.yaml)")
 
-INPUT_ROOT = Path(config["input_root"])
 OUTPUT_ROOT = Path(config["output_root"])
+INPUT_ROOT = Path(config["input_root"])
 
-# --- enumerate the corpus: LOOKUP[(module, dataset)] = {input, rule, annotation_dir, levels} --
-LOOKUP = {
-    (mod, ds["name"]): {
-        "input": INPUT_ROOT / ds["input"],
-        "rule": m["rule"],
-        "annotation_dir": m["annotation_dir"],
-        "levels": m["levels"],
-        "vendor": m["vendor"],
-    }
-    for mod, m in config["modules"].items()
-    for ds in m["datasets"]
-}
+REGISTRY = load_registry()
+# The single source of truth: concrete targets with rendered commands + input edges.
+TARGETS = expand_targets(REGISTRY, config, OUTPUT_ROOT, INPUT_ROOT)
+BY_OUTPUT = {str(t.output): t for t in TARGETS}
 
-def convert_targets():
-    return [
-        str(OUTPUT_ROOT / mod / ds / f"{lvl}.h5ad")
-        for (mod, ds), meta in LOOKUP.items()
-        for lvl in meta["levels"]
-    ]
+# Default goals = every non-optional stage, derived from the registry (no hardcoded stage names).
+_OPTIONAL = {s["name"] for s in REGISTRY if s.get("optional")}
+DEFAULT_TARGETS = [str(t.output) for t in TARGETS if t.stage not in _OPTIONAL]
 
-# Default goal: bring every declared per-level conversion up to date.
+# For the per-rule provenance hook (decision 17): the config we were invoked with, this venv's
+# python, and the src dir so the subprocess can import apb_studio without an install.
+_SRC = str(Path(workflow.basedir).parent / "src")
+_CONFIG_PATH = str(workflow.configfiles[-1]) if workflow.configfiles else ""
+
+
+def _target(wildcards):
+    return BY_OUTPUT[str(OUTPUT_ROOT / wildcards.module / wildcards.dataset / wildcards.artifact)]
+
+
+def _inputs(wildcards):
+    return [str(p) for p in _target(wildcards).inputs]
+
+
+def _command(wildcards):
+    """The apb command, then write the provenance sidecar (decision 17) — runs for CLI and GUI alike."""
+    target = _target(wildcards)
+    prov = [sys.executable, "-m", "apb_studio.provenance",
+            "--config", _CONFIG_PATH, "--output", str(target.output)]
+    return shlex.join(target.command) + f" && PYTHONPATH={shlex.quote(_SRC)} " + shlex.join(prov)
+
+
+wildcard_constraints:
+    module=r"[^/]+",
+    dataset=r"[^/]+",
+
+# Default goal: bring every non-optional stage up to date (convert + annotate); fasta is on-demand.
 rule all:
     input:
-        convert_targets()
+        DEFAULT_TARGETS
 
-# --- convert: per-level, primary artifact -----------------------------------------------------
+# Disjoint artifact constraints make the three rules unambiguous; ruleorder is a backstop.
+ruleorder: fasta > annotate > convert
+
+
 rule convert:
     output:
-        OUTPUT_ROOT / "{module}/{dataset}/{level}.h5ad"
-    params:
-        src=lambda wc: LOOKUP[(wc.module, wc.dataset)]["input"],
-        rule_toml=lambda wc: LOOKUP[(wc.module, wc.dataset)]["rule"],
-    shell:
-        "apb convert --input {params.src} --level {wildcards.level} "
-        "--rule {params.rule_toml} --output {output}"
-
-# --- assemble-mudata: optional; combine the dataset's existing levels into one MuData ----------
-rule assemble_mudata:
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
+    wildcard_constraints:
+        artifact=CONVERT_ARTIFACT_RE
     input:
-        lambda wc: expand(
-            str(OUTPUT_ROOT / "{module}/{dataset}/{level}.h5ad"),
-            module=wc.module,
-            dataset=wc.dataset,
-            level=LOOKUP[(wc.module, wc.dataset)]["levels"],
-        )
-    output:
-        OUTPUT_ROOT / "{module}/{dataset}/mudata.h5mu"
+        _inputs
+    params:
+        cmd=_command
+    log:
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
     shell:
-        "apb assemble-mudata --input {input} --output {output}"
+        # tee to a per-dataset log that SURVIVES failure (snakemake deletes outputs, not logs), while
+        # still streaming to the console. `set -o pipefail` (snakemake default) propagates the apb
+        # failure through the pipe. apb_studio.pipeline.problems reads this log when the artifact is
+        # missing → surfaces the apb error (e.g. "no rule covers version …") in the basket problem column.
+        "({params.cmd}) 2>&1 | tee {log}"
 
-# --- annotate: container-agnostic; writes obs onto a level .h5ad OR the mudata -----------------
-# NOTE: {target} is a single basename (e.g. ion.h5ad or mudata.h5mu); a ruleorder/constraint will
-# be needed to disambiguate from `convert` once real outputs exist. Skeleton intent only.
+
 rule annotate:
-    input:
-        OUTPUT_ROOT / "{module}/{dataset}/{target}"
     output:
-        OUTPUT_ROOT / "{module}/{dataset}/annotated/{target}"
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
+    wildcard_constraints:
+        artifact=ANNOTATE_ARTIFACT_RE
+    input:
+        _inputs
     params:
-        ann=lambda wc: LOOKUP[(wc.module, wc.dataset)]["annotation_dir"],
+        cmd=_command
+    log:
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
     shell:
-        "apb annotate --input {input} --annotation {params.ann} --output {output}"
+        # tee to a per-dataset log that SURVIVES failure (snakemake deletes outputs, not logs), while
+        # still streaming to the console. `set -o pipefail` (snakemake default) propagates the apb
+        # failure through the pipe. apb_studio.pipeline.problems reads this log when the artifact is
+        # missing → surfaces the apb error (e.g. "no rule covers version …") in the basket problem column.
+        "({params.cmd}) 2>&1 | tee {log}"
+
+
+rule fasta:
+    output:
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
+    wildcard_constraints:
+        artifact=FASTA_ARTIFACT_RE
+    input:
+        _inputs
+    params:
+        cmd=_command
+    log:
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
+    shell:
+        # tee to a per-dataset log that SURVIVES failure (snakemake deletes outputs, not logs), while
+        # still streaming to the console. `set -o pipefail` (snakemake default) propagates the apb
+        # failure through the pipe. apb_studio.pipeline.problems reads this log when the artifact is
+        # missing → surfaces the apb error (e.g. "no rule covers version …") in the basket problem column.
+        "({params.cmd}) 2>&1 | tee {log}"

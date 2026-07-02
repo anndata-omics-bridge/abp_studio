@@ -1,0 +1,23 @@
+{
+  "convert": {
+    "stage": "convert",
+    "artifact": "mudata.h5mu",
+    "command": [
+      "apb",
+      "convert",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_Astral/887471e3771f74d27eff4f7f89b34e9fde53214a/input_file.tsv",
+      "--software",
+      "spectronaut",
+      "--params",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_Astral/887471e3771f74d27eff4f7f89b34e9fde53214a/param_0..txt",
+      "--output",
+      "apb_outputs/Results_quant_ion_DIA_Astral/spectronaut-887471e3/mudata.h5mu"
+    ],
+    "inputs": [
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_Astral/887471e3771f74d27eff4f7f89b34e9fde53214a/input_file.tsv",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_Astral/887471e3771f74d27eff4f7f89b34e9fde53214a/param_0..txt"
+    ],
+    "apb_version": "0.1.0",
+    "timestamp": "2026-07-01T15:24:56.599446+00:00"
+  }
+}

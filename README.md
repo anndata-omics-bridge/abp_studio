@@ -21,8 +21,9 @@ stage is done. No separate database.
 
 ## Stages
 
-`convert --level X` → `X.h5ad` (primary) · `assemble-mudata` → `mudata.h5mu` (optional) ·
-`annotate` (container-agnostic `obs`) · `fasta-annotate` (future, `var`).
+`convert` → `mudata.h5mu` (one read → the multi-level MuData; `--level X` is the single-`.h5ad`
+opt-in) · `annotate` (container-agnostic `obs`, one annotation TOML) · `fasta` (optional, protein
+`var`).
 
 ## The plan
 
@@ -37,19 +38,8 @@ uv pip install -e .
 cp config/corpus.example.yaml config/corpus.yaml   # edit paths
 make dag    # dry-run: what would run
 make ui     # open the dashboard
-make test-tool  # open the ProteoBench test-data browser
 ```
 
-## Test-data browser
-
-`make test-tool` opens the marimo browser for the ProteoBench test corpus. It filters by
-target, software, and size, launches `apb convert` as a background subprocess, and records
-each run under `logs/ui_converted/<timestamp>_<slug>_<target>/`.
-
-Each run directory is the durable state for one conversion. Successful runs contain
-`command.json`, `console.log`, and either `result.h5ad` or `result.h5mu`; incomplete or
-failed runs usually keep the command and log so they remain inspectable after a marimo
-restart. If the catalog is empty, regenerate APB's test-data cache before using the browser.
-
-**Status:** scaffold. The `apb` CLI is not implemented yet (APB is mid-rebuild); the Snakefile
-encodes the intended command contract.
+**Status:** scaffold. The `apb` CLI now exists; the dashboard reads coverage from the output
+tree, but run/clean execution is not wired yet, and the Snakefile/registry still encode an older
+command contract that needs realigning to the real `apb convert` signature.

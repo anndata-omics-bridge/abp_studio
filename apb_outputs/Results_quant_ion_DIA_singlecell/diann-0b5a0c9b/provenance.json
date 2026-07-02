@@ -1,0 +1,24 @@
+{
+  "convert": {
+    "stage": "convert",
+    "artifact": "mudata.h5mu",
+    "command": [
+      "apb",
+      "convert",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_singlecell/0b5a0c9b8387b98db6f1c287c516fa6ddf2a74ee/input_file.tsv",
+      "--software",
+      "diann",
+      "--params",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_singlecell/0b5a0c9b8387b98db6f1c287c516fa6ddf2a74ee/param_0..workflow",
+      "--output",
+      "apb_outputs/Results_quant_ion_DIA_singlecell/diann-0b5a0c9b/mudata.h5mu"
+    ],
+    "inputs": [
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_singlecell/0b5a0c9b8387b98db6f1c287c516fa6ddf2a74ee/input_file.tsv",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_singlecell/0b5a0c9b8387b98db6f1c287c516fa6ddf2a74ee/param_0..workflow"
+    ],
+    "apb_version": "0.1.0",
+    "timestamp": "2026-07-01T20:28:53.705862+00:00",
+    "warning": "ParamsError: not a DIA-NN parameter file: no 'diann --' command line or DIA-NN version string found"
+  }
+}

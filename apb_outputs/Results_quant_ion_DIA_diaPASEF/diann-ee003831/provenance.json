@@ -1,0 +1,23 @@
+{
+  "convert": {
+    "stage": "convert",
+    "artifact": "mudata.h5mu",
+    "command": [
+      "apb",
+      "convert",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/ee003831abbf5a91e735b6426869566147febe7c/input_file.tsv",
+      "--software",
+      "diann",
+      "--params",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/ee003831abbf5a91e735b6426869566147febe7c/param_0..txt",
+      "--output",
+      "apb_outputs/Results_quant_ion_DIA_diaPASEF/diann-ee003831/mudata.h5mu"
+    ],
+    "inputs": [
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/ee003831abbf5a91e735b6426869566147febe7c/input_file.tsv",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DIA_diaPASEF/ee003831abbf5a91e735b6426869566147febe7c/param_0..txt"
+    ],
+    "apb_version": "0.1.0",
+    "timestamp": "2026-07-01T15:25:11.989707+00:00"
+  }
+}

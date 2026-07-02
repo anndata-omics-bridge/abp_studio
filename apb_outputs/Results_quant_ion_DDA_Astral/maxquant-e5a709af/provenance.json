@@ -1,0 +1,25 @@
+{
+  "convert": {
+    "stage": "convert",
+    "artifact": "ion.h5ad",
+    "command": [
+      "apb",
+      "convert",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA_Astral/e5a709af0d04b71d0572029df66753a06195a0f6/input_file.txt",
+      "--software",
+      "maxquant",
+      "--params",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA_Astral/e5a709af0d04b71d0572029df66753a06195a0f6/param_0..xml",
+      "--output",
+      "apb_outputs/Results_quant_ion_DDA_Astral/maxquant-e5a709af/ion.h5ad",
+      "--level",
+      "ion"
+    ],
+    "inputs": [
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA_Astral/e5a709af0d04b71d0572029df66753a06195a0f6/input_file.txt",
+      "../apb/test_data_download/json_dir/Results_quant_ion_DDA_Astral/e5a709af0d04b71d0572029df66753a06195a0f6/param_0..xml"
+    ],
+    "apb_version": "0.1.0",
+    "timestamp": "2026-07-01T20:29:06.217351+00:00"
+  }
+}

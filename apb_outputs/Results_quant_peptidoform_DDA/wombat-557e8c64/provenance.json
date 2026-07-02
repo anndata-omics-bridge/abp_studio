@@ -1,0 +1,25 @@
+{
+  "convert": {
+    "stage": "convert",
+    "artifact": "peptidoform.h5ad",
+    "command": [
+      "apb",
+      "convert",
+      "../apb/test_data_download/json_dir/Results_quant_peptidoform_DDA/557e8c644fe2db8651514555bcb18b2afce5944f/input_file.csv",
+      "--software",
+      "wombat",
+      "--params",
+      "../apb/test_data_download/json_dir/Results_quant_peptidoform_DDA/557e8c644fe2db8651514555bcb18b2afce5944f/param_0..yml",
+      "--output",
+      "apb_outputs/Results_quant_peptidoform_DDA/wombat-557e8c64/peptidoform.h5ad",
+      "--level",
+      "peptidoform"
+    ],
+    "inputs": [
+      "../apb/test_data_download/json_dir/Results_quant_peptidoform_DDA/557e8c644fe2db8651514555bcb18b2afce5944f/input_file.csv",
+      "../apb/test_data_download/json_dir/Results_quant_peptidoform_DDA/557e8c644fe2db8651514555bcb18b2afce5944f/param_0..yml"
+    ],
+    "apb_version": "0.1.0",
+    "timestamp": "2026-07-01T20:06:03.881264+00:00"
+  }
+}

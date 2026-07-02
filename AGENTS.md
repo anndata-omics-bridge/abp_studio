@@ -23,10 +23,11 @@ computes coverage by globbing the output tree and triggers run/clean by scope×s
 
 ## Stages (registry-driven)
 
-`convert --level X` → `X.h5ad` (primary, independent) · `assemble-mudata` → `mudata.h5mu`
-(optional) · `annotate` (container-agnostic, writes `obs`) · `fasta-annotate` (future, `var`).
+`convert` → `mudata.h5mu` (one read → the multi-level MuData; `--level X` is the single-`.h5ad`
+opt-in) · `annotate` (container-agnostic, writes `obs`, one annotation TOML) · `fasta` (optional,
+protein `var`).
 
-Adding a stage = **one registry entry + one Snakemake rule + one APB CLI subcommand**. The
+Adding a stage = **one registry entry + one Snakemake rule + one `apb` CLI subcommand**. The
 dashboard re-derives its grid columns and pickers from the registry — no imperative GUI edits.
 
 ## Rules
@@ -39,19 +40,24 @@ dashboard re-derives its grid columns and pickers from the registry — no imper
 
 ## Status
 
-The `apb` CLI now exists (`apb convert/annotate/fasta/validate/list`). On 2026-06-28 the marimo
-**test-data browser** was relocated here from apb (apb is now a pure library + CLI):
-- `src/apb_studio/ui/test_tool.py` (`make test-tool`) — browse the ProteoBench corpus, convert a
-  dataset by shelling out to `apb convert` (`conversion/subprocess_adapter.py` + `conversion/runner.py`),
-  inspect the result. `ui/anndataview.py` is the standalone `.h5ad` viewer; `ui/panels.py` the marimo
-  status/summary panels; `support.py` the catalog + converted-runs + summary logic.
-- Read-only catalog/metadata reuses apb's pure helpers (`converters.pipeline`, `params.anndata_io`);
-  conversion always runs via the CLI, never in-process.
+The `apb` CLI exists (`apb convert/annotate/fasta/validate/list`); apb is a pure library + CLI. The
+pipeline is **implemented** against the real CLI — `pipeline.py` (the registry-driven core: paths +
+rendered commands + coverage, the single source of truth), a wildcard-output `Snakefile`, an
+`execution.py`/`jobrunner.py` background-run layer, a per-rule `provenance.py` sidecar, and a marimo
+`dashboard.py` (coverage grid + Run/Clean triggers). See [the plan](TODO/TODO_workflow_dashboard_plan.md)
+(§11 has the per-phase status).
 
-**Known mismatch to fix:** the corpus dashboard's `config/registry.yaml` + `workflow/Snakefile`
-still call `apb convert --input/--level/--rule` and `apb assemble-mudata`, which the real CLI does
-not accept (it is `apb convert <data> [level] --params/--software/--rule-toml/--output`). The new
-`subprocess_adapter` already uses the correct form; the Snakefile/registry need realigning.
+Stages, all driven from `config/registry.yaml`: `apb convert <data> --software <v> --params <p>
+--output <o>` → `mudata.h5mu` (one read; `<level>.h5ad` when a module declares `level` — decision
+16; **no `assemble-mudata`**) · `apb annotate <data> <toml>` (one annotation TOML, container-agnostic)
+· optional `apb fasta` (protein `var`). Each rule appends `python -m apb_studio.provenance` so every
+artifact gets a `provenance.json`.
+
+Verified: `pytest` (44) green, `ruff` clean, `snakemake -n` resolves both vendor shapes, and a
+stubbed `make run` produces convert+annotate artifacts + provenance with coverage flipping to done.
+**Not yet done:** a *real* apb conversion needs a param file apb recognizes (apb's contract); the
+interactive dashboard wants a manual `make ui` smoke; and the comment-preserving `corpus.yaml`
+write-back (decision 8) is deferred.
 
 ## Development
 
