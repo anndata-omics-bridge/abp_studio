@@ -8,10 +8,11 @@ import uuid
 from pathlib import Path
 
 import pandas as pd
+from platformdirs import user_cache_path
 from pydantic import BaseModel, ConfigDict, field_validator
 
 import apb_studio
-from apb_studio.jobrunner import Job, JobStatus, inspect_job, start_job
+from apb_studio.jobrunner import Job, JobStatus, inspect_job, make_run_key, start_job
 
 STUDIO_ROOT = Path(apb_studio.__file__).resolve().parents[2]
 APB_ROOT = STUDIO_ROOT.parent / "apb"
@@ -63,8 +64,9 @@ class TestDataPaths(BaseModel):
 
     @property
     def log_dir(self) -> Path:
-        """Return the Studio background-job log directory."""
-        return self.data_dir / ".apb_studio"
+        """Return the OS-cache directory for this root's Studio job logs."""
+        root_key = make_run_key(self.data_dir)[:12]
+        return user_cache_path("apb-studio") / "testdata" / root_key
 
     def create(self) -> None:
         """Create the selected root after validation."""

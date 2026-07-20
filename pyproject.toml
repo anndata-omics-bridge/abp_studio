@@ -9,6 +9,7 @@ dependencies = [
     "dash>=3",
     "dash-ag-grid",
     "pandas",
+    "platformdirs>=4",
     "pydantic>=2",
     "pyyaml",
     "mudata",

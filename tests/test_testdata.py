@@ -110,6 +110,7 @@ def test_storage_summary_displays_all_derived_paths(tmp_path: Path) -> None:
     assert str(paths.manifest_csv) in summary
     assert str(paths.cache_dir) in summary
     assert str(paths.log_dir) in summary
+    assert paths.data_dir not in paths.log_dir.parents
 
 
 def test_test_data_paths_require_absolute_dedicated_root() -> None:

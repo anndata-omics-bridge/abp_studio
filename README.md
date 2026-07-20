@@ -43,5 +43,6 @@ make testdata-app     # open the ProteoBench test-data application
 ```
 
 The test-data application's **Storage** tab selects one root directory for the
-catalog, selection and manifest CSVs, downloaded metadata/raw files, and Studio
-logs. The displayed APB `test_data_download` folder remains the default.
+catalog, selection and manifest CSVs plus downloaded metadata/raw files. Studio
+logs use the operating-system cache. The displayed APB `test_data_download`
+folder remains the default.

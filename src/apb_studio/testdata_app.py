@@ -227,8 +227,8 @@ def storage_panel() -> html.Div:
                 },
             ),
             html.P(
-                "Catalogs, downloaded metadata and raw files, manifests, and logs "
-                "are all kept below this folder.",
+                "Catalogs, downloaded metadata and raw files, and manifests are kept "
+                "below this folder. Studio logs use the operating-system cache.",
                 style={"fontSize": "11px", "margin": "0 0 0.5rem"},
             ),
             html.Pre(
