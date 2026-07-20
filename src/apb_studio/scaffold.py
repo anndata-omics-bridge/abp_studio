@@ -24,8 +24,13 @@ from apb_studio.pipeline import LEVELS, MULTI_LEVEL_VENDORS, SINGLE_LEVEL_VENDOR
 
 # Preferred input filenames (ProteoBench cache layout), tried in order; else the largest data file.
 _INPUT_CANDIDATES = (
-    "input_file.parquet", "input_file.tsv", "input_file.txt",
-    "input_file_secondary.tsv", "report.parquet", "report.tsv", "evidence.txt",
+    "input_file.parquet",
+    "input_file.tsv",
+    "input_file.txt",
+    "input_file_secondary.tsv",
+    "report.parquet",
+    "report.tsv",
+    "evidence.txt",
 )
 _PARAM_GLOBS = ("param_0.*", "param*.*", "*report.log.txt", "parameters.*", "*.log.txt")
 _DATA_SUFFIXES = {".tsv", ".txt", ".parquet", ".csv"}
@@ -38,6 +43,7 @@ def read_headers(path: Path | str) -> list[str]:
     if path.suffix == ".parquet":
         try:
             import pyarrow.parquet as pq
+
             return list(pq.read_schema(path).names)
         except Exception:  # noqa: BLE001 - parquet headers are best-effort
             return []
@@ -51,7 +57,9 @@ def apb_recognizer():
     """apb's column-based vendor recognizer (slug or None). Errors clearly if apb isn't importable."""
     try:
         from anndata_proteomics.converters.pipeline import recognize_software
-    except ImportError as exc:  # pragma: no cover - exercised only without apb installed
+    except (
+        ImportError
+    ) as exc:  # pragma: no cover - exercised only without apb installed
         raise SystemExit(
             "scaffold needs the `apb` package importable for vendor detection — install it "
             "(uv pip install -e ../apb)"
@@ -72,9 +80,12 @@ def find_input(dataset_dir: Path) -> Path | None:
         if candidate.is_file():
             return candidate
     data_files = [
-        p for p in dataset_dir.iterdir()
-        if p.is_file() and p.suffix in _DATA_SUFFIXES
-        and p.name not in _SKIP_NAMES and not p.name.startswith("param")
+        p
+        for p in dataset_dir.iterdir()
+        if p.is_file()
+        and p.suffix in _DATA_SUFFIXES
+        and p.name not in _SKIP_NAMES
+        and not p.name.startswith("param")
     ]
     return max(data_files, key=lambda p: p.stat().st_size, default=None)
 
@@ -127,16 +138,20 @@ def build_corpus(
         if not vendor:
             skipped.append(f"{module}/{dataset_dir}")
             continue
-        raw[module].append({
-            "vendor": vendor,
-            "dir": dataset_dir,
-            "input": str(input_path.relative_to(base)),
-            "params": str(param_path.relative_to(base)),
-        })
+        raw[module].append(
+            {
+                "vendor": vendor,
+                "dir": dataset_dir,
+                "input": str(input_path.relative_to(base)),
+                "params": str(param_path.relative_to(base)),
+            }
+        )
 
     modules: dict[str, dict] = {}
     for module, items in sorted(raw.items()):
-        level = detect_level(module) or "ion"  # the module's quant level, declared on single-level datasets
+        level = (
+            detect_level(module) or "ion"
+        )  # the module's quant level, declared on single-level datasets
         datasets: list[dict] = []
         seen: set[str] = set()
         for item in sorted(items, key=lambda x: (x["vendor"], x["dir"])):
@@ -145,7 +160,9 @@ def build_corpus(
                 name = f"{item['vendor']}-{item['dir']}"
             seen.add(name)
             entry = {"name": name, "vendor": item["vendor"]}
-            if item["vendor"] not in MULTI_LEVEL_VENDORS:  # decision 16: single-level declares level
+            if (
+                item["vendor"] not in MULTI_LEVEL_VENDORS
+            ):  # decision 16: single-level declares level
                 # The level is the VENDOR's native level (apb's rule level), not the module name's —
                 # e.g. WOMBAT is peptidoform even in an "…_ion_…" module. Fall back to the module level
                 # for a vendor not in the map.
@@ -155,16 +172,34 @@ def build_corpus(
             datasets.append(entry)
         modules[module] = {"datasets": datasets}
 
-    corpus = {"input_root": str(base), "output_root": str(output_root), "modules": modules}
+    corpus = {
+        "input_root": str(base),
+        "output_root": str(output_root),
+        "modules": modules,
+    }
     return corpus, skipped
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="apb_studio.scaffold")
-    parser.add_argument("--data", required=True, help="data root: <root>/<module>/<dataset>/{input,param}")
-    parser.add_argument("--output", default="config/corpus.yaml", help="corpus.yaml to write")
-    parser.add_argument("--input-root", default=None, help="prefix for dataset input/params (default: --data)")
-    parser.add_argument("--output-root", default="apb_outputs", help="where the pipeline writes artifacts")
+    parser.add_argument(
+        "--data",
+        required=True,
+        help="data root: <root>/<module>/<dataset>/{input,param}",
+    )
+    parser.add_argument(
+        "--output", default="config/corpus.yaml", help="corpus.yaml to write"
+    )
+    parser.add_argument(
+        "--input-root",
+        default=None,
+        help="prefix for dataset input/params (default: --data)",
+    )
+    parser.add_argument(
+        "--output-root",
+        default="apb_outputs",
+        help="where the pipeline writes artifacts",
+    )
     args = parser.parse_args(argv)
 
     corpus, skipped = build_corpus(

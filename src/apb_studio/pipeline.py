@@ -64,12 +64,14 @@ class Target:
 
     module: str
     dataset: str
-    stage: str                       # registry stage name
-    output: Path                     # absolute, under output_root
-    command: list[str]               # fully-rendered argv (ready for shell / preview)
+    stage: str  # registry stage name
+    output: Path  # absolute, under output_root
+    command: list[str]  # fully-rendered argv (ready for shell / preview)
     inputs: list[Path] = field(default_factory=list)
-    vendor: str = ""                 # the dataset's software (decision 14) — carried for baskets()
-    level: str | None = None         # the dataset's level (single-level vendor) or None (multi-level)
+    vendor: str = ""  # the dataset's software (decision 14) — carried for baskets()
+    level: str | None = (
+        None  # the dataset's level (single-level vendor) or None (multi-level)
+    )
 
 
 def convert_artifact(dataset_cfg: dict) -> str:
@@ -118,11 +120,17 @@ def render_command(template: str, ctx: dict) -> list[str]:
     """
     missing = sorted({m.group(1) for m in _PLACEHOLDER.finditer(template)} - set(ctx))
     if missing:
-        raise KeyError(f"unfilled placeholder(s) {missing} in command template {template!r}")
-    return [_PLACEHOLDER.sub(lambda m: str(ctx[m.group(1)]), token) for token in template.split()]
+        raise KeyError(
+            f"unfilled placeholder(s) {missing} in command template {template!r}"
+        )
+    return [
+        _PLACEHOLDER.sub(lambda m: str(ctx[m.group(1)]), token)
+        for token in template.split()
+    ]
 
 
 # --- stage-graph helpers (topology is data — decision 5 / §13) --------------------------------
+
 
 def stage_order(registry: list[dict]) -> list[str]:
     """Stage names in a topological order derived from `depends_on` (never a hardcoded list, §13.3)."""
@@ -151,7 +159,9 @@ def basket_label(stage: dict) -> str:
 def basket_names(registry: list[dict]) -> list[str]:
     """Ordered basket labels for the flow strip / stacked tables: inputs, then one per stage (§8.3)."""
     by_name = {s["name"]: s for s in registry}
-    return [INPUTS_BASKET] + [basket_label(by_name[name]) for name in stage_order(registry)]
+    return [INPUTS_BASKET] + [
+        basket_label(by_name[name]) for name in stage_order(registry)
+    ]
 
 
 def stage_by_basket(registry: list[dict]) -> dict[str, str]:
@@ -169,7 +179,7 @@ def descendants(registry: list[dict], stage: str) -> set[str]:
     """
     children: dict[str, set[str]] = defaultdict(set)
     for s in registry:
-        for dep in (s.get("depends_on") or []):
+        for dep in s.get("depends_on") or []:
             children[dep].add(s["name"])
     out: set[str] = set()
     stack = [stage]
@@ -187,7 +197,9 @@ def _resolve(value: str, base: Path) -> Path:
     return p if p.is_absolute() else base / p
 
 
-def _nearest_upstream(deps: list[str], emitted: dict[str, Path], reg: dict[str, dict]) -> Path | None:
+def _nearest_upstream(
+    deps: list[str], emitted: dict[str, Path], reg: dict[str, dict]
+) -> Path | None:
     """Nearest already-emitted upstream artifact for a stage's `depends_on` (§13.1 reconnection).
 
     Walk the `depends_on` graph until an emitted stage is found, so an optional *intermediate* stage
@@ -198,7 +210,9 @@ def _nearest_upstream(deps: list[str], emitted: dict[str, Path], reg: dict[str, 
         if dep in emitted:
             return emitted[dep]
     for dep in deps:
-        up = _nearest_upstream(list(reg.get(dep, {}).get("depends_on") or []), emitted, reg)
+        up = _nearest_upstream(
+            list(reg.get(dep, {}).get("depends_on") or []), emitted, reg
+        )
         if up is not None:
             return up
     return None
@@ -236,7 +250,9 @@ def expand_targets(
                 stage = reg[name]
                 deps = list(stage.get("depends_on") or [])
 
-                if not deps:  # DAG root (convert): reads the raw dataset file + its params
+                if (
+                    not deps
+                ):  # DAG root (convert): reads the raw dataset file + its params
                     output = base / convert_artifact(ds)
                     command = render_command(
                         stage["command"],
@@ -270,8 +286,16 @@ def expand_targets(
 
                 emitted[name] = output
                 targets.append(
-                    Target(module, ds["name"], name, output, command, inputs,
-                           vendor=ds["vendor"], level=ds.get("level"))
+                    Target(
+                        module,
+                        ds["name"],
+                        name,
+                        output,
+                        command,
+                        inputs,
+                        vendor=ds["vendor"],
+                        level=ds.get("level"),
+                    )
                 )
     return targets
 
@@ -297,7 +321,11 @@ def _log_error(logpath: Path) -> str | None:
     Used to surface *why* a convert/annotate/fasta failed when its artifact is absent.
     """
     try:
-        lines = [ln.strip() for ln in logpath.read_text(errors="replace").splitlines() if ln.strip()]
+        lines = [
+            ln.strip()
+            for ln in logpath.read_text(errors="replace").splitlines()
+            if ln.strip()
+        ]
     except OSError:
         return None
     if not lines:
@@ -365,7 +393,9 @@ def problems(corpus: dict, targets: list[Target]) -> dict[tuple[str, str], list[
 
 
 def baskets(
-    targets: list[Target], registry: list[dict], problems: dict[tuple[str, str], list[str]] | None = None
+    targets: list[Target],
+    registry: list[dict],
+    problems: dict[tuple[str, str], list[str]] | None = None,
 ) -> dict[str, list[dict]]:
     """Group DATASETS into kanban baskets (decision 10, §8).
 
@@ -388,7 +418,9 @@ def baskets(
 
     for (module, dataset), ts in by_ds.items():
         stages_here = {t.stage for t in ts}
-        applicable = [s for s in order if s in stages_here]  # this dataset's stages, in topo order
+        applicable = [
+            s for s in order if s in stages_here
+        ]  # this dataset's stages, in topo order
         done = {t.stage: t.output.exists() for t in ts}
 
         basket_stage: str | None = None
@@ -400,16 +432,18 @@ def baskets(
         next_stage = next((s for s in applicable if not done.get(s)), None)
         basket = INPUTS_BASKET if basket_stage is None else labels[basket_stage]
 
-        result[basket].append({
-            "module": module,
-            "dataset": dataset,
-            "software": ts[0].vendor,
-            "level": ts[0].level or "",
-            "basket": basket,
-            "next_stage": next_stage,
-            "runnable": next_stage is not None,
-            "problem": "; ".join(problems.get((module, dataset), [])),
-        })
+        result[basket].append(
+            {
+                "module": module,
+                "dataset": dataset,
+                "software": ts[0].vendor,
+                "level": ts[0].level or "",
+                "basket": basket,
+                "next_stage": next_stage,
+                "runnable": next_stage is not None,
+                "problem": "; ".join(problems.get((module, dataset), [])),
+            }
+        )
     return result
 
 
@@ -432,7 +466,9 @@ def select_targets(
     return selected
 
 
-def targets_for(targets: list[Target], keys: set[tuple[str, str]], *, stage: str) -> list[Target]:
+def targets_for(
+    targets: list[Target], keys: set[tuple[str, str]], *, stage: str
+) -> list[Target]:
     """The Targets at `stage` for the selected (module, dataset) rows — the multi-row basket
     selection scope×stage cannot express (§8.2). Run feeds the outputs to run_pipeline; Clean feeds
     them to clean_targets."""
@@ -452,7 +488,9 @@ def reject_input_paths(paths: list[Path], input_root: Path | str) -> list[Path]:
     for p in paths:
         resolved = Path(p).resolve()
         if in_root == resolved or in_root in resolved.parents:
-            raise CleanGuardError(f"refusing to clean {p}: it is under input_root {in_root}")
+            raise CleanGuardError(
+                f"refusing to clean {p}: it is under input_root {in_root}"
+            )
     return paths
 
 
@@ -472,6 +510,8 @@ def clean_paths(
     """
     paths = [
         t.output
-        for t in select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage)
+        for t in select_targets(
+            targets, scope=scope, module=module, dataset=dataset, stage=stage
+        )
     ]
     return reject_input_paths(paths, input_root)

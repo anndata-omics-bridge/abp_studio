@@ -6,7 +6,7 @@ DATA   ?= ../apb/test_data_download/json_dir
 CORES  ?= 3   # bounded by default: some vendor files are ~600 MB, so `--cores all` can exhaust RAM
 
 .DEFAULT_GOAL := help
-.PHONY: help scaffold app ui dag run clean test
+.PHONY: help scaffold app testdata-app dag run clean test
 
 scaffold:                 ## scan DATA (default: apb ProteoBench cache) → corpus.yaml (OUT, DATA to override); needs apb
 	PYTHONPATH=src python -m apb_studio.scaffold --data $(DATA) --output $(OUT)
@@ -15,11 +15,11 @@ help:                     ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}'
 
-app:                      ## run the dashboard as an app (clean UI, no code cells)
-	marimo run src/apb_studio/dashboard.py
+app:                      ## run the Dash corpus application
+	PYTHONPATH=src python -m apb_studio.dashboard
 
-ui:                       ## edit the dashboard notebook (cells + code, for development)
-	marimo edit src/apb_studio/dashboard.py
+testdata-app:             ## run the Dash ProteoBench test-data application
+	PYTHONPATH=src python -m apb_studio.testdata_app
 
 dag:                      ## dry-run the pipeline (needs a real corpus: `make scaffold` first, or CONFIG=your.yaml — the example config has placeholder paths)
 	snakemake -s workflow/Snakefile --configfile $(CONFIG) -n

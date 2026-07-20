@@ -2,7 +2,7 @@
 run as a background job, or a Clean that deletes the selected outputs.
 
 Command rendering and target/path derivation live in `pipeline` (the single source of truth);
-this module adds only the Snakemake-CLI + background-runner glue. No marimo import.
+this module adds only the Snakemake-CLI + background-runner glue.
 """
 
 from __future__ import annotations
@@ -23,7 +23,9 @@ from apb_studio.pipeline import (
 )
 
 
-def load_overview(config_path: Path | str) -> tuple[list[Target], list[dict], dict, str | None]:
+def load_overview(
+    config_path: Path | str,
+) -> tuple[list[Target], list[dict], dict, str | None]:
     """Load the corpus → (targets, coverage_rows, corpus, error). NEVER raises.
 
     A missing / malformed / old-schema config becomes a user-facing ``error`` message string (the
@@ -35,16 +37,26 @@ def load_overview(config_path: Path | str) -> tuple[list[Target], list[dict], di
         targets = expand_targets(load_registry(), corpus)
         return targets, coverage(targets), corpus, None
     except FileNotFoundError:
-        return [], [], {}, (
-            f"Corpus config not found: `{config_path}`.\n\n"
-            "Run `make scaffold` to generate `config/corpus.yaml`, or point the box above at an "
-            "existing config file."
+        return (
+            [],
+            [],
+            {},
+            (
+                f"Corpus config not found: `{config_path}`.\n\n"
+                "Run `make scaffold` to generate `config/corpus.yaml`, or point the box above at an "
+                "existing config file."
+            ),
         )
     except Exception as exc:  # noqa: BLE001 - surface ANY config problem as a readable UI message
-        return [], [], {}, (
-            f"Could not load `{config_path}` — it looks invalid or from an older schema.\n\n"
-            "Re-generate it with `make scaffold` (writes the current schema), then reload.\n\n"
-            f"Details: {type(exc).__name__}: {exc}"
+        return (
+            [],
+            [],
+            {},
+            (
+                f"Could not load `{config_path}` — it looks invalid or from an older schema.\n\n"
+                "Re-generate it with `make scaffold` (writes the current schema), then reload.\n\n"
+                f"Details: {type(exc).__name__}: {exc}"
+            ),
         )
 
 
@@ -59,7 +71,9 @@ def selected_outputs(
     """The output paths a (scope, stage) Run would (re)build."""
     return [
         t.output
-        for t in select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage)
+        for t in select_targets(
+            targets, scope=scope, module=module, dataset=dataset, stage=stage
+        )
     ]
 
 
@@ -74,7 +88,15 @@ def snakemake_argv(
 ) -> list[str]:
     """Build a `snakemake` argv for the given targets (default goal when targets is empty/None)."""
     exe = snakemake_exe or shutil.which("snakemake") or "snakemake"
-    argv = [exe, "-s", str(snakefile), "--configfile", str(config_path), "--cores", str(cores)]
+    argv = [
+        exe,
+        "-s",
+        str(snakefile),
+        "--configfile",
+        str(config_path),
+        "--cores",
+        str(cores),
+    ]
     # --keep-going: a corpus is ~50 independent datasets; one bad one (e.g. an unparsable params
     # file) must not abort the whole run — the good datasets still build, failures show per dataset.
     argv.append("--keep-going")
@@ -102,9 +124,15 @@ def run_pipeline(
     the whole corpus when the caller meant "nothing is selected".
     """
     if targets is not None and len(targets) == 0:
-        raise ValueError("no targets selected — refusing to launch (empty would build the whole corpus)")
+        raise ValueError(
+            "no targets selected — refusing to launch (empty would build the whole corpus)"
+        )
     argv = snakemake_argv(
-        snakefile, config_path, targets=targets, cores=cores, snakemake_exe=snakemake_exe
+        snakefile,
+        config_path,
+        targets=targets,
+        cores=cores,
+        snakemake_exe=snakemake_exe,
     )
     return start(argv, log_file, cwd=cwd)
 
@@ -150,6 +178,8 @@ def clean_selection(
     through `reject_input_paths`, so neither can touch a path under `input_root`.
     """
     return clean_targets(
-        select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage),
+        select_targets(
+            targets, scope=scope, module=module, dataset=dataset, stage=stage
+        ),
         input_root=input_root,
     )

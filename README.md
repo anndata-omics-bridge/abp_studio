@@ -14,7 +14,8 @@ A corpus **dashboard + Snakemake pipeline** over the
 | Corpus config | `config/corpus.example.yaml` | declares inputs, outputs, module↔annotation map (round-tripped) |
 | Stage registry | `config/registry.yaml` | **single source of truth** for stages; read by both the Snakefile and the dashboard |
 | Pipeline | `workflow/Snakefile` | builds the DAG; shells out to the `apb` CLI |
-| Dashboard | `src/apb_studio/dashboard.py` | marimo: coverage grid + run/clean triggers |
+| Corpus app | `src/apb_studio/dashboard.py` | Plotly Dash corpus overview |
+| Test-data app | `src/apb_studio/testdata_app.py` | catalog, select, download, and inspect ProteoBench fixtures |
 
 The **filesystem is the state**: `output_root/<module>/<dataset>/<stage>.h5ad` existing ⇒ that
 stage is done. No separate database.
@@ -37,9 +38,10 @@ uv venv && source .venv/bin/activate
 uv pip install -e .
 cp config/corpus.example.yaml config/corpus.yaml   # edit paths
 make dag    # dry-run: what would run
-make ui     # open the dashboard
+make app              # open the corpus dashboard
+make testdata-app     # open the ProteoBench test-data application
 ```
 
-**Status:** scaffold. The `apb` CLI now exists; the dashboard reads coverage from the output
-tree, but run/clean execution is not wired yet, and the Snakefile/registry still encode an older
-command contract that needs realigning to the real `apb convert` signature.
+The test-data application's **Storage** tab selects one root directory for the
+catalog, selection and manifest CSVs, downloaded metadata/raw files, and Studio
+logs. The displayed APB `test_data_download` folder remains the default.

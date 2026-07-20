@@ -35,7 +35,9 @@ def apb_version(apb_exe: str | None = None) -> str | None:
     exe = apb_exe or shutil.which("apb")
     if exe:
         try:
-            out = subprocess.run([exe, "--version"], capture_output=True, text=True, check=True)
+            out = subprocess.run(
+                [exe, "--version"], capture_output=True, text=True, check=True
+            )
             return out.stdout.strip() or None
         except (OSError, subprocess.CalledProcessError):
             return None
@@ -43,7 +45,11 @@ def apb_version(apb_exe: str | None = None) -> str | None:
 
 
 def record(
-    target: Target, *, timestamp: str, version: str | None = None, warning: str | None = None
+    target: Target,
+    *,
+    timestamp: str,
+    version: str | None = None,
+    warning: str | None = None,
 ) -> dict:
     """The provenance record for one Target (pure). The rendered command carries vendor/params.
 
@@ -77,10 +83,12 @@ def read_params_warning(output: Path) -> str | None:
         with h5py.File(output, "r") as f:
             names: list[str] = []
             f.visititems(
-                lambda n, o: names.append(n)
-                if n.endswith("anndata_proteomics/search_parameters_error")
-                and isinstance(o, h5py.Dataset)
-                else None
+                lambda n, o: (
+                    names.append(n)
+                    if n.endswith("anndata_proteomics/search_parameters_error")
+                    and isinstance(o, h5py.Dataset)
+                    else None
+                )
             )
             msgs = []
             for n in names:
@@ -147,13 +155,20 @@ def main(argv: list[str] | None = None) -> int:
     """CLI used by the Snakefile post-rule: write provenance for the target that produced --output."""
     parser = argparse.ArgumentParser(prog="apb_studio.provenance")
     parser.add_argument("--config", required=True, help="corpus config YAML")
-    parser.add_argument("--output", required=True, help="the artifact path that was just produced")
+    parser.add_argument(
+        "--output", required=True, help="the artifact path that was just produced"
+    )
     args = parser.parse_args(argv)
 
     corpus = load_corpus(args.config)
     target_path = str(Path(args.output))
     target = next(
-        (t for t in expand_targets(load_registry(), corpus) if str(t.output) == target_path), None
+        (
+            t
+            for t in expand_targets(load_registry(), corpus)
+            if str(t.output) == target_path
+        ),
+        None,
     )
     if target is None:  # output not in the corpus → nothing to record
         return 0

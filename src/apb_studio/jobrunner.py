@@ -1,9 +1,7 @@
 """Background-job runner: launch a command as a detached subprocess, stream its combined output to
 a log file, poll status without side effects, and terminate the whole process tree.
 
-No marimo import — driven from the dashboard. Recovered and trimmed from the pre-relocation runner
-(git f0db507); the HTML-report / static-HTTP-server / zip helpers were dropped — they served the
-removed test-data browser, not Snakemake log streaming.
+Framework-independent: driven by the Dash applications and covered as ordinary Python code.
 """
 
 from __future__ import annotations
@@ -69,8 +67,14 @@ def start_job(
         else {"start_new_session": True}
     )
     command = tuple(str(part) for part in command)
+    process_env = dict(env) if env is not None else os.environ.copy()
+    # Python fully buffers stdout when it targets a file. Studio tails that file,
+    # so force child Python CLIs to publish each line as it is produced.
+    process_env.setdefault("PYTHONUNBUFFERED", "1")
     with log_path.open("w", encoding="utf-8") as handle:
-        handle.write("$ " + shlex.join(command) + "\n\n")  # faithful, copy-pasteable header
+        handle.write(
+            "$ " + shlex.join(command) + "\n\n"
+        )  # faithful, copy-pasteable header
         handle.flush()
         process = popen(
             list(command),
@@ -78,7 +82,7 @@ def start_job(
             stderr=subprocess.STDOUT,
             text=True,
             cwd=str(cwd) if cwd is not None else None,
-            env=dict(env) if env is not None else None,
+            env=process_env,
             **group_kwargs,
         )
     return Job(command=command, process=process, log_file=log_path)

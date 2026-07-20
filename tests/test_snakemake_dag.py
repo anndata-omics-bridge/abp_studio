@@ -36,22 +36,26 @@ def _fixture_corpus(tmp_path):
         "modules": {
             "quant_lfq_ion_DIA_AIF": {
                 "annotation": str(in_root / "diann_annotation.toml"),
-                "datasets": [{
-                    "name": "diann-run1",
-                    "vendor": "diann",
-                    "input": "quant_lfq_ion_DIA_AIF/run1/report.tsv",
-                    "params": "quant_lfq_ion_DIA_AIF/run1/report.log.txt",
-                }],
+                "datasets": [
+                    {
+                        "name": "diann-run1",
+                        "vendor": "diann",
+                        "input": "quant_lfq_ion_DIA_AIF/run1/report.tsv",
+                        "params": "quant_lfq_ion_DIA_AIF/run1/report.log.txt",
+                    }
+                ],
             },
             "quant_lfq_ion_DDA_QExactive": {
                 "annotation": str(in_root / "mq_annotation.toml"),
-                "datasets": [{
-                    "name": "maxquant-runA",
-                    "vendor": "maxquant",
-                    "level": "ion",
-                    "input": "quant_lfq_ion_DDA_QExactive/runA/evidence.txt",
-                    "params": "quant_lfq_ion_DDA_QExactive/runA/parameters.txt",
-                }],
+                "datasets": [
+                    {
+                        "name": "maxquant-runA",
+                        "vendor": "maxquant",
+                        "level": "ion",
+                        "input": "quant_lfq_ion_DDA_QExactive/runA/evidence.txt",
+                        "params": "quant_lfq_ion_DDA_QExactive/runA/parameters.txt",
+                    }
+                ],
             },
         },
     }
@@ -64,8 +68,19 @@ def _fixture_corpus(tmp_path):
 def test_dry_run_resolves_default_dag(tmp_path):
     config = _fixture_corpus(tmp_path)
     proc = subprocess.run(
-        [_SNAKEMAKE, "-s", str(_SNAKEFILE), "--configfile", str(config), "-n", "--cores", "1"],
-        capture_output=True, text=True, cwd=_REPO_ROOT,
+        [
+            _SNAKEMAKE,
+            "-s",
+            str(_SNAKEFILE),
+            "--configfile",
+            str(config),
+            "-n",
+            "--cores",
+            "1",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
     )
     out = proc.stdout + proc.stderr
     assert proc.returncode == 0, out
@@ -78,11 +93,27 @@ def test_dry_run_routes_single_and_multi_level_artifacts(tmp_path):
     config = _fixture_corpus(tmp_path)
     out_root = tmp_path / "out"
     targets = [
-        str(out_root / "quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu"),       # multi-level → MuData
-        str(out_root / "quant_lfq_ion_DDA_QExactive/maxquant-runA/ion.h5ad"),  # single-level → <level>.h5ad
+        str(
+            out_root / "quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu"
+        ),  # multi-level → MuData
+        str(
+            out_root / "quant_lfq_ion_DDA_QExactive/maxquant-runA/ion.h5ad"
+        ),  # single-level → <level>.h5ad
     ]
     proc = subprocess.run(
-        [_SNAKEMAKE, "-s", str(_SNAKEFILE), "--configfile", str(config), "-n", "--cores", "1", *targets],
-        capture_output=True, text=True, cwd=_REPO_ROOT,
+        [
+            _SNAKEMAKE,
+            "-s",
+            str(_SNAKEFILE),
+            "--configfile",
+            str(config),
+            "-n",
+            "--cores",
+            "1",
+            *targets,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr

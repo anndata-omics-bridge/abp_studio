@@ -27,29 +27,59 @@ from apb_studio.pipeline import (
 
 def _targets(out="/out"):
     return [
-        Target("m1", "d", "convert", Path(f"{out}/m1/d/mudata.h5mu"), ["apb", "convert"], []),
-        Target("m1", "d", "annotate", Path(f"{out}/m1/d/annotated.h5mu"), ["apb", "annotate"], []),
-        Target("m2", "d", "convert", Path(f"{out}/m2/d/ion.h5ad"), ["apb", "convert"], []),
+        Target(
+            "m1",
+            "d",
+            "convert",
+            Path(f"{out}/m1/d/mudata.h5mu"),
+            ["apb", "convert"],
+            [],
+        ),
+        Target(
+            "m1",
+            "d",
+            "annotate",
+            Path(f"{out}/m1/d/annotated.h5mu"),
+            ["apb", "annotate"],
+            [],
+        ),
+        Target(
+            "m2", "d", "convert", Path(f"{out}/m2/d/ion.h5ad"), ["apb", "convert"], []
+        ),
     ]
 
 
 # --- snakemake_argv / selected_outputs --------------------------------------------------------
 
+
 def test_snakemake_argv_default_goal():
     argv = snakemake_argv("Snakefile", "corpus.yaml", snakemake_exe="snakemake")
     assert argv == [
-        "snakemake", "-s", "Snakefile", "--configfile", "corpus.yaml", "--cores", "1", "--keep-going",
+        "snakemake",
+        "-s",
+        "Snakefile",
+        "--configfile",
+        "corpus.yaml",
+        "--cores",
+        "1",
+        "--keep-going",
     ]
 
 
 def test_snakemake_argv_is_resilient_keep_going():
     # A corpus is many independent datasets; one failure must not abort the rest.
-    assert "--keep-going" in snakemake_argv("Snakefile", "corpus.yaml", snakemake_exe="snakemake")
+    assert "--keep-going" in snakemake_argv(
+        "Snakefile", "corpus.yaml", snakemake_exe="snakemake"
+    )
 
 
 def test_snakemake_argv_with_targets_and_dry_run():
     argv = snakemake_argv(
-        "Snakefile", "corpus.yaml", targets=[Path("/out/x.h5mu")], dry_run=True, snakemake_exe="snakemake"
+        "Snakefile",
+        "corpus.yaml",
+        targets=[Path("/out/x.h5mu")],
+        dry_run=True,
+        snakemake_exe="snakemake",
     )
     assert "-n" in argv and "/out/x.h5mu" in argv
 
@@ -58,10 +88,13 @@ def test_selected_outputs_filters_by_scope_and_stage():
     targets = _targets()
     assert len(selected_outputs(targets)) == 3
     assert len(selected_outputs(targets, stage="convert")) == 2
-    assert selected_outputs(targets, scope="module", module="m2") == [Path("/out/m2/d/ion.h5ad")]
+    assert selected_outputs(targets, scope="module", module="m2") == [
+        Path("/out/m2/d/ion.h5ad")
+    ]
 
 
 # --- run_pipeline uses an injectable launcher (no real process) -------------------------------
+
 
 def test_run_pipeline_builds_job_via_injected_start():
     calls = {}
@@ -72,8 +105,12 @@ def test_run_pipeline_builds_job_via_injected_start():
         return "JOB"
 
     job = run_pipeline(
-        "Snakefile", "corpus.yaml", "/tmp/log", targets=[Path("/out/x.h5mu")],
-        snakemake_exe="snakemake", start=fake_start,
+        "Snakefile",
+        "corpus.yaml",
+        "/tmp/log",
+        targets=[Path("/out/x.h5mu")],
+        snakemake_exe="snakemake",
+        start=fake_start,
     )
     assert job == "JOB"
     assert calls["argv"][0] == "snakemake" and "/out/x.h5mu" in calls["argv"]
@@ -83,14 +120,24 @@ def test_run_pipeline_builds_job_via_injected_start():
 def test_run_pipeline_refuses_empty_targets():
     # An empty target list would fall through to Snakemake's default goal (the whole corpus).
     with pytest.raises(ValueError, match="nothing selected|whole corpus"):
-        run_pipeline("Snakefile", "corpus.yaml", "/tmp/log", targets=[], start=lambda *a, **k: "JOB")
+        run_pipeline(
+            "Snakefile",
+            "corpus.yaml",
+            "/tmp/log",
+            targets=[],
+            start=lambda *a, **k: "JOB",
+        )
 
 
 def test_run_pipeline_none_targets_means_default_goal():
     calls = {}
     run_pipeline(
-        "Snakefile", "corpus.yaml", "/tmp/log", targets=None,
-        snakemake_exe="snakemake", start=lambda argv, log, **k: calls.setdefault("argv", argv),
+        "Snakefile",
+        "corpus.yaml",
+        "/tmp/log",
+        targets=None,
+        snakemake_exe="snakemake",
+        start=lambda argv, log, **k: calls.setdefault("argv", argv),
     )
     # No target paths appended → Snakemake builds its default goal (argv ends at the flags).
     assert calls["argv"][-1] == "--keep-going"  # no trailing target paths
@@ -98,6 +145,7 @@ def test_run_pipeline_none_targets_means_default_goal():
 
 
 # --- clean_selection deletes outputs, never inputs --------------------------------------------
+
 
 def test_clean_selection_deletes_selected_outputs(tmp_path):
     out = tmp_path / "out"
@@ -119,6 +167,7 @@ def test_clean_selection_refuses_input_root():
 
 # --- clean_targets: the row-set primitive the kanban baskets use ------------------------------
 
+
 def test_clean_targets_deletes_only_the_given_rows(tmp_path):
     # Basket Clean = clean the selected rows' artifact at that basket's stage (via targets_for).
     out = tmp_path / "out"
@@ -126,12 +175,14 @@ def test_clean_targets_deletes_only_the_given_rows(tmp_path):
     for t in targets:
         t.output.parent.mkdir(parents=True, exist_ok=True)
         t.output.touch()
-    selected = targets_for(targets, {("m1", "d")}, stage="convert")  # one row, one stage
+    selected = targets_for(
+        targets, {("m1", "d")}, stage="convert"
+    )  # one row, one stage
     deleted = clean_targets(selected, input_root=str(tmp_path / "in"))
     assert deleted == [out / "m1/d/mudata.h5mu"]
     assert not (out / "m1/d/mudata.h5mu").exists()
     assert (out / "m1/d/annotated.h5mu").exists()  # downstream untouched
-    assert (out / "m2/d/ion.h5ad").exists()         # other module untouched
+    assert (out / "m2/d/ion.h5ad").exists()  # other module untouched
 
 
 def test_clean_targets_refuses_input_root():
@@ -160,10 +211,22 @@ def test_clean_cascade_removes_stray_downstream_artifact(tmp_path):
     # the stray annotated_fasta.* is swept too — no orphan left behind (§8.3, review Medium #1).
     reg = load_registry()
     corpus = {
-        "input_root": str(tmp_path / "in"), "output_root": str(tmp_path / "out"),
-        "modules": {"m": {"annotation": "/a.toml", "fasta": "/p.fasta", "datasets": [
-            {"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}
-        ]}},
+        "input_root": str(tmp_path / "in"),
+        "output_root": str(tmp_path / "out"),
+        "modules": {
+            "m": {
+                "annotation": "/a.toml",
+                "fasta": "/p.fasta",
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
     targets = expand_targets(reg, corpus)
     for stage in ("convert", "fasta"):  # annotate deliberately absent
@@ -172,7 +235,10 @@ def test_clean_cascade_removes_stray_downstream_artifact(tmp_path):
         t.output.touch()
 
     keys = {("m", "diann-d")}
-    cascade = ["convert", *descendants(reg, "convert")]  # what a `converted` Clean sweeps
+    cascade = [
+        "convert",
+        *descendants(reg, "convert"),
+    ]  # what a `converted` Clean sweeps
     to_clean = [t for s in cascade for t in targets_for(targets, keys, stage=s)]
     deleted = clean_targets(to_clean, input_root=str(tmp_path / "in"))
 
@@ -189,12 +255,15 @@ def test_clean_selection_prunes_provenance(tmp_path):
     conv = next(t for t in targets if t.stage == "convert" and t.module == "m1")
     provenance.write_for_target(conv, timestamp="t")
     assert (out / "m1/d/provenance.json").exists()
-    clean_selection(targets, input_root=str(tmp_path / "in"), scope="module", module="m1")
+    clean_selection(
+        targets, input_root=str(tmp_path / "in"), scope="module", module="m1"
+    )
     # m1's cleaned artifacts → their provenance entries pruned → empty sidecar removed.
     assert not (out / "m1/d/provenance.json").exists()
 
 
 # --- jobrunner end-to-end on a tiny real subprocess -------------------------------------------
+
 
 def test_jobrunner_runs_and_captures_output(tmp_path):
     log = tmp_path / "console.log"
@@ -206,12 +275,48 @@ def test_jobrunner_runs_and_captures_output(tmp_path):
     assert terminate_job(job) is False  # already finished
 
 
+def test_jobrunner_unbuffers_python_output(tmp_path):
+    captured = {}
+
+    class FakeProcess:
+        pass
+
+    def fake_popen(command, **kwargs):
+        captured.update(kwargs)
+        return FakeProcess()
+
+    start_job(["python", "script.py"], tmp_path / "console.log", popen=fake_popen)
+
+    assert captured["env"]["PYTHONUNBUFFERED"] == "1"
+
+
+def test_jobrunner_preserves_explicit_unbuffered_setting(tmp_path):
+    captured = {}
+
+    class FakeProcess:
+        pass
+
+    def fake_popen(command, **kwargs):
+        captured.update(kwargs)
+        return FakeProcess()
+
+    start_job(
+        ["python", "script.py"],
+        tmp_path / "console.log",
+        env={"PYTHONUNBUFFERED": "0"},
+        popen=fake_popen,
+    )
+
+    assert captured["env"]["PYTHONUNBUFFERED"] == "0"
+
+
 def test_make_run_key_changes_with_inputs():
     assert make_run_key("a", 1) == make_run_key("a", 1)
     assert make_run_key("a", 1) != make_run_key("a", 2)
 
 
 # --- load_overview never raises: bad config → readable message, not a traceback ---------------
+
 
 def _write(tmp_path, corpus):
     p = tmp_path / "corpus.yaml"
@@ -220,12 +325,25 @@ def _write(tmp_path, corpus):
 
 
 def test_load_overview_valid_config(tmp_path):
-    cfg = _write(tmp_path, {
-        "input_root": "/in", "output_root": "/out",
-        "modules": {"m": {"datasets": [
-            {"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}
-        ]}},
-    })
+    cfg = _write(
+        tmp_path,
+        {
+            "input_root": "/in",
+            "output_root": "/out",
+            "modules": {
+                "m": {
+                    "datasets": [
+                        {
+                            "name": "diann-d",
+                            "vendor": "diann",
+                            "input": "r.tsv",
+                            "params": "r.log",
+                        }
+                    ]
+                }
+            },
+        },
+    )
     targets, rows, corpus, error = load_overview(cfg)
     assert error is None and len(targets) == 1 and corpus["output_root"] == "/out"
 
@@ -238,12 +356,19 @@ def test_load_overview_missing_file_is_message_not_raise():
 
 def test_load_overview_old_schema_is_message_not_raise(tmp_path):
     # Old schema (vendor at module level, dataset has no vendor) → expand_targets raises → message.
-    cfg = _write(tmp_path, {
-        "input_root": "/in", "output_root": "/out",
-        "modules": {"m__fragpipe": {
-            "vendor": "fragpipe", "level": "ion",
-            "datasets": [{"name": "d", "input": "r.tsv", "params": "r.log"}],
-        }},
-    })
+    cfg = _write(
+        tmp_path,
+        {
+            "input_root": "/in",
+            "output_root": "/out",
+            "modules": {
+                "m__fragpipe": {
+                    "vendor": "fragpipe",
+                    "level": "ion",
+                    "datasets": [{"name": "d", "input": "r.tsv", "params": "r.log"}],
+                }
+            },
+        },
+    )
     targets, rows, corpus, error = load_overview(cfg)
     assert targets == [] and error and "make scaffold" in error and "vendor" in error

@@ -34,8 +34,12 @@ def test_non_root_stages_declare_artifact_and_resource():
     # expand_targets stays registry-driven (no hardcoded edges/filenames).
     for stage in load_registry():
         if stage["depends_on"]:
-            assert stage.get("artifact"), f"{stage['name']!r} needs an `artifact` basename"
-            assert stage.get("resource"), f"{stage['name']!r} needs a `resource` (module key + gate)"
+            assert stage.get("artifact"), (
+                f"{stage['name']!r} needs an `artifact` basename"
+            )
+            assert stage.get("resource"), (
+                f"{stage['name']!r} needs a `resource` (module key + gate)"
+            )
 
 
 def test_example_corpus_loads():

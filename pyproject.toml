@@ -4,17 +4,26 @@ version = "0.0.0"
 description = "Corpus dashboard + Snakemake pipeline driving the anndata_proteomics (APB) conversion CLI."
 requires-python = ">=3.13"
 dependencies = [
+    "anndata-proteomics",
     "snakemake>=8",
-    "marimo",
+    "dash>=3",
+    "dash-ag-grid",
+    "pandas",
+    "pydantic>=2",
     "pyyaml",
     "mudata",
     "anndata",
-    # APB is consumed via its `apb` CLI (a sibling editable install in dev), not imported:
-    #   uv pip install -e ../apb        # provides the `apb` CLI + the `anndata_proteomics` package
 ]
+
+[tool.uv.sources]
+anndata-proteomics = { path = "../apb", editable = true }
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+
+[project.scripts]
+apb-studio = "apb_studio.dashboard:main"
+apb-studio-testdata = "apb_studio.testdata_app:main"
 
 [build-system]
 requires = ["hatchling"]

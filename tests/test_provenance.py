@@ -17,7 +17,9 @@ from apb_studio.provenance import (
 
 
 def _t(out_dir, stage="convert", name="mudata.h5mu"):
-    return Target("m", "d", stage, Path(out_dir) / name, ["apb", stage, "x"], [Path("/in/x")])
+    return Target(
+        "m", "d", stage, Path(out_dir) / name, ["apb", stage, "x"], [Path("/in/x")]
+    )
 
 
 def test_record_shape():
@@ -65,10 +67,20 @@ def test_corrupt_sidecar_is_backed_up_not_lost(tmp_path):
 
 def test_main_writes_sidecar_for_an_output(tmp_path):
     corpus = {
-        "input_root": "/in", "output_root": str(tmp_path / "out"),
-        "modules": {"m": {
-            "datasets": [{"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}],
-        }},
+        "input_root": "/in",
+        "output_root": str(tmp_path / "out"),
+        "modules": {
+            "m": {
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
     config = tmp_path / "corpus.yaml"
     config.write_text(yaml.safe_dump(corpus))
@@ -93,6 +105,7 @@ def test_apb_version_returns_str_or_none():
 
 # --- warning capture: apb degraded (e.g. unparsable params) but still produced the artifact -------
 
+
 def test_record_includes_warning_only_when_present():
     assert "warning" not in record(_t("/out"), timestamp="t")
     rec = record(_t("/out"), timestamp="t", warning="ParamsError: not a DIA-NN file")
@@ -105,7 +118,9 @@ def test_read_params_warning_from_artifact(tmp_path):
 
     art = tmp_path / "mudata.h5mu"  # a plain AnnData written under any name (root uns)
     adata = ad.AnnData(np.zeros((2, 2), dtype="float32"))
-    adata.uns["anndata_proteomics"] = {"search_parameters_error": "ParamsError: not a DIA-NN file"}
+    adata.uns["anndata_proteomics"] = {
+        "search_parameters_error": "ParamsError: not a DIA-NN file"
+    }
     adata.write_h5ad(art)
     assert read_params_warning(art) == "ParamsError: not a DIA-NN file"
 

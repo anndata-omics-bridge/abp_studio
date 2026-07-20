@@ -32,6 +32,7 @@ _EXAMPLE = load_corpus(_REPO_ROOT / "config" / "corpus.example.yaml")
 
 # --- convert_artifact + decision-16 validation (vendor/level are PER DATASET) -----------------
 
+
 def test_convert_artifact_multilevel_is_mudata():
     assert convert_artifact({"vendor": "diann"}) == "mudata.h5mu"
 
@@ -63,10 +64,20 @@ def test_unknown_level_raises():
 def test_annotation_is_optional_convert_only_module():
     # A module with no annotation is valid → it yields only convert targets (no annotate/fasta).
     corpus = {
-        "input_root": "/in", "output_root": "/out",
-        "modules": {"m": {
-            "datasets": [{"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}],
-        }},
+        "input_root": "/in",
+        "output_root": "/out",
+        "modules": {
+            "m": {
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
     assert {t.stage for t in expand_targets(_REGISTRY, corpus)} == {"convert"}
 
@@ -75,13 +86,33 @@ def test_one_module_can_hold_multiple_vendors():
     # The whole point: a module is the benchmark; its datasets are different tools, each with its
     # own vendor/level → different convert artifacts under one (clean) module name.
     corpus = {
-        "input_root": "/in", "output_root": "/out",
-        "modules": {"quant_lfq_ion_DDA": {"datasets": [
-            {"name": "diann-a", "vendor": "diann", "input": "a.tsv", "params": "a.log"},
-            {"name": "peaks-b", "vendor": "peaks", "level": "ion", "input": "b.txt", "params": "b.txt"},
-        ]}},
+        "input_root": "/in",
+        "output_root": "/out",
+        "modules": {
+            "quant_lfq_ion_DDA": {
+                "datasets": [
+                    {
+                        "name": "diann-a",
+                        "vendor": "diann",
+                        "input": "a.tsv",
+                        "params": "a.log",
+                    },
+                    {
+                        "name": "peaks-b",
+                        "vendor": "peaks",
+                        "level": "ion",
+                        "input": "b.txt",
+                        "params": "b.txt",
+                    },
+                ]
+            }
+        },
     }
-    convert = {t.dataset: t.output.name for t in expand_targets(_REGISTRY, corpus) if t.stage == "convert"}
+    convert = {
+        t.dataset: t.output.name
+        for t in expand_targets(_REGISTRY, corpus)
+        if t.stage == "convert"
+    }
     assert convert == {"diann-a": "mudata.h5mu", "peaks-b": "ion.h5ad"}
 
 
@@ -97,12 +128,21 @@ def test_default_goals_derive_from_optional_flag():
 
 # --- render_command ---------------------------------------------------------------------------
 
+
 def test_render_command_substitutes_and_tokenizes():
     cmd = render_command(
         "apb convert {input} --software {vendor} --output {output}",
         {"input": Path("/in/r.tsv"), "vendor": "diann", "output": Path("/out/m.h5mu")},
     )
-    assert cmd == ["apb", "convert", "/in/r.tsv", "--software", "diann", "--output", "/out/m.h5mu"]
+    assert cmd == [
+        "apb",
+        "convert",
+        "/in/r.tsv",
+        "--software",
+        "diann",
+        "--output",
+        "/out/m.h5mu",
+    ]
 
 
 def test_render_command_value_with_space_stays_one_token():
@@ -117,20 +157,36 @@ def test_render_command_raises_on_unfilled_placeholder():
 
 # --- expand_targets on the example corpus -----------------------------------------------------
 
+
 def _targets():
     return expand_targets(_REGISTRY, _EXAMPLE, output_root="/out", input_root="/in")
 
 
 def test_expand_targets_diann_dataset_is_mudata():
-    t = next(x for x in _targets() if x.module == "quant_lfq_ion_DIA_AIF" and x.stage == "convert")
+    t = next(
+        x
+        for x in _targets()
+        if x.module == "quant_lfq_ion_DIA_AIF" and x.stage == "convert"
+    )
     assert t.output == Path("/out/quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu")
     assert "--level" not in t.command
-    assert t.command[:3] == ["apb", "convert", "/in/quant_lfq_ion_DIA_AIF/run1/report.tsv"]
-    assert t.command[-2:] == ["--output", "/out/quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu"]
+    assert t.command[:3] == [
+        "apb",
+        "convert",
+        "/in/quant_lfq_ion_DIA_AIF/run1/report.tsv",
+    ]
+    assert t.command[-2:] == [
+        "--output",
+        "/out/quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu",
+    ]
 
 
 def test_expand_targets_maxquant_dataset_is_level_h5ad_with_level_flag():
-    t = next(x for x in _targets() if x.module == "quant_lfq_ion_DDA_QExactive" and x.stage == "convert")
+    t = next(
+        x
+        for x in _targets()
+        if x.module == "quant_lfq_ion_DDA_QExactive" and x.stage == "convert"
+    )
     assert t.output == Path("/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/ion.h5ad")
     assert t.command[-2:] == ["--level", "ion"]
     out_idx = t.command.index("--output")
@@ -138,15 +194,27 @@ def test_expand_targets_maxquant_dataset_is_level_h5ad_with_level_flag():
 
 
 def test_annotate_input_tracks_convert_artifact_suffix():
-    ann = next(x for x in _targets() if x.module == "quant_lfq_ion_DDA_QExactive" and x.stage == "annotate")
+    ann = next(
+        x
+        for x in _targets()
+        if x.module == "quant_lfq_ion_DDA_QExactive" and x.stage == "annotate"
+    )
     # single-level dataset → annotate consumes ion.h5ad and writes annotated.h5ad (suffix tracks).
-    assert ann.inputs[0] == Path("/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/ion.h5ad")
+    assert ann.inputs[0] == Path(
+        "/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/ion.h5ad"
+    )
     assert ann.inputs[1].name == "annotation.toml"  # source TOML also tracked
-    assert ann.output == Path("/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/annotated.h5ad")
+    assert ann.output == Path(
+        "/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/annotated.h5ad"
+    )
 
 
 def test_annotate_input_tracks_mudata_for_multilevel():
-    ann = next(x for x in _targets() if x.module == "quant_lfq_ion_DIA_AIF" and x.stage == "annotate")
+    ann = next(
+        x
+        for x in _targets()
+        if x.module == "quant_lfq_ion_DIA_AIF" and x.stage == "annotate"
+    )
     assert ann.inputs[0] == Path("/out/quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu")
     assert ann.output == Path("/out/quant_lfq_ion_DIA_AIF/diann-run1/annotated.h5mu")
 
@@ -158,11 +226,22 @@ def test_fasta_target_only_when_module_declares_fasta():
 
 def test_fasta_target_appears_when_declared():
     corpus = {
-        "input_root": "/in", "output_root": "/out",
-        "modules": {"m": {
-            "annotation": "/a.toml", "fasta": "/proteome.fasta",
-            "datasets": [{"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}],
-        }},
+        "input_root": "/in",
+        "output_root": "/out",
+        "modules": {
+            "m": {
+                "annotation": "/a.toml",
+                "fasta": "/proteome.fasta",
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
     targets = expand_targets(_REGISTRY, corpus)
     fasta = next(t for t in targets if t.stage == "fasta")
@@ -177,25 +256,49 @@ def test_fasta_extension_surfaces_with_zero_gui_code():
     and a fasta-enabled module gets a fasta coverage row — from registry + config, no GUI edits."""
     assert "fasta" in {s["name"] for s in _REGISTRY}
     corpus = {
-        "input_root": "/in", "output_root": "/out",
-        "modules": {"m": {
-            "annotation": "/a.toml", "fasta": "/p.fasta",
-            "datasets": [{"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}],
-        }},
+        "input_root": "/in",
+        "output_root": "/out",
+        "modules": {
+            "m": {
+                "annotation": "/a.toml",
+                "fasta": "/p.fasta",
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
-    stages_in_coverage = {row["stage"] for row in coverage(expand_targets(_REGISTRY, corpus))}
+    stages_in_coverage = {
+        row["stage"] for row in coverage(expand_targets(_REGISTRY, corpus))
+    }
     assert "fasta" in stages_in_coverage
 
 
 # --- coverage + clean_paths -------------------------------------------------------------------
 
+
 def test_coverage_flips_done_on_touch(tmp_path):
     corpus = {
-        "input_root": str(tmp_path / "in"), "output_root": str(tmp_path / "out"),
-        "modules": {"m": {
-            "annotation": "/a.toml",
-            "datasets": [{"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}],
-        }},
+        "input_root": str(tmp_path / "in"),
+        "output_root": str(tmp_path / "out"),
+        "modules": {
+            "m": {
+                "annotation": "/a.toml",
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
     targets = expand_targets(_REGISTRY, corpus)
     convert = next(t for t in targets if t.stage == "convert")
@@ -211,7 +314,11 @@ def test_clean_paths_scoping_and_input_root_guard():
     convert_only = clean_paths(targets, stage="convert", input_root="/in")
     assert all(p.name in {"mudata.h5mu", "ion.h5ad"} for p in convert_only)
     one = clean_paths(
-        targets, scope="dataset", module="quant_lfq_ion_DIA_AIF", dataset="diann-run1", input_root="/in"
+        targets,
+        scope="dataset",
+        module="quant_lfq_ion_DIA_AIF",
+        dataset="diann-run1",
+        input_root="/in",
     )
     assert all(str(p).startswith("/out/quant_lfq_ion_DIA_AIF/diann-run1/") for p in one)
 
@@ -234,8 +341,10 @@ def test_clean_guard_survives_python_dash_O():
         "except CleanGuardError:\n"
         "    print('RAISED')\n"
     )
-    out = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)
-    assert out.stdout.strip() == "RAISED", (out.stdout + out.stderr)
+    out = subprocess.run(
+        [sys.executable, "-O", "-c", code], capture_output=True, text=True
+    )
+    assert out.stdout.strip() == "RAISED", out.stdout + out.stderr
 
 
 def test_descendants_are_transitive_downstream_stages():
@@ -245,6 +354,7 @@ def test_descendants_are_transitive_downstream_stages():
 
 
 # --- Target carries vendor/level; the stage graph is topology-as-data (§13) -------------------
+
 
 def test_target_carries_vendor_and_level():
     ts = _targets()
@@ -260,9 +370,16 @@ def test_stage_order_is_topological():
 
 
 def test_basket_names_and_stage_by_basket_derive_from_registry():
-    assert basket_names(_REGISTRY) == ["inputs", "converted", "sample annotated", "fasta annotated"]
+    assert basket_names(_REGISTRY) == [
+        "inputs",
+        "converted",
+        "sample annotated",
+        "fasta annotated",
+    ]
     assert stage_by_basket(_REGISTRY) == {
-        "converted": "convert", "sample annotated": "annotate", "fasta annotated": "fasta",
+        "converted": "convert",
+        "sample annotated": "annotate",
+        "fasta annotated": "fasta",
     }
 
 
@@ -271,38 +388,78 @@ def test_expand_targets_derives_edges_and_reconnects_over_skipped_optional_stage
     # resource but NOT `mid`'s → `mid` is skipped and `tail` reconnects to the nearest emitted
     # upstream (convert), proving edges come from depends_on, not a hardcoded chain (§13.1/§13.3).
     reg = [
-        {"name": "convert", "scope": "dataset", "basket": "converted", "output_pattern": "x",
-         "command": "apb convert {input} --software {vendor} --params {params} --output {output}",
-         "depends_on": []},
-        {"name": "mid", "scope": "dataset", "basket": "midb", "output_pattern": "x", "artifact": "mid",
-         "command": "tool {input} {midres} --output {output}", "depends_on": ["convert"],
-         "resource": "midres"},
-        {"name": "tail", "scope": "dataset", "basket": "tailb", "output_pattern": "x", "artifact": "tail",
-         "command": "tool {input} {tailres} --output {output}", "depends_on": ["mid"],
-         "resource": "tailres"},
+        {
+            "name": "convert",
+            "scope": "dataset",
+            "basket": "converted",
+            "output_pattern": "x",
+            "command": "apb convert {input} --software {vendor} --params {params} --output {output}",
+            "depends_on": [],
+        },
+        {
+            "name": "mid",
+            "scope": "dataset",
+            "basket": "midb",
+            "output_pattern": "x",
+            "artifact": "mid",
+            "command": "tool {input} {midres} --output {output}",
+            "depends_on": ["convert"],
+            "resource": "midres",
+        },
+        {
+            "name": "tail",
+            "scope": "dataset",
+            "basket": "tailb",
+            "output_pattern": "x",
+            "artifact": "tail",
+            "command": "tool {input} {tailres} --output {output}",
+            "depends_on": ["mid"],
+            "resource": "tailres",
+        },
     ]
     corpus = {
-        "input_root": "/in", "output_root": "/out",
-        "modules": {"m": {"tailres": "/t.txt", "datasets": [
-            {"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}
-        ]}},
+        "input_root": "/in",
+        "output_root": "/out",
+        "modules": {
+            "m": {
+                "tailres": "/t.txt",
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
     targets = expand_targets(reg, corpus)
     assert {t.stage for t in targets} == {"convert", "tail"}  # mid skipped (no midres)
     tail = next(t for t in targets if t.stage == "tail")
-    assert tail.inputs[0] == Path("/out/m/diann-d/mudata.h5mu")  # reconnected past `mid`
+    assert tail.inputs[0] == Path(
+        "/out/m/diann-d/mudata.h5mu"
+    )  # reconnected past `mid`
 
 
 # --- baskets (decision 10, §8): one basket per dataset = furthest CONTIGUOUS stage -------------
 
+
 def _basket_corpus(tmp_path, *, annotation=True, fasta=False):
-    module = {"datasets": [{"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}]}
+    module = {
+        "datasets": [
+            {"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}
+        ]
+    }
     if annotation:
         module["annotation"] = "/a.toml"
     if fasta:
         module["fasta"] = "/p.fasta"
-    return {"input_root": str(tmp_path / "in"), "output_root": str(tmp_path / "out"),
-            "modules": {"m": module}}
+    return {
+        "input_root": str(tmp_path / "in"),
+        "output_root": str(tmp_path / "out"),
+        "modules": {"m": module},
+    }
 
 
 def _touch(target):
@@ -322,7 +479,11 @@ def test_baskets_dataset_moves_downstream_as_artifacts_appear(tmp_path):
     bk = baskets(targets, _REGISTRY)
     assert _in_basket(bk) == {"converted": ["diann-d"]}
     row = bk["converted"][0]
-    assert row["next_stage"] == "annotate" and row["runnable"] and row["software"] == "diann"
+    assert (
+        row["next_stage"] == "annotate"
+        and row["runnable"]
+        and row["software"] == "diann"
+    )
 
     _touch(next(t for t in targets if t.stage == "annotate"))
     assert _in_basket(baskets(targets, _REGISTRY)) == {"sample annotated": ["diann-d"]}
@@ -353,7 +514,9 @@ def test_baskets_convert_only_module_is_terminal_in_converted(tmp_path):
 
 
 def test_baskets_annotation_without_fasta_is_terminal_in_sample_annotated(tmp_path):
-    targets = expand_targets(_REGISTRY, _basket_corpus(tmp_path, annotation=True, fasta=False))
+    targets = expand_targets(
+        _REGISTRY, _basket_corpus(tmp_path, annotation=True, fasta=False)
+    )
     for stage in ("convert", "annotate"):
         _touch(next(t for t in targets if t.stage == stage))
     row = baskets(targets, _REGISTRY)["sample annotated"][0]
@@ -370,13 +533,25 @@ def test_targets_for_selects_the_rows_at_a_stage():
 
 # --- problems: per-dataset issues surfaced in the baskets (§8, review round 2) ----------------
 
+
 def test_problems_flags_missing_declared_files(tmp_path):
     # Nothing on disk → input + params both missing; module annotation TOML missing too.
     corpus = {
-        "input_root": str(tmp_path / "in"), "output_root": str(tmp_path / "out"),
-        "modules": {"m": {"annotation": "ann.toml", "datasets": [
-            {"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}
-        ]}},
+        "input_root": str(tmp_path / "in"),
+        "output_root": str(tmp_path / "out"),
+        "modules": {
+            "m": {
+                "annotation": "ann.toml",
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ],
+            }
+        },
     }
     targets = expand_targets(_REGISTRY, corpus)
     probs = problems(corpus, targets)[("m", "diann-d")]
@@ -391,30 +566,60 @@ def test_problems_clean_when_files_exist_and_no_warning(tmp_path):
     (in_root / "m" / "r.tsv").touch()
     (in_root / "m" / "r.log").touch()
     corpus = {
-        "input_root": str(in_root), "output_root": str(tmp_path / "out"),
-        "modules": {"m": {"datasets": [
-            {"name": "diann-d", "vendor": "diann", "input": "m/r.tsv", "params": "m/r.log"}
-        ]}},
+        "input_root": str(in_root),
+        "output_root": str(tmp_path / "out"),
+        "modules": {
+            "m": {
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "m/r.tsv",
+                        "params": "m/r.log",
+                    }
+                ]
+            }
+        },
     }
     targets = expand_targets(_REGISTRY, corpus)
     assert problems(corpus, targets) == {}
 
 
-def test_problems_reads_runtime_warning_from_provenance_and_baskets_surface_it(tmp_path):
+def test_problems_reads_runtime_warning_from_provenance_and_baskets_surface_it(
+    tmp_path,
+):
     import json as _json
+
     out = tmp_path / "out"
     corpus = {
-        "input_root": str(tmp_path / "in"), "output_root": str(out),
-        "modules": {"m": {"datasets": [
-            {"name": "diann-d", "vendor": "diann", "input": "r.tsv", "params": "r.log"}
-        ]}},
+        "input_root": str(tmp_path / "in"),
+        "output_root": str(out),
+        "modules": {
+            "m": {
+                "datasets": [
+                    {
+                        "name": "diann-d",
+                        "vendor": "diann",
+                        "input": "r.tsv",
+                        "params": "r.log",
+                    }
+                ]
+            }
+        },
     }
     targets = expand_targets(_REGISTRY, corpus)
     conv = next(t for t in targets if t.stage == "convert")
     conv.output.parent.mkdir(parents=True)
     conv.output.touch()  # converted
     (conv.output.parent / "provenance.json").write_text(
-        _json.dumps({"convert": {"stage": "convert", "warning": "ParamsError: not a DIA-NN file"}})
+        _json.dumps(
+            {
+                "convert": {
+                    "stage": "convert",
+                    "warning": "ParamsError: not a DIA-NN file",
+                }
+            }
+        )
     )
     probs = problems(corpus, targets)
     assert any("not a DIA-NN file" in p for p in probs[("m", "diann-d")])
@@ -441,12 +646,17 @@ def test_problems_missing_artifact_without_log_is_pending_not_failed(tmp_path):
     # Not-yet-run dataset: no artifact and no log → pending (never flagged as "failed").
     corpus = _basket_corpus(tmp_path)
     targets = expand_targets(_REGISTRY, corpus)
-    assert not any("failed" in p for p in problems(corpus, targets).get(("m", "diann-d"), []))
+    assert not any(
+        "failed" in p for p in problems(corpus, targets).get(("m", "diann-d"), [])
+    )
 
 
 # --- decision-5 enforcement: the Snakefile really imports the core ----------------------------
 
+
 def test_snakefile_imports_pipeline_not_hardcoded():
     snakefile = (_REPO_ROOT / "workflow" / "Snakefile").read_text()
-    assert "from apb_studio.pipeline import" in snakefile, "Snakefile must derive work from the core"
+    assert "from apb_studio.pipeline import" in snakefile, (
+        "Snakefile must derive work from the core"
+    )
     assert "expand_targets" in snakefile
