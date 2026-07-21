@@ -1,4 +1,6 @@
-# Review: workflow dashboard handoff / phase 8 changes
+# ARCHIVED: Review of workflow dashboard handoff / phase 8 changes
+
+Status: findings resolved; archived 2026-07-20.
 
 Review target: [HANDOFF_workflow_dashboard_plan.md](HANDOFF_workflow_dashboard_plan.md)
 

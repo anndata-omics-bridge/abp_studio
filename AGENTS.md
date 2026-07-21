@@ -7,10 +7,10 @@ modules) and shows how far each dataset has progressed.
 This repo is a **consumer** of APB — it never reimplements conversion. Dependency direction is
 `apb_studio → APB`, never the reverse.
 
-## The plan
+## Historical design
 
-Authoritative functional spec (what we expose and how):
-[TODO/TODO_workflow_dashboard_plan.md](TODO/TODO_workflow_dashboard_plan.md)
+The implemented dashboard's historical functional spec is archived at
+[TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md).
 
 ## Architecture in one paragraph
 
@@ -44,8 +44,8 @@ The `apb` CLI exists (`apb convert/annotate/fasta/validate/list`); apb is a pure
 pipeline is **implemented** against the real CLI — `pipeline.py` (the registry-driven core: paths +
 rendered commands + coverage, the single source of truth), a wildcard-output `Snakefile`, an
 `execution.py`/`jobrunner.py` background-run layer, a per-rule `provenance.py` sidecar, and a Dash
-`dashboard.py` (coverage grid + Run/Clean triggers). See [the plan](TODO/TODO_workflow_dashboard_plan.md)
-(§11 has the per-phase status).
+`dashboard.py` (coverage grid + Run/Clean triggers). See the
+[archived design](TODO/Archive/TODO_workflow_dashboard_plan.md) for its original decision record.
 
 Stages, all driven from `config/registry.yaml`: `apb convert <data> --software <v> --params <p>
 --output <o>` → `mudata.h5mu` (one read; `<level>.h5ad` when a module declares `level` — decision

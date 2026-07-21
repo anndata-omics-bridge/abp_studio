@@ -215,7 +215,7 @@ def test_clean_cascade_removes_stray_downstream_artifact(tmp_path):
         "output_root": str(tmp_path / "out"),
         "modules": {
             "m": {
-                "annotation": "/a.toml",
+                "annotation": "/a.json",
                 "fasta": "/p.fasta",
                 "datasets": [
                     {

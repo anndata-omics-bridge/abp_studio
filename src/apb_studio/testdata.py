@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -13,12 +14,15 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 import apb_studio
 from apb_studio.jobrunner import Job, JobStatus, inspect_job, make_run_key, start_job
+from anndata_proteomics.readers.summary import describe_path
 
 STUDIO_ROOT = Path(apb_studio.__file__).resolve().parents[2]
 APB_ROOT = STUDIO_ROOT.parent / "apb"
 DEFAULT_TEST_DATA_DIR = (APB_ROOT / "test_data_download").resolve()
 
 _JOBS: dict[str, Job] = {}
+LEVELS = ("ion", "fragment", "peptidoform", "peptide", "protein")
+ALL_LEVELS = "all"
 
 
 class TestDataPaths(BaseModel):
@@ -128,6 +132,11 @@ def dataset_dir(paths: TestDataPaths, row: dict) -> Path:
     return paths.cache_dir / str(row["repo_name"]) / str(row["intermediate_hash"])
 
 
+def converted_dir(paths: TestDataPaths, row: dict) -> Path:
+    """Return the directory in which converted artifacts live for one fixture."""
+    return dataset_dir(paths, row)
+
+
 def metadata_path(paths: TestDataPaths, row: dict) -> Path:
     """Return the downloaded ProteoBench submission JSON path."""
     repo = str(row["repo_name"])
@@ -203,6 +212,38 @@ def testdata_command(
     raise ValueError(f"Unknown test-data action: {action}")
 
 
+def convert_command(paths: TestDataPaths, row: dict, level: str) -> list[str]:
+    """Build an ``apb convert`` command for one downloaded fixture."""
+    directory = converted_dir(paths, row)
+    inputs = sorted(directory.glob("input_file.*"))
+    parameters = sorted(directory.glob("param_0.*"))
+    if len(inputs) != 1:
+        raise ValueError(
+            f"Expected exactly one downloaded input_file.* for the selected fixture, got {len(inputs)}"
+        )
+    if len(parameters) != 1:
+        raise ValueError(
+            f"Expected exactly one param_0.* for the selected fixture, got {len(parameters)}"
+        )
+    if level not in {ALL_LEVELS, *LEVELS}:
+        raise ValueError(f"Unknown conversion target: {level}")
+
+    executable = shutil.which("apb") or "apb"
+    command = [executable, "convert", str(inputs[0])]
+    output_name = "mudata" if level == ALL_LEVELS else level
+    if level != ALL_LEVELS:
+        command.append(level)
+    command.extend(
+        [
+            "--params",
+            str(parameters[0]),
+            "--output",
+            str(directory / output_name),
+        ]
+    )
+    return command
+
+
 def launch(
     action: str,
     paths: TestDataPaths,
@@ -219,6 +260,138 @@ def launch(
         cwd=APB_ROOT,
     )
     return job_id
+
+
+def launch_convert(paths: TestDataPaths, row: dict, level: str) -> str:
+    """Launch one APB conversion and return its process-registry identifier."""
+    paths.create()
+    job_id = uuid.uuid4().hex
+    fixture = str(row.get("intermediate_hash", "fixture"))[:12]
+    _JOBS[job_id] = start_job(
+        convert_command(paths, row, level),
+        paths.log_dir / f"convert-{fixture}-{level}.log",
+        cwd=APB_ROOT,
+    )
+    return job_id
+
+
+def container_rows(paths: TestDataPaths) -> dict[str, list[dict]]:
+    """Return MuData and per-level table rows for all converted fixtures."""
+    tables = {"mudata": [], **{level: [] for level in LEVELS}}
+    for catalog_row in catalog_rows(paths):
+        directory = converted_dir(paths, catalog_row)
+        if not directory.exists():
+            continue
+        containers = sorted(directory.glob("*.h5ad")) + sorted(directory.glob("*.h5mu"))
+        for path in containers:
+            description = _description_for(path)
+            if description["container_type"] == "mudata":
+                tables["mudata"].append(_mudata_row(catalog_row, path, description))
+                for modality, modality_description in description["modalities"].items():
+                    level = modality_description["quantification"].get("level")
+                    if level in tables:
+                        tables[level].append(
+                            _level_row(
+                                catalog_row,
+                                path,
+                                modality_description,
+                                mudata=True,
+                                modality=modality,
+                            )
+                        )
+                continue
+            level = description["quantification"].get("level")
+            if level in tables:
+                tables[level].append(
+                    _level_row(
+                        catalog_row,
+                        path,
+                        description,
+                        mudata=False,
+                        modality=None,
+                    )
+                )
+    return tables
+
+
+def container_summary(path: Path | str, modality: str | None = None) -> str:
+    """Format one cached APB descriptive summary for the detail pane."""
+    container = Path(path)
+    description = _description_for(container, modality=modality)
+    return json.dumps(description, indent=2, sort_keys=True)
+
+
+def _description_for(path: Path, modality: str | None = None) -> dict:
+    resolved = path.expanduser().resolve()
+    return _cached_description(str(resolved), resolved.stat().st_mtime_ns, modality)
+
+
+@lru_cache(maxsize=512)
+def _cached_description(
+    path: str,
+    _mtime_ns: int,
+    modality: str | None,
+) -> dict:
+    return describe_path(path, modality=modality)
+
+
+def _base_container_row(catalog_row: dict, path: Path) -> dict:
+    return {
+        "dataset": catalog_row.get("intermediate_hash", path.parent.name),
+        "module": catalog_row.get("module", ""),
+        "path": str(path),
+    }
+
+
+def _mudata_row(catalog_row: dict, path: Path, description: dict) -> dict:
+    quantification = description["quantification"]
+    modality_quantification = [
+        value["quantification"] for value in description["modalities"].values()
+    ]
+    software_names = sorted(
+        {
+            value["software_name"]
+            for value in modality_quantification
+            if value.get("software_name")
+        }
+    )
+    software_versions = sorted(
+        {
+            value["software_version"]
+            for value in modality_quantification
+            if value.get("software_version")
+        }
+    )
+    return {
+        **_base_container_row(catalog_row, path),
+        "software_name": ", ".join(software_names),
+        "software_version": ", ".join(software_versions),
+        "n_obs": quantification["n_runs"],
+        "n_var": quantification["n_features"],
+        "modalities": ", ".join(quantification["modalities"]),
+        "modality": None,
+    }
+
+
+def _level_row(
+    catalog_row: dict,
+    path: Path,
+    description: dict,
+    *,
+    mudata: bool,
+    modality: str | None,
+) -> dict:
+    quantification = description["quantification"]
+    return {
+        **_base_container_row(catalog_row, path),
+        "software_name": quantification.get("software_name") or "",
+        "software_version": quantification.get("software_version") or "",
+        "n_obs": quantification["n_runs"],
+        "n_var": quantification["n_features"],
+        "layers": ", ".join(quantification["layers"]),
+        "mudata": mudata,
+        "modality": modality,
+    }
 
 
 def job_status(job_id: str | None) -> JobStatus | None:

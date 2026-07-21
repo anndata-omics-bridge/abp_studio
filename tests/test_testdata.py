@@ -1,13 +1,19 @@
 import json
+import os
 from pathlib import Path
 
+import anndata as ad
+import mudata
+import numpy as np
 import pandas as pd
 import pytest
+from mudata import MuData
 from pydantic import ValidationError
 
 from apb_studio import testdata
 from apb_studio.jobrunner import JobStatus
 from apb_studio.testdata_app import create_app, data_table
+from anndata_proteomics.readers.summary import store_quantification_summary
 
 
 def _paths(root: Path) -> testdata.TestDataPaths:
@@ -23,6 +29,24 @@ def _row() -> dict:
         "software_version": "2.0",
         "nr_feature": 10,
     }
+
+
+def _adata(level: str, prefix: str = "", n_features: int = 2) -> ad.AnnData:
+    values = np.arange(2 * n_features, dtype=float).reshape(2, n_features)
+    obj = ad.AnnData(
+        X=values.copy(),
+        obs=pd.DataFrame(index=["run1", "run2"]),
+        var=pd.DataFrame(
+            index=[f"{prefix}feature{index}" for index in range(n_features)]
+        ),
+        layers={"intensity": values.copy()},
+    )
+    obj.uns["anndata_proteomics"] = {
+        "quantification_level": level,
+        "software_name": "Synthetic",
+    }
+    store_quantification_summary(obj)
+    return obj
 
 
 def test_catalog_rows_reports_download_as_soon_as_input_exists(
@@ -69,6 +93,35 @@ def test_testdata_command_uses_explicit_artifact_paths(tmp_path: Path) -> None:
     assert command[-4:] == ["--strategy", "all", "--module", "dia_aif"]
     assert str(paths.catalog_csv) in command
     assert str(paths.selection_csv) in command
+
+
+def test_convert_command_uses_extensionless_output_basename(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    directory = testdata.dataset_dir(paths, _row())
+    directory.mkdir(parents=True)
+    (directory / "input_file.tsv").write_text("x\n")
+    (directory / "param_0.txt").write_text("params\n")
+
+    command = testdata.convert_command(paths, _row(), "ion")
+    output_index = command.index("--output")
+
+    assert command[2] == str(directory / "input_file.tsv")
+    assert command[3] == "ion"
+    assert command[output_index + 1] == str(directory / "ion")
+    assert Path(command[output_index + 1]).suffix == ""
+
+
+def test_convert_command_all_levels_omits_level_argument(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    directory = testdata.dataset_dir(paths, _row())
+    directory.mkdir(parents=True)
+    (directory / "input_file.tsv").write_text("x\n")
+    (directory / "param_0.txt").write_text("params\n")
+
+    command = testdata.convert_command(paths, _row(), testdata.ALL_LEVELS)
+
+    assert command[1:3] == ["convert", str(directory / "input_file.tsv")]
+    assert command[command.index("--output") + 1] == str(directory / "mudata")
 
 
 def test_clean_command_uses_selected_data_root(tmp_path: Path) -> None:
@@ -122,7 +175,11 @@ def test_dash_app_registers_callbacks() -> None:
     app = create_app()
 
     assert app.layout is not None
-    assert len(app.callback_map) == 6
+    assert len(app.callback_map) == 10
+    callback_outputs = "\n".join(app.callback_map)
+    assert "config-section-editor.value" in callback_outputs
+    assert "config-section-editor.readOnly" in callback_outputs
+    assert "config-effective-editor.value" not in callback_outputs
 
 
 def test_data_table_uses_continuous_mouse_wheel_scrolling() -> None:
@@ -151,3 +208,55 @@ def test_failed_job_marks_log_tab_red(tmp_path: Path) -> None:
     assert "archive mismatch" in log_text
     assert "ERROR" in label
     assert style["color"] == "#b00020"
+
+
+def test_container_rows_expand_mudata_modalities_and_standalone(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    pd.DataFrame([_row()]).to_csv(paths.catalog_csv, index=False)
+    directory = testdata.dataset_dir(paths, _row())
+    directory.mkdir(parents=True)
+    _adata("ion").write_h5ad(directory / "ion.h5ad")
+    with mudata.set_options(pull_on_update=False):
+        mdata = MuData(
+            {
+                "peptide": _adata("peptide", "pep:"),
+                "protein": _adata("protein", "prt:"),
+            },
+            axis=0,
+        )
+    store_quantification_summary(mdata)
+    mdata.write_h5mu(directory / "mudata.h5mu")
+
+    rows = testdata.container_rows(paths)
+
+    assert len(rows["mudata"]) == 1
+    assert len(rows["ion"]) == 1
+    assert rows["ion"][0]["mudata"] is False
+    assert rows["peptide"][0]["mudata"] is True
+    assert rows["peptide"][0]["modality"] == "peptide"
+    assert rows["protein"][0]["modality"] == "protein"
+    peptide_summary = json.loads(
+        testdata.container_summary(directory / "mudata.h5mu", "peptide")
+    )
+    assert peptide_summary["quantification"]["level"] == "peptide"
+    assert "modalities" not in peptide_summary
+
+
+def test_container_rows_cache_invalidates_on_mtime_change(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    pd.DataFrame([_row()]).to_csv(paths.catalog_csv, index=False)
+    directory = testdata.dataset_dir(paths, _row())
+    directory.mkdir(parents=True)
+    path = directory / "ion.h5ad"
+    _adata("ion", n_features=2).write_h5ad(path)
+    first = testdata.container_rows(paths)
+    old_mtime = path.stat().st_mtime_ns
+
+    _adata("ion", n_features=3).write_h5ad(path)
+    os.utime(path, ns=(path.stat().st_atime_ns, old_mtime + 1))
+    second = testdata.container_rows(paths)
+
+    assert first["ion"][0]["n_var"] == 2
+    assert second["ion"][0]["n_var"] == 3

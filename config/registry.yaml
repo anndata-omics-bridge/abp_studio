@@ -40,7 +40,7 @@ stages:
     depends_on: []
 
   # Join sample annotations onto obs. Container-agnostic: takes the .h5mu (or a level .h5ad) and
-  # one annotation TOML; writes obs once. Gated on the module-level `annotation:` (its resource).
+  # one annotation JSON file; writes obs once. Gated on the module-level `annotation:` resource.
   - name: annotate
     scope: dataset
     basket: sample annotated

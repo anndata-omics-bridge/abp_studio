@@ -23,8 +23,8 @@ def _fixture_corpus(tmp_path):
         "quant_lfq_ion_DIA_AIF/run1/report.log.txt": None,
         "quant_lfq_ion_DDA_QExactive/runA/evidence.txt": None,
         "quant_lfq_ion_DDA_QExactive/runA/parameters.txt": None,
-        "diann_annotation.toml": None,
-        "mq_annotation.toml": None,
+        "diann_annotation.json": None,
+        "mq_annotation.json": None,
     }
     for rel in files:
         p = in_root / rel
@@ -35,7 +35,7 @@ def _fixture_corpus(tmp_path):
         "output_root": str(out_root),
         "modules": {
             "quant_lfq_ion_DIA_AIF": {
-                "annotation": str(in_root / "diann_annotation.toml"),
+                "annotation": str(in_root / "diann_annotation.json"),
                 "datasets": [
                     {
                         "name": "diann-run1",
@@ -46,7 +46,7 @@ def _fixture_corpus(tmp_path):
                 ],
             },
             "quant_lfq_ion_DDA_QExactive": {
-                "annotation": str(in_root / "mq_annotation.toml"),
+                "annotation": str(in_root / "mq_annotation.json"),
                 "datasets": [
                     {
                         "name": "maxquant-runA",

@@ -23,13 +23,19 @@ stage is done. No separate database.
 ## Stages
 
 `convert` → `mudata.h5mu` (one read → the multi-level MuData; `--level X` is the single-`.h5ad`
-opt-in) · `annotate` (container-agnostic `obs`, one annotation TOML) · `fasta` (optional, protein
+opt-in) · `annotate` (container-agnostic `obs`, one annotation JSON file) · `fasta` (optional, protein
 `var`).
 
-## The plan
+`make testdata-app` runs the unified test-data application. Its **Configuration** tab catalogs
+APB's software-version JSON documents and can load external parsing-rule or annotation JSON files.
+Selecting a document opens read-only `Base` and level tabs containing the raw source sections.
+One section can be explicitly edited at a time; saves are enabled only for valid changes and use
+whole-document Pydantic validation, stale-file protection, and atomic replacement.
 
-Full functional spec:
-[TODO/TODO_workflow_dashboard_plan.md](TODO/TODO_workflow_dashboard_plan.md)
+## Historical design
+
+The implemented dashboard's historical functional spec is archived at
+[TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md).
 
 ## Quick start
 

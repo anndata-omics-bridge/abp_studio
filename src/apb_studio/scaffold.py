@@ -4,7 +4,7 @@ corpus of hundreds of files without hand-authoring config.
 It walks ``<data_root>/<module>/<dataset>/`` directories that hold a vendor output + a parameter
 file, detects the **vendor** (reusing apb's ``recognize_software`` — no bespoke sniffing) and the
 quantification **level** (from the module directory name), and writes a ``corpus.yaml`` grouped by
-(module, vendor). Run it, review/edit the result (e.g. add ``annotation:`` TOMLs), then point the
+(module, vendor). Run it, review/edit the result (e.g. add ``annotation:`` JSON files), then point the
 dashboard/Snakefile at it. The detected vendor lands *in* the config — decision 14 (declared, not
 sniffed at run time); the scan only bootstraps the declaration.
 

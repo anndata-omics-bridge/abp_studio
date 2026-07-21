@@ -1,4 +1,6 @@
-# Handoff — kanban dashboard redesign + phase 8 implementation
+# ARCHIVED: Handoff — kanban dashboard redesign + phase 8 implementation
+
+Status: implemented and superseded by the Plotly Dash applications; archived 2026-07-20.
 
 **Date:** 2026-07-01 · **Author:** Claude (pairing session) · **Reviewer:** witold
 **Companion:** [the plan](TODO_workflow_dashboard_plan.md) (authoritative spec — this is the change log for it)
@@ -67,7 +69,7 @@ yours to smoke-test (`make app`) per our rule (*I build code + tests, you run th
 | [tests/test_pipeline.py](../tests/test_pipeline.py) | +10 tests: `Target` vendor/level, `stage_order`, `basket_names`/`stage_by_basket`, edge-derivation + **reconnection** (synthetic middle stage), and `baskets` (moves downstream, exactly-one-basket, non-contiguous→lower, convert-only terminal, annotation-without-fasta terminal), `targets_for`. |
 | [tests/test_execution.py](../tests/test_execution.py) | +2 tests: `clean_targets` deletes only the given rows (downstream/other modules untouched) + input-root guard. |
 | [tests/test_registry.py](../tests/test_registry.py) | +2 tests: every stage has a `basket`; non-root stages declare `artifact` + `resource`. |
-| [TODO/TODO_workflow_dashboard_plan.md](TODO_workflow_dashboard_plan.md) | Decision 10 rewritten; §8 rewritten as the kanban GUI; §7.2 API updated; §13 (Extensibility — DAG) added; phase 8 + status; all critic fixes folded in. |
+| [TODO_workflow_dashboard_plan.md](TODO_workflow_dashboard_plan.md) | Decision 10 rewritten; §8 rewritten as the kanban GUI; §7.2 API updated; §13 (Extensibility — DAG) added; phase 8 + status; all critic fixes folded in. |
 
 **Not touched (verified still correct):** `workflow/Snakefile` (outputs/commands unchanged, so its
 target lookups still resolve — confirmed by the live `snakemake -n` test), `registry.py`,

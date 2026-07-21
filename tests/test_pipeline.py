@@ -177,7 +177,7 @@ def test_expand_targets_diann_dataset_is_mudata():
     ]
     assert t.command[-2:] == [
         "--output",
-        "/out/quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu",
+        "/out/quant_lfq_ion_DIA_AIF/diann-run1/mudata",
     ]
 
 
@@ -190,7 +190,7 @@ def test_expand_targets_maxquant_dataset_is_level_h5ad_with_level_flag():
     assert t.output == Path("/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/ion.h5ad")
     assert t.command[-2:] == ["--level", "ion"]
     out_idx = t.command.index("--output")
-    assert t.command[out_idx + 1].endswith("ion.h5ad")
+    assert t.command[out_idx + 1].endswith("ion")
 
 
 def test_annotate_input_tracks_convert_artifact_suffix():
@@ -203,7 +203,7 @@ def test_annotate_input_tracks_convert_artifact_suffix():
     assert ann.inputs[0] == Path(
         "/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/ion.h5ad"
     )
-    assert ann.inputs[1].name == "annotation.toml"  # source TOML also tracked
+    assert ann.inputs[1].name == "annotation.json"  # source JSON also tracked
     assert ann.output == Path(
         "/out/quant_lfq_ion_DDA_QExactive/maxquant-runA/annotated.h5ad"
     )
@@ -230,7 +230,7 @@ def test_fasta_target_appears_when_declared():
         "output_root": "/out",
         "modules": {
             "m": {
-                "annotation": "/a.toml",
+                "annotation": "/a.json",
                 "fasta": "/proteome.fasta",
                 "datasets": [
                     {
@@ -260,7 +260,7 @@ def test_fasta_extension_surfaces_with_zero_gui_code():
         "output_root": "/out",
         "modules": {
             "m": {
-                "annotation": "/a.toml",
+                "annotation": "/a.json",
                 "fasta": "/p.fasta",
                 "datasets": [
                     {
@@ -288,7 +288,7 @@ def test_coverage_flips_done_on_touch(tmp_path):
         "output_root": str(tmp_path / "out"),
         "modules": {
             "m": {
-                "annotation": "/a.toml",
+                "annotation": "/a.json",
                 "datasets": [
                     {
                         "name": "diann-d",
@@ -452,7 +452,7 @@ def _basket_corpus(tmp_path, *, annotation=True, fasta=False):
         ]
     }
     if annotation:
-        module["annotation"] = "/a.toml"
+        module["annotation"] = "/a.json"
     if fasta:
         module["fasta"] = "/p.fasta"
     return {
@@ -535,13 +535,13 @@ def test_targets_for_selects_the_rows_at_a_stage():
 
 
 def test_problems_flags_missing_declared_files(tmp_path):
-    # Nothing on disk → input + params both missing; module annotation TOML missing too.
+    # Nothing on disk → input + params both missing; module annotation JSON missing too.
     corpus = {
         "input_root": str(tmp_path / "in"),
         "output_root": str(tmp_path / "out"),
         "modules": {
             "m": {
-                "annotation": "ann.toml",
+                "annotation": "ann.json",
                 "datasets": [
                     {
                         "name": "diann-d",
@@ -557,7 +557,7 @@ def test_problems_flags_missing_declared_files(tmp_path):
     probs = problems(corpus, targets)[("m", "diann-d")]
     assert any("input file missing" in p for p in probs)
     assert any("params file missing" in p for p in probs)
-    assert any("annotation TOML missing" in p for p in probs)
+    assert any("annotation JSON missing" in p for p in probs)
 
 
 def test_problems_clean_when_files_exist_and_no_warning(tmp_path):

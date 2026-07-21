@@ -3,6 +3,15 @@ revision = 3
 requires-python = ">=3.13"
 
 [[package]]
+name = "ahocorapy"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/b1/0dcfd841383d33e6e05a0a60da14109008bbf7f5ca2d4d6582430916492a/ahocorapy-1.8.0.tar.gz", hash = "sha256:931c05a90318fce3000baa0a0400f57934bb30b2ce54a6fff8b5a017812950aa", size = 13787, upload-time = "2026-07-21T12:17:43.235Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/27/d64eeec1361b27ca28a661d94505e89b35185182ee1a3851638b94887e17/ahocorapy-1.8.0-py2.py3-none-any.whl", hash = "sha256:787bb3c7bcf3b9ba87371ad53e5aac626c65c57ab2c67701bff9a813eb01d9e1", size = 10572, upload-time = "2026-07-21T12:17:41.96Z" },
+]
+
+[[package]]
 name = "anndata"
 version = "0.12.18"
 source = { registry = "https://pypi.org/simple" }
@@ -35,10 +44,11 @@ dependencies = [
     { name = "mudata" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "prozor" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "requests" },
-    { name = "toml" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
@@ -53,15 +63,18 @@ requires-dist = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pre-commit", marker = "extra == 'dev'" },
+    { name = "prozor", git = "https://github.com/anndata-omics-bridge/prozor.git?rev=0cf5875ac7730fab68d30fac411553ff580df883" },
+    { name = "prozor", extras = ["fast"], marker = "extra == 'dev'", git = "https://github.com/anndata-omics-bridge/prozor.git?rev=0cf5875ac7730fab68d30fac411553ff580df883" },
+    { name = "prozor", extras = ["fast"], marker = "extra == 'fast'", git = "https://github.com/anndata-omics-bridge/prozor.git?rev=0cf5875ac7730fab68d30fac411553ff580df883" },
     { name = "pyarrow" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "requests" },
     { name = "ruff", marker = "extra == 'dev'" },
-    { name = "toml" },
+    { name = "scipy" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "fast"]
 
 [package.metadata.requires-dev]
 docs = [{ name = "mkdocs-material", specifier = ">=9.5" }]
@@ -84,6 +97,7 @@ dependencies = [
     { name = "anndata-proteomics" },
     { name = "dash" },
     { name = "dash-ag-grid" },
+    { name = "monaco-dash-editor" },
     { name = "mudata" },
     { name = "pandas" },
     { name = "platformdirs" },
@@ -104,6 +118,7 @@ requires-dist = [
     { name = "anndata-proteomics", editable = "../apb" },
     { name = "dash", specifier = ">=3" },
     { name = "dash-ag-grid" },
+    { name = "monaco-dash-editor", specifier = ">=0.0.2" },
     { name = "mudata" },
     { name = "pandas" },
     { name = "platformdirs", specifier = ">=4" },
@@ -750,6 +765,15 @@ wheels = [
 ]
 
 [[package]]
+name = "monaco-dash-editor"
+version = "0.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/61/4bc66cbd6e65a765732888f27582b4c5d489eacc4f25246d38f5d2a4672e/monaco_dash_editor-0.0.2.tar.gz", hash = "sha256:49760715482769785fb59a3ab6de21be89a2c166d21d2775276e3e7a8a506d3f", size = 4858803, upload-time = "2025-11-11T21:27:52.845Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/29/fee14ae9fc3a1a6d9aec4554f1645aeae981cd8971cccf8143244ec68f6e/monaco_dash_editor-0.0.2-py3-none-any.whl", hash = "sha256:7fdbebf7422d2ef95292626d7346ff59ca95f0851c68179c62108e6d55237f9c", size = 4910185, upload-time = "2025-11-11T21:27:48.284Z" },
+]
+
+[[package]]
 name = "mudata"
 version = "0.3.9"
 source = { registry = "https://pypi.org/simple" }
@@ -949,6 +973,16 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "prozor"
+version = "0.1.0"
+source = { git = "https://github.com/anndata-omics-bridge/prozor.git?rev=0cf5875ac7730fab68d30fac411553ff580df883#0cf5875ac7730fab68d30fac411553ff580df883" }
+dependencies = [
+    { name = "ahocorapy" },
+    { name = "numpy" },
+    { name = "scipy" },
 ]
 
 [[package]]
@@ -1666,15 +1700,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ce/3f/47baf510c31e0e52ac0d80d9071e5e166ca069167fee4a6c13841f9d5f5f/throttler-1.2.3.tar.gz", hash = "sha256:d2f5b0b499d62f1fc984dcac8043450b606549b0097753a9c8a707f7427c27e1", size = 11792, upload-time = "2026-01-27T00:48:11.552Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/66/70/42d8796acc57c8bcd9ae395b1a6a0bbc833f738492a8ed192a44ccd58035/throttler-1.2.3-py3-none-any.whl", hash = "sha256:241ea3e97438dec4dc2f31ddc56dbd96262787a9b1d0598adfcc0bada1134b66", size = 9704, upload-time = "2026-01-27T00:48:09.544Z" },
-]
-
-[[package]]
-name = "toml"
-version = "0.10.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/be/ba/1f744cdc819428fc6b5084ec34d9b30660f6f9daaf70eead706e3203ec3c/toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f", size = 22253, upload-time = "2020-11-01T01:40:22.204Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/6f/7120676b6d73228c96e17f1f794d8ab046fc910d781c8d151120c3f1569e/toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b", size = 16588, upload-time = "2020-11-01T01:40:20.672Z" },
 ]
 
 [[package]]

@@ -5,7 +5,8 @@
 # knowledge: the three rules below are generic shells that look each concrete target up in the core.
 # Because the convert artifact's basename varies per module (`mudata.h5mu` vs `<level>.h5ad`,
 # decision 16), each rule uses a path-wildcard `{artifact}` output disambiguated by a per-stage
-# wildcard_constraint (the three regexes are disjoint). See TODO/TODO_workflow_dashboard_plan.md §7.3.
+# wildcard_constraint (the three regexes are disjoint). See
+# TODO/Archive/TODO_workflow_dashboard_plan.md §7.3.
 #
 # State lives entirely in the output tree (filesystem-as-database):
 #   output_root/<module>/<dataset>/mudata.h5mu | <level>.h5ad   convert

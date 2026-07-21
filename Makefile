@@ -18,7 +18,7 @@ help:                     ## show this help
 app:                      ## run the Dash corpus application
 	PYTHONPATH=src python -m apb_studio.dashboard
 
-testdata-app:             ## run the Dash ProteoBench test-data application
+testdata-app:             ## run the unified test-data, AnnData, and JSON configuration application
 	PYTHONPATH=src python -m apb_studio.testdata_app
 
 dag:                      ## dry-run the pipeline (needs a real corpus: `make scaffold` first, or CONFIG=your.yaml — the example config has placeholder paths)

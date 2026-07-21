@@ -1,4 +1,6 @@
-# Plan: apb_studio — corpus dashboard + Snakemake pipeline over the `apb` CLI
+# ARCHIVED: apb_studio — corpus dashboard + Snakemake pipeline over the `apb` CLI
+
+Status: implemented and superseded by the Plotly Dash applications; archived 2026-07-20.
 
 **Date:** 2026-06-25 · **Revised:** 2026-06-30 (GUI reworked to **kanban baskets** — decision 10
 rewritten, §8 replaces the old two-level grid + scope×stage matrix; earlier 2026-06-29 revision

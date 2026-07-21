@@ -8,7 +8,7 @@ The stage graph is a DAG: nodes are artifacts (= the kanban baskets), edges are 
 `expand_targets` derives every edge from the registry's `depends_on` (no hardcoded wiring), so
 adding a stage is a registry edit — the topology is data (§13). The kanban renders the path case.
 
-See TODO/TODO_workflow_dashboard_plan.md §7, §8, §13.
+See TODO/Archive/TODO_workflow_dashboard_plan.md §7, §8, §13.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ from pathlib import Path
 from apb_studio.registry import load_corpus, load_registry  # noqa: F401 (re-exported for callers)
 
 # Vendors whose `apb convert` (no --level) emits a multi-level MuData. Every other vendor is
-# single-level and MUST declare `level` in the corpus config (decision 16); otherwise apb's
-# single-level fallback writes a plain AnnData that would land under a .h5mu name.
+# single-level and MUST declare `level` in the corpus config (decision 16); otherwise APB chooses
+# an .h5ad suffix while Snakemake is waiting for the configured .h5mu target.
 MULTI_LEVEL_VENDORS = frozenset({"diann", "spectronaut"})
 
 # The quantification level apb's packaged rules emit for each SINGLE-level vendor (mirrors apb's
@@ -258,7 +258,9 @@ def expand_targets(
                         stage["command"],
                         {
                             "input": in_root / ds["input"],
-                            "output": output,
+                            # APB chooses the container suffix from the result type; Snakemake's
+                            # declared target retains that chosen suffix.
+                            "output": output.with_suffix(""),
                             "vendor": ds["vendor"],
                             "params": in_root / ds["params"],
                         },
@@ -374,7 +376,7 @@ def problems(corpus: dict, targets: list[Target]) -> dict[tuple[str, str], list[
             if ds.get("params") and not _resolve(ds["params"], in_root).exists():
                 out[key].append(f"params file missing: {ds['params']}")
             if ann_missing:
-                out[key].append(f"annotation TOML missing: {ann}")
+                out[key].append(f"annotation JSON missing: {ann}")
             if fasta_missing:
                 out[key].append(f"fasta missing: {fasta}")
     # runtime warnings from each dataset's provenance sidecar (one dir per (module, dataset))
