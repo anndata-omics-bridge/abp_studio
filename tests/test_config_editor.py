@@ -136,28 +136,6 @@ def test_save_rejects_stale_browser_copy(tmp_path: Path) -> None:
         )
 
 
-def test_annotation_json_is_one_annotation_section(tmp_path: Path) -> None:
-    path = tmp_path / "annotation.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "0.1",
-                "obs": {
-                    "key_field": "raw_file",
-                    "samples": [{"raw_file": "run1", "condition": "A"}],
-                },
-            }
-        )
-    )
-    loaded = config_editor.load_document(path, kind="annotation")
-    assert loaded["valid"] is True
-    assert loaded["section_order"] == ["annotation"]
-    assert (
-        json.loads(loaded["sections"]["annotation"])["obs"]["samples"][0]["condition"]
-        == "A"
-    )
-
-
 def test_configuration_panel_has_one_read_only_json_editor_and_no_effective_view() -> (
     None
 ):

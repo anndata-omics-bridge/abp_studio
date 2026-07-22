@@ -1,55 +1,53 @@
 # apb_studio pipeline — registry-driven (decision 5).
 #
-# Every target's output path and command come from `apb_studio.pipeline.expand_targets`, which reads
-# the stage registry (config/registry.yaml) and the corpus config. This file restates NO stage
-# knowledge: the three rules below are generic shells that look each concrete target up in the core.
-# Because the convert artifact's basename varies per module (`mudata.h5mu` vs `<level>.h5ad`,
-# decision 16), each rule uses a path-wildcard `{artifact}` output disambiguated by a per-stage
-# wildcard_constraint (the three regexes are disjoint). See
-# TODO/Archive/TODO_workflow_dashboard_plan.md §7.3.
+# Every target's output path, command, inputs, and branch come from the Corpus Runner-generated
+# run.json. This file only executes that immutable snapshot; it never reads fixture tables,
+# application settings, or a user-maintained corpus manifest.
 #
 # State lives entirely in the output tree (filesystem-as-database):
-#   output_root/<module>/<dataset>/mudata.h5mu | <level>.h5ad   convert
-#   output_root/<module>/<dataset>/annotated.{h5mu,h5ad}        annotate (obs; container-agnostic)
-#   output_root/<module>/<dataset>/annotated_fasta.{h5mu,h5ad}  fasta    (protein var; optional)
+#   output_root/<module>/<dataset>/<branch>.{h5mu,h5ad}
+#   output_root/<module>/<dataset>/<branch>.annotated.{h5mu,h5ad}
+#   output_root/<module>/<dataset>/<branch>.annotated_fasta.{h5mu,h5ad}
 
 import shlex
 import sys
+import os
 from pathlib import Path
 
-# Make the in-repo package importable from a plain checkout (no install required).
-sys.path.insert(0, str(Path(workflow.basedir).parent / "src"))
+# Make both workspace packages importable from a plain checkout (no install required). An installed
+# APB remains the fallback when the sibling source tree is absent.
+_STUDIO_ROOT = Path(workflow.basedir).parent
+_SRC_PATHS = [_STUDIO_ROOT / "src", _STUDIO_ROOT.parent / "apb" / "src"]
+for source_path in _SRC_PATHS:
+    if source_path.exists():
+        sys.path.insert(0, str(source_path))
 from apb_studio.pipeline import (
     ANNOTATE_ARTIFACT_RE,
     CONVERT_ARTIFACT_RE,
     FASTA_ARTIFACT_RE,
-    expand_targets,
-    load_registry,
+    load_run_snapshot,
+    runnable_targets,
 )
 
-# Corpus config is REQUIRED via --configfile. There is deliberately NO in-Snakefile `configfile:`
-# default: Snakemake MERGES a default configfile with --configfile (scalars override, but dicts like
-# `modules` merge), which leaks the example's modules into a user's corpus. Pass e.g.
-#   snakemake -s workflow/Snakefile --configfile config/corpus.example.yaml
-if "output_root" not in config or "modules" not in config:
-    raise ValueError("apb_studio: pass --configfile <corpus.yaml> (see config/corpus.example.yaml)")
+# ``--configfile`` is only Snakemake's transport for the internal JSON. No default is allowed:
+# Snakemake merges defaults with an explicit config file, which would violate snapshot isolation.
+_RUN_PATH = str(workflow.configfiles[-1]) if workflow.configfiles else ""
+if not _RUN_PATH:
+    raise ValueError("apb_studio: Corpus Runner must pass its generated run.json")
 
-OUTPUT_ROOT = Path(config["output_root"])
-INPUT_ROOT = Path(config["input_root"])
-
-REGISTRY = load_registry()
-# The single source of truth: concrete targets with rendered commands + input edges.
-TARGETS = expand_targets(REGISTRY, config, OUTPUT_ROOT, INPUT_ROOT)
+RUN = load_run_snapshot(_RUN_PATH)
+OUTPUT_ROOT = RUN.output_root
+TARGETS = list(RUN.targets)
 BY_OUTPUT = {str(t.output): t for t in TARGETS}
 
-# Default goals = every non-optional stage, derived from the registry (no hardcoded stage names).
-_OPTIONAL = {s["name"] for s in REGISTRY if s.get("optional")}
-DEFAULT_TARGETS = [str(t.output) for t in TARGETS if t.stage not in _OPTIONAL]
+# Missing external resources are represented as BLOCKED cells in the dashboard and are not allowed
+# to abort DAG construction for otherwise independent branches. Existing artifacts stay in the goal
+# so Snakemake can assess input timestamps and rebuild stale work.
+DEFAULT_TARGETS = [str(t.output) for t in runnable_targets(TARGETS)]
 
-# For the per-rule provenance hook (decision 17): the config we were invoked with, this venv's
+# For the per-rule provenance hook (decision 17): the run we were invoked with, this venv's
 # python, and the src dir so the subprocess can import apb_studio without an install.
-_SRC = str(Path(workflow.basedir).parent / "src")
-_CONFIG_PATH = str(workflow.configfiles[-1]) if workflow.configfiles else ""
+_PYTHONPATH = os.pathsep.join(str(path) for path in _SRC_PATHS if path.exists())
 
 
 def _target(wildcards):
@@ -64,15 +62,20 @@ def _command(wildcards):
     """The apb command, then write the provenance sidecar (decision 17) — runs for CLI and GUI alike."""
     target = _target(wildcards)
     prov = [sys.executable, "-m", "apb_studio.provenance",
-            "--config", _CONFIG_PATH, "--output", str(target.output)]
-    return shlex.join(target.command) + f" && PYTHONPATH={shlex.quote(_SRC)} " + shlex.join(prov)
+            "--run", _RUN_PATH, "--output", str(target.output)]
+    return shlex.join(target.command) + f" && PYTHONPATH={shlex.quote(_PYTHONPATH)} " + shlex.join(prov)
+
+
+def _failure_marker(wildcards):
+    """Marker written only after a rule command fails; a live tee log is not a failure."""
+    return f"{_target(wildcards).output}.failed"
 
 
 wildcard_constraints:
     module=r"[^/]+",
     dataset=r"[^/]+",
 
-# Default goal: bring every non-optional stage up to date (convert + annotate); fasta is on-demand.
+# Default goal: let Snakemake assess every branch whose external prerequisites exist.
 rule all:
     input:
         DEFAULT_TARGETS
@@ -89,15 +92,17 @@ rule convert:
     input:
         _inputs
     params:
-        cmd=_command
+        cmd=_command,
+        failure_marker=_failure_marker
     log:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
     shell:
-        # tee to a per-dataset log that SURVIVES failure (snakemake deletes outputs, not logs), while
-        # still streaming to the console. `set -o pipefail` (snakemake default) propagates the apb
-        # failure through the pipe. apb_studio.pipeline.problems reads this log when the artifact is
-        # missing → surfaces the apb error (e.g. "no rule covers version …") in the basket problem column.
-        "({params.cmd}) 2>&1 | tee {log}"
+        # The log streams live progress. Only a non-zero exit writes the adjacent failure marker;
+        # pipeline state therefore never mistakes a currently running tee log for a failed rule.
+        "rm -f {params.failure_marker:q}; "
+        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
+        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
+        "exit \"$status\"; fi"
 
 
 rule annotate:
@@ -108,15 +113,16 @@ rule annotate:
     input:
         _inputs
     params:
-        cmd=_command
+        cmd=_command,
+        failure_marker=_failure_marker
     log:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
     shell:
-        # tee to a per-dataset log that SURVIVES failure (snakemake deletes outputs, not logs), while
-        # still streaming to the console. `set -o pipefail` (snakemake default) propagates the apb
-        # failure through the pipe. apb_studio.pipeline.problems reads this log when the artifact is
-        # missing → surfaces the apb error (e.g. "no rule covers version …") in the basket problem column.
-        "({params.cmd}) 2>&1 | tee {log}"
+        # See convert: clear stale failure state, stream progress, then mark only a real failure.
+        "rm -f {params.failure_marker:q}; "
+        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
+        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
+        "exit \"$status\"; fi"
 
 
 rule fasta:
@@ -127,12 +133,13 @@ rule fasta:
     input:
         _inputs
     params:
-        cmd=_command
+        cmd=_command,
+        failure_marker=_failure_marker
     log:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
     shell:
-        # tee to a per-dataset log that SURVIVES failure (snakemake deletes outputs, not logs), while
-        # still streaming to the console. `set -o pipefail` (snakemake default) propagates the apb
-        # failure through the pipe. apb_studio.pipeline.problems reads this log when the artifact is
-        # missing → surfaces the apb error (e.g. "no rule covers version …") in the basket problem column.
-        "({params.cmd}) 2>&1 | tee {log}"
+        # See convert: clear stale failure state, stream progress, then mark only a real failure.
+        "rm -f {params.failure_marker:q}; "
+        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
+        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
+        "exit \"$status\"; fi"

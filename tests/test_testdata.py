@@ -1,18 +1,29 @@
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import anndata as ad
 import mudata
 import numpy as np
 import pandas as pd
 import pytest
+from dash import dcc
+from dash.exceptions import PreventUpdate
 from mudata import MuData
 from pydantic import ValidationError
 
+from apb_studio import settings
 from apb_studio import testdata
-from apb_studio.jobrunner import JobStatus
-from apb_studio.testdata_app import create_app, data_table
+from apb_studio import testdata_app
+from apb_studio.jobrunner import Job, JobStatus
+from apb_studio.testdata_app import (
+    CONTAINER_TABLE_IDS,
+    _selected_container_row,
+    create_app,
+    data_panel,
+    data_table,
+)
 from anndata_proteomics.readers.summary import store_quantification_summary
 
 
@@ -29,6 +40,10 @@ def _row() -> dict:
         "software_version": "2.0",
         "nr_feature": 10,
     }
+
+
+def _write_catalog(paths: testdata.TestDataPaths) -> None:
+    pd.DataFrame([_row()]).to_csv(paths.catalog_csv, index=False)
 
 
 def _adata(level: str, prefix: str = "", n_features: int = 2) -> ad.AnnData:
@@ -49,7 +64,7 @@ def _adata(level: str, prefix: str = "", n_features: int = 2) -> ad.AnnData:
     return obj
 
 
-def test_catalog_rows_reports_download_as_soon_as_input_exists(
+def test_catalog_rows_reports_incomplete_until_input_and_parameter_exist(
     tmp_path: Path,
 ) -> None:
     paths = _paths(tmp_path)
@@ -60,14 +75,46 @@ def test_catalog_rows_reports_download_as_soon_as_input_exists(
 
     rows = testdata.catalog_rows(paths)
 
-    assert rows[0]["download_status"] == "downloaded"
+    assert rows[0]["download_status"] == "incomplete"
+    assert rows[0]["fixture_status"] == "incomplete"
     assert rows[0]["local_file"].endswith("input_file.tsv")
+
+
+def test_catalog_rows_unifies_selection_download_and_conversion_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _paths(tmp_path)
+    pd.DataFrame([_row()]).to_csv(paths.catalog_csv, index=False)
+    pd.DataFrame([_row()]).to_csv(paths.selection_csv, index=False)
+
+    selected = testdata.catalog_rows(paths)[0]
+
+    assert selected["download_status"] == "selected"
+    assert selected["conversion_status"] == "download first"
+
+    directory = testdata.dataset_dir(paths, _row())
+    directory.mkdir(parents=True)
+    (directory / "input_file.tsv").write_text("Run\tIntensity\n")
+    (directory / "param_0.txt").write_text("params\n")
+    monkeypatch.setattr(
+        testdata.capabilities,
+        "discover_capabilities",
+        lambda *_args: testdata.capabilities.CapabilityDiscovery(("mudata", "ion")),
+    )
+
+    downloaded = testdata.catalog_rows(paths)[0]
+
+    assert downloaded["download_status"] == "downloaded"
+    assert downloaded["conversion_targets"] == ["all", "ion"]
+    assert downloaded["conversion_status"] == "all levels, ion"
 
 
 def test_row_details_reads_submission_json_and_parameters(
     tmp_path: Path,
 ) -> None:
     paths = _paths(tmp_path)
+    _write_catalog(paths)
     metadata = testdata.metadata_path(paths, _row())
     metadata.parent.mkdir(parents=True)
     metadata.write_text(json.dumps({"software_name": "DIA-NN"}))
@@ -97,6 +144,7 @@ def test_testdata_command_uses_explicit_artifact_paths(tmp_path: Path) -> None:
 
 def test_convert_command_uses_extensionless_output_basename(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
+    _write_catalog(paths)
     directory = testdata.dataset_dir(paths, _row())
     directory.mkdir(parents=True)
     (directory / "input_file.tsv").write_text("x\n")
@@ -113,6 +161,7 @@ def test_convert_command_uses_extensionless_output_basename(tmp_path: Path) -> N
 
 def test_convert_command_all_levels_omits_level_argument(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
+    _write_catalog(paths)
     directory = testdata.dataset_dir(paths, _row())
     directory.mkdir(parents=True)
     (directory / "input_file.tsv").write_text("x\n")
@@ -122,6 +171,91 @@ def test_convert_command_all_levels_omits_level_argument(tmp_path: Path) -> None
 
     assert command[1:3] == ["convert", str(directory / "input_file.tsv")]
     assert command[command.index("--output") + 1] == str(directory / "mudata")
+
+
+def test_conversion_checkboxes_normalize_multiple_targets() -> None:
+    assert testdata._selected_conversion_targets(["protein", "ion"]) == (
+        "ion",
+        "protein",
+    )
+    assert testdata._selected_conversion_targets(["ion", "all", "protein"]) == ("all",)
+
+
+def test_conversion_checkboxes_require_a_target() -> None:
+    with pytest.raises(ValueError, match="Select at least one"):
+        testdata._selected_conversion_targets([])
+
+
+def test_launch_convert_starts_each_checked_level(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _paths(tmp_path)
+    _write_catalog(paths)
+    directory = testdata.dataset_dir(paths, _row())
+    directory.mkdir(parents=True)
+    (directory / "input_file.tsv").write_text("x\n")
+    (directory / "param_0.txt").write_text("params\n")
+    commands = []
+
+    def fake_start(command, _log_file, *, cwd):
+        commands.append((command, cwd))
+        return object()
+
+    monkeypatch.setattr(testdata, "start_job", fake_start)
+    job_id = testdata.launch_convert(paths, _row(), ["protein", "ion"])
+    testdata._JOBS.pop(job_id)
+
+    assert [command[0][3] for command in commands] == ["ion", "protein"]
+    assert all(cwd == testdata.APB_ROOT for _, cwd in commands)
+
+
+def test_reads_and_conversion_reject_a_client_row_absent_from_catalog(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    _write_catalog(paths)
+    forged = {**_row(), "intermediate_hash": "not-in-catalog"}
+    directory = testdata.dataset_dir(paths, forged)
+    directory.mkdir(parents=True)
+    (directory / "input_file.tsv").write_text("x\n")
+    (directory / "param_0.txt").write_text("params\n")
+
+    with pytest.raises(ValueError, match="not present in the catalog"):
+        testdata.row_details(paths, forged)
+    with pytest.raises(ValueError, match="not present in the catalog"):
+        testdata.convert_command(paths, forged, "ion")
+
+
+def test_client_row_cannot_escape_fixture_cache(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    _write_catalog(paths)
+    forged = {**_row(), "intermediate_hash": "/tmp/outside"}
+
+    with pytest.raises(ValueError, match="safe path component"):
+        testdata.row_details(paths, forged)
+    with pytest.raises(ValueError, match="safe path component"):
+        testdata.convert_command(paths, forged, "ion")
+
+
+def test_launch_rejects_overlapping_mutating_jobs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _paths(tmp_path)
+    process = SimpleNamespace(poll=lambda: None)
+
+    def fake_start(command, log_file, *, cwd):
+        return Job(tuple(command), process, Path(log_file))
+
+    monkeypatch.setattr(testdata, "_JOBS", {})
+    monkeypatch.setattr(testdata, "start_job", fake_start)
+    first = testdata.launch("catalog", paths)
+
+    with pytest.raises(testdata.JobAlreadyRunningError, match="already running"):
+        testdata.launch("clean", paths)
+
+    assert list(testdata._JOBS) == [first]
 
 
 def test_clean_command_uses_selected_data_root(tmp_path: Path) -> None:
@@ -143,6 +277,22 @@ def test_catalog_and_download_commands_use_selected_data_root(tmp_path: Path) ->
     assert str(paths.selection_csv) in download
     assert str(paths.cache_dir) in download
     assert str(paths.manifest_csv) in download
+
+
+def test_fasta_command_uses_active_fixture_manager_root(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+
+    command = testdata.testdata_command("fasta", paths)
+
+    assert command[-2:] == ["--fasta-dir", str(paths.fasta_dir)]
+
+
+def test_annotations_command_uses_active_fixture_manager_root(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+
+    command = testdata.testdata_command("annotations", paths)
+
+    assert command[-2:] == ["--annotation-dir", str(paths.annotation_dir)]
 
 
 def test_test_data_paths_create_selected_root(tmp_path: Path) -> None:
@@ -175,11 +325,102 @@ def test_dash_app_registers_callbacks() -> None:
     app = create_app()
 
     assert app.layout is not None
-    assert len(app.callback_map) == 10
+    assert len(app.callback_map) == 15
     callback_outputs = "\n".join(app.callback_map)
     assert "config-section-editor.value" in callback_outputs
     assert "config-section-editor.readOnly" in callback_outputs
     assert "config-effective-editor.value" not in callback_outputs
+    assert app.title == "APB Studio — Fixture Manager"
+
+
+def test_run_action_preserves_tracked_job_while_it_is_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app()
+    callback = app.callback_map["job-id.data"]["callback"].__wrapped__
+    running = JobStatus(
+        command=("apb-testdata", "catalog"),
+        returncode=None,
+        running=True,
+        log_file=tmp_path / "catalog.log",
+        log_text="",
+    )
+    monkeypatch.setattr(
+        testdata_app, "ctx", SimpleNamespace(triggered_id="clean-button")
+    )
+    monkeypatch.setattr(testdata, "job_status", lambda _job_id: running)
+    launched = False
+
+    def unexpected_launch(*_args, **_kwargs):
+        nonlocal launched
+        launched = True
+
+    monkeypatch.setattr(testdata, "launch", unexpected_launch)
+
+    with pytest.raises(PreventUpdate):
+        callback(
+            None,
+            None,
+            None,
+            None,
+            None,
+            1,
+            None,
+            "all",
+            None,
+            None,
+            None,
+            str(tmp_path),
+            "active-job",
+        )
+
+    assert not launched
+
+
+def test_resource_editor_refreshes_when_storage_root_changes() -> None:
+    app = create_app()
+    callback = app.callback_map["resource-fasta.value"]
+
+    assert {item["id"] for item in callback["inputs"]} == {
+        "resource-module",
+        "storage-root",
+    }
+
+
+def test_dash_app_starts_from_shared_disk_setting(tmp_path: Path) -> None:
+    settings_file = tmp_path / "settings.json"
+    fixture_root = tmp_path / "fixtures"
+    settings.update_settings(test_data_root=fixture_root, path=settings_file)
+
+    app = create_app(settings_path=settings_file)
+    stores = {
+        component.id: component
+        for component in _components(app.layout)
+        if isinstance(component, dcc.Store)
+    }
+
+    assert stores["storage-root"].data == str(fixture_root.resolve())
+    assert "storage_type" not in stores["storage-root"].to_plotly_json()["props"]
+
+
+def test_data_panel_uses_one_fixture_table_and_download_convert_subtabs() -> None:
+    components = list(_components(data_panel()))
+    by_id = {
+        component.id: component
+        for component in components
+        if isinstance(getattr(component, "id", None), str)
+    }
+
+    assert "catalog-table" in by_id
+    assert "selection-table" not in by_id
+    assert "data-workflow-tabs" in by_id
+    assert "convert-button" in by_id
+    assert "annotations-button" in by_id
+    assert "job-log-details" in by_id
+    assert isinstance(by_id["convert-level"], dcc.Checklist)
+    fields = [column["field"] for column in by_id["catalog-table"].columnDefs]
+    assert fields[-2:] == ["download_status", "conversion_status"]
 
 
 def test_data_table_uses_continuous_mouse_wheel_scrolling() -> None:
@@ -187,6 +428,18 @@ def test_data_table_uses_continuous_mouse_wheel_scrolling() -> None:
 
     assert table.dashGridOptions["pagination"] is False
     assert table.dashGridOptions["alwaysShowVerticalScroll"] is True
+
+
+def test_active_anndata_tab_does_not_reuse_another_tabs_selection() -> None:
+    mudata_row = {"path": "result.h5mu", "modality": None}
+    ion_row = {"path": "result.h5mu", "modality": "ion"}
+    selections = {
+        CONTAINER_TABLE_IDS["mudata"]: [mudata_row],
+        CONTAINER_TABLE_IDS["ion"]: [ion_row],
+    }
+
+    assert _selected_container_row("ion", selections, "anndata-level-tabs") == ion_row
+    assert _selected_container_row("protein", selections, "anndata-level-tabs") is None
 
 
 def test_failed_job_marks_log_tab_red(tmp_path: Path) -> None:
@@ -210,7 +463,7 @@ def test_failed_job_marks_log_tab_red(tmp_path: Path) -> None:
     assert style["color"] == "#b00020"
 
 
-def test_container_rows_expand_mudata_modalities_and_standalone(
+def test_container_rows_separate_mudata_from_standalone_anndata(
     tmp_path: Path,
 ) -> None:
     paths = _paths(tmp_path)
@@ -234,14 +487,10 @@ def test_container_rows_expand_mudata_modalities_and_standalone(
     assert len(rows["mudata"]) == 1
     assert len(rows["ion"]) == 1
     assert rows["ion"][0]["mudata"] is False
-    assert rows["peptide"][0]["mudata"] is True
-    assert rows["peptide"][0]["modality"] == "peptide"
-    assert rows["protein"][0]["modality"] == "protein"
-    peptide_summary = json.loads(
-        testdata.container_summary(directory / "mudata.h5mu", "peptide")
-    )
-    assert peptide_summary["quantification"]["level"] == "peptide"
-    assert "modalities" not in peptide_summary
+    assert rows["peptide"] == []
+    assert rows["protein"] == []
+    mudata_summary = json.loads(testdata.container_summary(directory / "mudata.h5mu"))
+    assert set(mudata_summary["modalities"]) == {"peptide", "protein"}
 
 
 def test_container_rows_cache_invalidates_on_mtime_change(tmp_path: Path) -> None:
@@ -260,3 +509,15 @@ def test_container_rows_cache_invalidates_on_mtime_change(tmp_path: Path) -> Non
 
     assert first["ion"][0]["n_var"] == 2
     assert second["ion"][0]["n_var"] == 3
+
+
+def _components(component):
+    """Yield a Dash component tree depth-first."""
+    yield component
+    children = getattr(component, "children", None)
+    if children is None:
+        return
+    items = children if isinstance(children, list | tuple) else [children]
+    for child in items:
+        if hasattr(child, "to_plotly_json"):
+            yield from _components(child)

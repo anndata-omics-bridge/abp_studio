@@ -1,7 +1,7 @@
 [project]
 name = "apb-studio"
 version = "0.0.0"
-description = "Corpus dashboard + Snakemake pipeline driving the anndata_proteomics (APB) conversion CLI."
+description = "Fixture Manager and Corpus Runner driving the anndata_proteomics (APB) CLI."
 requires-python = ">=3.13"
 dependencies = [
     "anndata-proteomics",
@@ -9,6 +9,7 @@ dependencies = [
     "dash>=3",
     "dash-ag-grid",
     "pandas",
+    "pyarrow",
     "platformdirs>=4",
     "pydantic>=2",
     "pyyaml",
@@ -24,6 +25,9 @@ anndata-proteomics = { path = "../apb", editable = true }
 dev = ["pytest", "ruff"]
 
 [project.scripts]
+apb-studio-corpus-runner = "apb_studio.dashboard:main"
+apb-studio-fixture-manager = "apb_studio.testdata_app:main"
+# Compatibility aliases; prefer the explicitly named applications above.
 apb-studio = "apb_studio.dashboard:main"
 apb-studio-testdata = "apb_studio.testdata_app:main"
 

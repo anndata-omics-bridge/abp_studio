@@ -4,79 +4,43 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
 import uuid
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
-from platformdirs import user_cache_path
-from pydantic import BaseModel, ConfigDict, field_validator
 
 import apb_studio
-from apb_studio.jobrunner import Job, JobStatus, inspect_job, make_run_key, start_job
+from apb_studio import capabilities
+from apb_studio import fixture_inventory
+from apb_studio.jobrunner import (
+    Job,
+    JobStatus,
+    inspect_job,
+    start_job,
+    terminate_job,
+)
+from apb_studio.settings import DEFAULT_TEST_DATA_ROOT
 from anndata_proteomics.readers.summary import describe_path
 
 STUDIO_ROOT = Path(apb_studio.__file__).resolve().parents[2]
 APB_ROOT = STUDIO_ROOT.parent / "apb"
-DEFAULT_TEST_DATA_DIR = (APB_ROOT / "test_data_download").resolve()
+DEFAULT_TEST_DATA_DIR = DEFAULT_TEST_DATA_ROOT
 
-_JOBS: dict[str, Job] = {}
+_JOBS: dict[str, Job | tuple[Job, ...]] = {}
+_JOBS_LOCK = threading.RLock()
 LEVELS = ("ion", "fragment", "peptidoform", "peptide", "protein")
 ALL_LEVELS = "all"
 
 
-class TestDataPaths(BaseModel):
-    """Validated paths derived from one dedicated test-data directory."""
+class JobAlreadyRunningError(RuntimeError):
+    """Raised when a mutating Fixture Manager job is already active."""
 
-    model_config = ConfigDict(frozen=True, validate_default=True)
 
-    data_dir: Path = DEFAULT_TEST_DATA_DIR
-
-    @field_validator("data_dir", mode="before")
-    @classmethod
-    def validate_data_dir(cls, value: str | Path) -> Path:
-        """Resolve an absolute, non-system-root test-data directory."""
-        path = Path(value).expanduser()
-        if not path.is_absolute():
-            raise ValueError("Test-data folder must be an absolute path.")
-        path = path.resolve()
-        if path in {Path(path.anchor), Path.home().resolve()}:
-            raise ValueError(
-                "Choose a dedicated folder, not the filesystem or home root."
-            )
-        return path
-
-    @property
-    def catalog_csv(self) -> Path:
-        """Return the complete catalog CSV path."""
-        return self.data_dir / "raw_file_db_full.csv"
-
-    @property
-    def selection_csv(self) -> Path:
-        """Return the download-selection CSV path."""
-        return self.data_dir / "raw_file_db_selected.csv"
-
-    @property
-    def manifest_csv(self) -> Path:
-        """Return the completed-download manifest CSV path."""
-        return self.data_dir / "raw_file_db_downloaded.csv"
-
-    @property
-    def cache_dir(self) -> Path:
-        """Return the shared metadata and raw-file cache directory."""
-        return self.data_dir / "json_dir"
-
-    @property
-    def log_dir(self) -> Path:
-        """Return the OS-cache directory for this root's Studio job logs."""
-        root_key = make_run_key(self.data_dir)[:12]
-        return user_cache_path("apb-studio") / "testdata" / root_key
-
-    def create(self) -> None:
-        """Create the selected root after validation."""
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        if not self.data_dir.is_dir():
-            raise NotADirectoryError(f"Not a directory: {self.data_dir}")
+class TestDataPaths(fixture_inventory.FixtureStorePaths):
+    """Backward-compatible name for the shared Fixture Manager paths."""
 
 
 def storage_summary(paths: TestDataPaths) -> str:
@@ -88,6 +52,9 @@ def storage_summary(paths: TestDataPaths) -> str:
             f"Selection CSV:  {paths.selection_csv}",
             f"Manifest CSV:   {paths.manifest_csv}",
             f"Metadata/raw:   {paths.cache_dir}",
+            f"Annotations:    {paths.annotation_dir}",
+            f"FASTA cache:    {paths.fasta_dir}",
+            f"Resources CSV:  {paths.resource_csv}",
             f"Studio logs:    {paths.log_dir}",
         ]
     )
@@ -101,35 +68,84 @@ def read_rows(path: Path) -> list[dict]:
 
 
 def catalog_rows(paths: TestDataPaths) -> list[dict]:
-    """Return catalog rows augmented with live local download status."""
-    manifest = {row["intermediate_hash"]: row for row in read_rows(paths.manifest_csv)}
-    rows = read_rows(paths.catalog_csv)
-    for row in rows:
-        cached = dataset_dir(paths, row)
-        inputs = sorted(cached.glob("input_file.*")) if cached.exists() else []
-        recorded = manifest.get(row["intermediate_hash"], {})
-        row["download_status"] = (
-            "downloaded" if inputs else recorded.get("status", "not selected")
+    """Return all fixtures with live download and conversion status."""
+    rows = []
+    inventory = fixture_inventory.load_fixture_inventory(paths)
+    for fixture in inventory.fixtures:
+        row = fixture.as_catalog_row()
+        targets = _fixture_conversion_targets(fixture)
+        row["conversion_targets"] = list(targets)
+        row["conversion_status"] = _conversion_status(
+            targets,
+            fixture=fixture,
         )
-        row["local_file"] = str(inputs[0]) if inputs else ""
+        rows.append(row)
     return rows
 
 
 def selection_rows(paths: TestDataPaths) -> list[dict]:
     """Return selected rows augmented with live local download status."""
-    selected_hashes = {
-        row["intermediate_hash"] for row in read_rows(paths.selection_csv)
+    selected_identities = {
+        fixture_inventory.fixture_identity(row)
+        for row in fixture_inventory.read_csv_rows(paths.selection_csv)
     }
     return [
         row
         for row in catalog_rows(paths)
-        if row["intermediate_hash"] in selected_hashes
+        if fixture_inventory.fixture_identity(row) in selected_identities
     ]
+
+
+def conversion_targets(paths: TestDataPaths, row: dict) -> tuple[str, ...]:
+    """Return conversion choices supported by one downloaded fixture."""
+    return _fixture_conversion_targets(_fixture_for_row(paths, row))
+
+
+def _fixture_conversion_targets(
+    fixture: fixture_inventory.FixtureRecord,
+) -> tuple[str, ...]:
+    """Resolve UI conversion choices from one complete local fixture."""
+    if not fixture.complete:
+        return ()
+    assert fixture.input_path is not None
+    assert fixture.parameter_path is not None
+    discovery = capabilities.discover_capabilities(
+        fixture.input_path,
+        fixture.parameter_path,
+        fixture.catalog_software_name,
+    )
+    levels = tuple(level for level in LEVELS if level in discovery.branches)
+    return (ALL_LEVELS, *levels) if levels else ()
+
+
+def _conversion_status(
+    targets: tuple[str, ...],
+    *,
+    fixture: fixture_inventory.FixtureRecord,
+) -> str:
+    """Render compact conversion availability for the unified table."""
+    if targets:
+        return ", ".join(
+            "all levels" if target == ALL_LEVELS else target for target in targets
+        )
+    if fixture.complete:
+        assert fixture.input_path is not None
+        assert fixture.parameter_path is not None
+        discovery = capabilities.discover_capabilities(
+            fixture.input_path,
+            fixture.parameter_path,
+            fixture.catalog_software_name,
+        )
+        return discovery.diagnostic or discovery.status.value
+    if fixture.local_state is fixture_inventory.LocalFixtureState.INCOMPLETE:
+        return fixture.diagnostic or "incomplete fixture"
+    return "download first"
 
 
 def dataset_dir(paths: TestDataPaths, row: dict) -> Path:
     """Return the local cache directory for a catalog row."""
-    return paths.cache_dir / str(row["repo_name"]) / str(row["intermediate_hash"])
+    identity = fixture_inventory.fixture_identity(row)
+    return fixture_inventory.fixture_directory(paths, identity[1], identity[2])
 
 
 def converted_dir(paths: TestDataPaths, row: dict) -> Path:
@@ -139,20 +155,23 @@ def converted_dir(paths: TestDataPaths, row: dict) -> Path:
 
 def metadata_path(paths: TestDataPaths, row: dict) -> Path:
     """Return the downloaded ProteoBench submission JSON path."""
-    repo = str(row["repo_name"])
-    return paths.cache_dir / repo / f"{repo}-main" / f"{row['intermediate_hash']}.json"
+    _, repo, fixture_hash = fixture_inventory.fixture_identity(row)
+    repository_root = fixture_inventory.fixture_directory(paths, repo, f"{repo}-main")
+    return repository_root / f"{fixture_hash}.json"
 
 
 def row_details(paths: TestDataPaths, row: dict | None) -> tuple[str, str, str]:
     """Return file information, formatted submission JSON, and parameter content."""
     if not row:
         return "Select a row.", "", ""
-    metadata = metadata_path(paths, row)
+    fixture = _fixture_for_row(paths, row)
+    canonical_row = fixture.as_catalog_row()
+    metadata = metadata_path(paths, canonical_row)
     json_text = "Metadata JSON is not cached yet. Run Catalog."
     if metadata.exists():
         parsed = json.loads(metadata.read_text(encoding="utf-8"))
         json_text = json.dumps(parsed, indent=2, sort_keys=True)
-    parameters = sorted(dataset_dir(paths, row).glob("param_0.*"))
+    parameters = fixture.parameter_files
     parameter_text = "Parameter file is not downloaded yet."
     if parameters:
         parameter_text = parameters[0].read_text(encoding="utf-8", errors="replace")
@@ -160,8 +179,20 @@ def row_details(paths: TestDataPaths, row: dict | None) -> tuple[str, str, str]:
             parameter_text = json.dumps(
                 json.loads(parameter_text), indent=2, sort_keys=True
             )
-    info = "\n".join(f"{key}: {value}" for key, value in row.items())
+    info = "\n".join(f"{key}: {value}" for key, value in canonical_row.items())
     return info, json_text, parameter_text
+
+
+def _fixture_for_row(
+    paths: TestDataPaths,
+    row: dict,
+) -> fixture_inventory.FixtureRecord:
+    """Resolve an untrusted client row against the authoritative catalog."""
+    identity = fixture_inventory.fixture_identity(row)
+    fixture = fixture_inventory.load_fixture_inventory(paths).for_identity(identity)
+    if fixture is None:
+        raise ValueError(f"Fixture is not present in the catalog: {identity!r}")
+    return fixture
 
 
 def testdata_command(
@@ -207,6 +238,20 @@ def testdata_command(
             "--manifest-csv",
             str(paths.manifest_csv),
         ]
+    if action == "fasta":
+        return [
+            executable,
+            "fasta",
+            "--fasta-dir",
+            str(paths.fasta_dir),
+        ]
+    if action == "annotations":
+        return [
+            executable,
+            "annotations",
+            "--annotation-dir",
+            str(paths.annotation_dir),
+        ]
     if action == "clean":
         return [executable, "clean", "--data-dir", str(paths.data_dir)]
     raise ValueError(f"Unknown test-data action: {action}")
@@ -214,9 +259,10 @@ def testdata_command(
 
 def convert_command(paths: TestDataPaths, row: dict, level: str) -> list[str]:
     """Build an ``apb convert`` command for one downloaded fixture."""
-    directory = converted_dir(paths, row)
-    inputs = sorted(directory.glob("input_file.*"))
-    parameters = sorted(directory.glob("param_0.*"))
+    fixture = _fixture_for_row(paths, row)
+    directory = fixture.dataset_dir
+    inputs = fixture.input_files
+    parameters = fixture.parameter_files
     if len(inputs) != 1:
         raise ValueError(
             f"Expected exactly one downloaded input_file.* for the selected fixture, got {len(inputs)}"
@@ -253,30 +299,76 @@ def launch(
 ) -> str:
     """Launch an APB test-data command and return its process-registry identifier."""
     paths.create()
-    job_id = uuid.uuid4().hex
-    _JOBS[job_id] = start_job(
-        testdata_command(action, paths, strategy=strategy, module=module),
-        paths.log_dir / f"{action}.log",
-        cwd=APB_ROOT,
-    )
+    with _JOBS_LOCK:
+        _reject_overlapping_job()
+        job_id = uuid.uuid4().hex
+        _JOBS[job_id] = start_job(
+            testdata_command(action, paths, strategy=strategy, module=module),
+            paths.log_dir / f"{action}.log",
+            cwd=APB_ROOT,
+        )
     return job_id
 
 
-def launch_convert(paths: TestDataPaths, row: dict, level: str) -> str:
-    """Launch one APB conversion and return its process-registry identifier."""
+def launch_convert(paths: TestDataPaths, row: dict, levels: Sequence[str]) -> str:
+    """Launch the selected APB conversions and return one group identifier."""
     paths.create()
     job_id = uuid.uuid4().hex
     fixture = str(row.get("intermediate_hash", "fixture"))[:12]
-    _JOBS[job_id] = start_job(
-        convert_command(paths, row, level),
-        paths.log_dir / f"convert-{fixture}-{level}.log",
-        cwd=APB_ROOT,
+    targets = _selected_conversion_targets(levels)
+    commands = tuple(
+        (
+            convert_command(paths, row, level),
+            paths.log_dir / f"convert-{fixture}-{level}.log",
+        )
+        for level in targets
     )
+    with _JOBS_LOCK:
+        _reject_overlapping_job()
+        started: list[Job] = []
+        try:
+            for command, log_file in commands:
+                started.append(start_job(command, log_file, cwd=APB_ROOT))
+        except Exception:
+            for job in started:
+                terminate_job(job)
+            raise
+        _JOBS[job_id] = tuple(started)
     return job_id
 
 
+def _reject_overlapping_job() -> None:
+    """Reject a new mutation while any registered Fixture Manager job runs."""
+    active = next(
+        (
+            job_id
+            for job_id, job in _JOBS.items()
+            if _status_for_registered_job(job).running
+        ),
+        None,
+    )
+    if active is not None:
+        raise JobAlreadyRunningError(
+            f"Fixture Manager job {active} is already running."
+        )
+
+
+def _selected_conversion_targets(levels: Sequence[str]) -> tuple[str, ...]:
+    """Normalize checkbox values into stable, non-redundant conversion targets."""
+    selected = set(levels)
+    unknown = selected - {ALL_LEVELS, *LEVELS}
+    if unknown:
+        raise ValueError(f"Unknown conversion targets: {sorted(unknown)}")
+    if ALL_LEVELS in selected:
+        return (ALL_LEVELS,)
+    targets = tuple(level for level in LEVELS if level in selected)
+    if not targets:
+        raise ValueError("Select at least one conversion target.")
+    return targets
+
+
 def container_rows(paths: TestDataPaths) -> dict[str, list[dict]]:
-    """Return MuData and per-level table rows for all converted fixtures."""
+    """Route MuData containers and standalone AnnData files to separate tables."""
     tables = {"mudata": [], **{level: [] for level in LEVELS}}
     for catalog_row in catalog_rows(paths):
         directory = converted_dir(paths, catalog_row)
@@ -287,30 +379,10 @@ def container_rows(paths: TestDataPaths) -> dict[str, list[dict]]:
             description = _description_for(path)
             if description["container_type"] == "mudata":
                 tables["mudata"].append(_mudata_row(catalog_row, path, description))
-                for modality, modality_description in description["modalities"].items():
-                    level = modality_description["quantification"].get("level")
-                    if level in tables:
-                        tables[level].append(
-                            _level_row(
-                                catalog_row,
-                                path,
-                                modality_description,
-                                mudata=True,
-                                modality=modality,
-                            )
-                        )
                 continue
             level = description["quantification"].get("level")
             if level in tables:
-                tables[level].append(
-                    _level_row(
-                        catalog_row,
-                        path,
-                        description,
-                        mudata=False,
-                        modality=None,
-                    )
-                )
+                tables[level].append(_level_row(catalog_row, path, description))
     return tables
 
 
@@ -377,9 +449,6 @@ def _level_row(
     catalog_row: dict,
     path: Path,
     description: dict,
-    *,
-    mudata: bool,
-    modality: str | None,
 ) -> dict:
     quantification = description["quantification"]
     return {
@@ -389,15 +458,40 @@ def _level_row(
         "n_obs": quantification["n_runs"],
         "n_var": quantification["n_features"],
         "layers": ", ".join(quantification["layers"]),
-        "mudata": mudata,
-        "modality": modality,
+        "mudata": False,
+        "modality": None,
     }
 
 
 def job_status(job_id: str | None) -> JobStatus | None:
     """Return the current status of a registered background job."""
-    job = _JOBS.get(job_id or "")
-    return inspect_job(job) if job else None
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id or "")
+    if not job:
+        return None
+    return _status_for_registered_job(job)
+
+
+def _status_for_registered_job(job: Job | tuple[Job, ...]) -> JobStatus:
+    """Combine one registered job or conversion group into one status."""
+    if isinstance(job, Job):
+        return inspect_job(job)
+    statuses = [inspect_job(part) for part in job]
+    running = any(status.running for status in statuses)
+    return JobStatus(
+        command=statuses[0].command,
+        returncode=(
+            None
+            if running
+            else next(
+                (status.returncode for status in statuses if not status.success),
+                0,
+            )
+        ),
+        running=running,
+        log_file=statuses[0].log_file,
+        log_text="\n\n".join(status.log_text for status in statuses),
+    )
 
 
 def job_presentation(

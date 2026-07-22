@@ -1,17 +1,23 @@
 """Plotly Dash browser for cataloging and downloading ProteoBench test data."""
 
+from pathlib import Path
+
 import dash_ag_grid as dag
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
 from pydantic import ValidationError
 
+from apb_studio import module_resources
+from apb_studio import settings
 from apb_studio import testdata
 from apb_studio.config_panel import (
     configuration_panel,
     register_configuration_callbacks,
 )
 
-DEFAULT_PATHS = testdata.TestDataPaths()
+DEFAULT_PATHS = testdata.TestDataPaths(
+    data_dir=settings.load_settings().test_data_root,
+)
 STRATEGIES = [
     {
         "label": "Smallest per software/version",
@@ -28,7 +34,12 @@ TABLE_COLUMNS = [
     "nr_feature",
     "intermediate_hash",
     "download_status",
+    "conversion_status",
 ]
+TABLE_HEADERS = {
+    "download_status": "Download",
+    "conversion_status": "Convert",
+}
 TABLE_COLUMN_WIDTHS = {
     "module": 125,
     "software_name": 145,
@@ -36,6 +47,7 @@ TABLE_COLUMN_WIDTHS = {
     "nr_feature": 100,
     "intermediate_hash": 280,
     "download_status": 120,
+    "conversion_status": 190,
     "dataset": 280,
     "n_obs": 90,
     "n_var": 90,
@@ -43,7 +55,18 @@ TABLE_COLUMN_WIDTHS = {
     "modalities": 180,
     "mudata": 85,
     "path": 420,
+    "annotation_path": 420,
+    "annotation_status": 105,
+    "fasta_path": 420,
+    "fasta_status": 105,
 }
+RESOURCE_COLUMNS = [
+    "module",
+    "annotation_status",
+    "annotation_path",
+    "fasta_status",
+    "fasta_path",
+]
 MUDATA_COLUMNS = [
     "dataset",
     "module",
@@ -120,7 +143,7 @@ def data_table(
             {
                 "field": name,
                 "filter": True,
-                "headerName": name.replace("_", " ").title(),
+                "headerName": TABLE_HEADERS.get(name, name.replace("_", " ").title()),
                 "width": TABLE_COLUMN_WIDTHS.get(name, 130),
             }
             for name in columns
@@ -148,8 +171,21 @@ def data_table(
     )
 
 
-def action_panel() -> html.Div:
-    """Build the compact command bar and live job log."""
+def _selected_container_row(
+    active_tab: str,
+    selections: dict[str, list[dict] | None],
+    triggered_id: str | None,
+) -> dict | None:
+    """Return only the selected row belonging to the active container view."""
+    table_id = CONTAINER_TABLE_IDS.get(active_tab)
+    if triggered_id in CONTAINER_TABLE_IDS.values():
+        table_id = triggered_id
+    selected = selections.get(table_id or "")
+    return selected[0] if selected else None
+
+
+def download_controls() -> html.Div:
+    """Build catalog, selection, and download controls."""
     return html.Div(
         [
             html.Div(
@@ -180,6 +216,16 @@ def action_panel() -> html.Div:
                         style=BUTTON_STYLE,
                     ),
                     html.Button(
+                        "Download annotations",
+                        id="annotations-button",
+                        style=BUTTON_STYLE,
+                    ),
+                    html.Button(
+                        "Download FASTAs",
+                        id="fasta-button",
+                        style=BUTTON_STYLE,
+                    ),
+                    html.Button(
                         "Clean generated data",
                         id="clean-button",
                         style=BUTTON_STYLE,
@@ -187,47 +233,93 @@ def action_panel() -> html.Div:
                 ],
                 style={
                     "display": "flex",
+                    "flexWrap": "wrap",
                     "gap": "0.6rem",
                     "alignItems": "center",
                     "padding": "0.5rem 0",
                 },
             ),
-            html.Div(
+        ]
+    )
+
+
+def conversion_controls() -> html.Div:
+    """Build controls for converting the selected downloaded fixture."""
+    return html.Div(
+        [
+            html.Span(
+                "Convert selected →",
+                style={"fontSize": "11px", "fontWeight": "bold"},
+            ),
+            dcc.Checklist(
+                id="convert-level",
+                options=[],
+                value=[],
+                inline=True,
+                style={"fontSize": "11px", "whiteSpace": "nowrap"},
+                labelStyle={"marginRight": "0.65rem"},
+            ),
+            html.Button(
+                "Convert",
+                id="convert-button",
+                disabled=True,
+                style=PRIMARY_BUTTON_STYLE,
+            ),
+            html.Span(id="convert-hint", style={"fontSize": "11px"}),
+        ],
+        style={
+            "display": "flex",
+            "flexWrap": "wrap",
+            "gap": "0.6rem",
+            "alignItems": "center",
+            "padding": "0.5rem 0",
+        },
+    )
+
+
+def workflow_controls() -> html.Div:
+    """Build Download/Convert subtabs and the shared collapsible job log."""
+    return html.Div(
+        [
+            dcc.Tabs(
                 [
-                    html.Span(
-                        "Convert selected →",
-                        style={"fontSize": "11px", "fontWeight": "bold"},
+                    dcc.Tab(
+                        download_controls(),
+                        label="Download",
+                        value="download",
+                        style=TAB_STYLE,
+                        selected_style=SELECTED_TAB_STYLE,
                     ),
-                    dcc.RadioItems(
-                        id="convert-level",
-                        options=CONVERSION_TARGETS,
-                        value=testdata.ALL_LEVELS,
-                        inline=True,
-                        style={"fontSize": "11px", "whiteSpace": "nowrap"},
-                        labelStyle={"marginRight": "0.65rem"},
-                    ),
-                    html.Button(
-                        "Convert",
-                        id="convert-button",
-                        style=PRIMARY_BUTTON_STYLE,
+                    dcc.Tab(
+                        conversion_controls(),
+                        label="Convert",
+                        value="convert",
+                        style=TAB_STYLE,
+                        selected_style=SELECTED_TAB_STYLE,
                     ),
                 ],
-                style={
-                    "display": "flex",
-                    "gap": "0.6rem",
-                    "alignItems": "center",
-                    "padding": "0 0 0.5rem",
-                },
+                id="data-workflow-tabs",
+                value="download",
             ),
-            html.Pre(
-                id="job-log",
-                style={
-                    **PRE_STYLE,
-                    "height": "34vh",
-                    "minHeight": "280px",
-                    "border": "1px solid #e2e2e2",
-                    "padding": "0.5rem",
-                },
+            html.Details(
+                [
+                    html.Summary(
+                        "Log",
+                        id="job-log-summary",
+                        style={"cursor": "pointer", "fontSize": "11px"},
+                    ),
+                    html.Pre(
+                        id="job-log",
+                        style={
+                            **PRE_STYLE,
+                            "border": "1px solid #e2e2e2",
+                            "maxHeight": "22vh",
+                            "padding": "0.5rem",
+                        },
+                    ),
+                ],
+                id="job-log-details",
+                style={"margin": "0.25rem 0"},
             ),
         ]
     )
@@ -280,42 +372,21 @@ def anndata_panel() -> html.Div:
 
 
 def data_panel() -> html.Div:
-    """Build the catalog, download selection, and row-detail tabs."""
+    """Build one fixture table with download/conversion workflows and details."""
     return html.Div(
         [
-            html.Div(
-                [
-                    html.Section(
-                        [
-                            html.H2(
-                                "Catalog",
-                                style={"fontSize": "15px", "margin": "0.4rem 0"},
-                            ),
-                            data_table("catalog-table"),
-                        ]
-                    ),
-                    html.Section(
-                        [
-                            html.H2(
-                                "Selected for download",
-                                style={"fontSize": "15px", "margin": "0.4rem 0"},
-                            ),
-                            data_table("selection-table"),
-                        ]
-                    ),
-                ],
-                style={
-                    "display": "grid",
-                    "gridTemplateColumns": "1fr 1fr",
-                    "gap": "0.75rem",
-                },
+            workflow_controls(),
+            html.H2(
+                "Available fixtures",
+                style={"fontSize": "15px", "margin": "0.4rem 0"},
             ),
+            data_table("catalog-table", height="40vh"),
             detail_tabs(),
         ],
     )
 
 
-def storage_panel() -> html.Div:
+def storage_panel(paths: testdata.TestDataPaths = DEFAULT_PATHS) -> html.Div:
     """Build the test-data root editor and derived-path display."""
     return html.Div(
         [
@@ -329,7 +400,7 @@ def storage_panel() -> html.Div:
                     dcc.Input(
                         id="storage-folder",
                         type="text",
-                        value=str(DEFAULT_PATHS.data_dir),
+                        value=str(paths.data_dir),
                         style={
                             "flex": "1",
                             "fontFamily": "monospace",
@@ -370,6 +441,52 @@ def storage_panel() -> html.Div:
     )
 
 
+def resources_panel() -> html.Div:
+    """Build managed annotation status and optional FASTA overrides."""
+    return html.Div(
+        [
+            html.Div(
+                [
+                    dcc.Dropdown(
+                        id="resource-module",
+                        placeholder="Module",
+                        clearable=False,
+                        style={"fontSize": "11px", "minWidth": "220px"},
+                    ),
+                    html.Span(
+                        "Annotations are downloaded from ProteoBench module_settings.toml",
+                        style={"fontSize": "11px", "color": "#555"},
+                    ),
+                    dcc.Input(
+                        id="resource-fasta",
+                        type="text",
+                        placeholder="/absolute/path/to/reference.fasta",
+                        style={
+                            "flex": "1",
+                            "fontFamily": "monospace",
+                            "fontSize": "11px",
+                            "padding": "0.35rem",
+                        },
+                    ),
+                    html.Button(
+                        "Save FASTA override",
+                        id="resource-save-button",
+                        style=PRIMARY_BUTTON_STYLE,
+                    ),
+                ],
+                style={
+                    "display": "flex",
+                    "gap": "0.6rem",
+                    "alignItems": "center",
+                    "padding": "0.65rem 0",
+                },
+            ),
+            html.Div(id="resource-message", style={"fontSize": "11px"}),
+            data_table("resource-table", RESOURCE_COLUMNS, height="55vh"),
+        ]
+    )
+
+
 def detail_tabs() -> dcc.Tabs:
     """Build row-detail tabs shown only inside the Data workspace."""
     details_style = {
@@ -404,15 +521,17 @@ def detail_tabs() -> dcc.Tabs:
     )
 
 
-def create_app() -> Dash:
+def create_app(*, settings_path: Path | None = None) -> Dash:
     """Create the ProteoBench test-data application."""
-    app = Dash(__name__, title="APB Studio — test data")
+    active_settings = settings.load_settings(settings_path)
+    active_paths = testdata.TestDataPaths(data_dir=active_settings.test_data_root)
+    app = Dash(__name__, title="APB Studio — Fixture Manager")
     app.layout = html.Main(
         [
             html.Div(
                 [
                     html.H1(
-                        "APB Studio — ProteoBench test data",
+                        "APB Studio — Fixture Manager",
                         style={"fontSize": "20px", "margin": "0"},
                     ),
                     html.Div(id="status", style={"fontSize": "11px"}),
@@ -430,19 +549,10 @@ def create_app() -> Dash:
             dcc.Store(id="selected-fixture"),
             dcc.Store(
                 id="storage-root",
-                data=str(DEFAULT_PATHS.data_dir),
-                storage_type="local",
+                data=str(active_paths.data_dir),
             ),
             dcc.Tabs(
                 [
-                    dcc.Tab(
-                        action_panel(),
-                        id="actions-tab",
-                        label="Actions",
-                        value="actions",
-                        style=TAB_STYLE,
-                        selected_style=SELECTED_TAB_STYLE,
-                    ),
                     dcc.Tab(
                         data_panel(),
                         label="Data",
@@ -465,7 +575,14 @@ def create_app() -> Dash:
                         selected_style=SELECTED_TAB_STYLE,
                     ),
                     dcc.Tab(
-                        storage_panel(),
+                        resources_panel(),
+                        label="Resources",
+                        value="resources",
+                        style=TAB_STYLE,
+                        selected_style=SELECTED_TAB_STYLE,
+                    ),
+                    dcc.Tab(
+                        storage_panel(active_paths),
                         label="Storage",
                         value="storage",
                         style=TAB_STYLE,
@@ -490,6 +607,8 @@ def create_app() -> Dash:
         Input("catalog-button", "n_clicks"),
         Input("select-button", "n_clicks"),
         Input("download-button", "n_clicks"),
+        Input("annotations-button", "n_clicks"),
+        Input("fasta-button", "n_clicks"),
         Input("clean-button", "n_clicks"),
         Input("convert-button", "n_clicks"),
         State("strategy", "value"),
@@ -497,27 +616,46 @@ def create_app() -> Dash:
         State("selected-fixture", "data"),
         State("convert-level", "value"),
         State("storage-root", "data"),
+        State("job-id", "data"),
         prevent_initial_call=True,
     )
     def run_action(
         _catalog: int | None,
         _select: int | None,
         _download: int | None,
+        _annotations: int | None,
+        _fasta: int | None,
         _clean: int | None,
         _convert: int | None,
         strategy: str,
         module: str | None,
         selected_fixture: dict | None,
-        convert_level: str,
+        convert_levels: list[str] | None,
         data_root: str,
+        active_job_id: str | None,
     ) -> str:
+        active_status = testdata.job_status(active_job_id)
+        if active_status is not None and active_status.running:
+            raise PreventUpdate
         action = ctx.triggered_id.removesuffix("-button")
         paths = testdata.TestDataPaths(data_dir=data_root)
-        if action == "convert":
-            if not selected_fixture:
-                raise PreventUpdate
-            return testdata.launch_convert(paths, selected_fixture, convert_level)
-        return testdata.launch(action, paths, strategy=strategy, module=module)
+        try:
+            if action == "convert":
+                if not selected_fixture or not convert_levels:
+                    raise PreventUpdate
+                return testdata.launch_convert(paths, selected_fixture, convert_levels)
+            return testdata.launch(action, paths, strategy=strategy, module=module)
+        except testdata.JobAlreadyRunningError as error:
+            raise PreventUpdate from error
+
+    @app.callback(
+        Output("job-log-details", "open"),
+        Input("job-id", "data"),
+        prevent_initial_call=True,
+    )
+    def open_log_for_new_job(job_id: str | None) -> bool:
+        """Reveal command output whenever a new background job starts."""
+        return bool(job_id)
 
     @app.callback(
         Output("storage-root", "data"),
@@ -544,6 +682,10 @@ def create_app() -> Dash:
         try:
             paths = testdata.TestDataPaths(data_dir=folder or "")
             paths.create()
+            settings.update_settings(
+                test_data_root=paths.data_dir,
+                path=settings_path,
+            )
         except ValidationError as error:
             message = str(error.errors()[0]["msg"]).removeprefix("Value error, ")
             return (
@@ -575,13 +717,13 @@ def create_app() -> Dash:
 
     @app.callback(
         Output("catalog-table", "rowData"),
-        Output("selection-table", "rowData"),
         Output("module", "options"),
         Output("status", "children"),
         Output("job-log", "children"),
-        Output("actions-tab", "label"),
-        Output("actions-tab", "style"),
-        Output("actions-tab", "selected_style"),
+        Output("job-log-summary", "children"),
+        Output("job-log-summary", "style"),
+        Output("resource-table", "rowData"),
+        Output("resource-module", "options"),
         Input("poll", "n_intervals"),
         Input("storage-root", "data"),
         State("job-id", "data"),
@@ -590,31 +732,113 @@ def create_app() -> Dash:
         _tick: int,
         data_root: str,
         job_id: str | None,
-    ) -> tuple[list[dict], list[dict], list[dict], str, str, str, dict, dict]:
+    ) -> tuple[
+        list[dict],
+        list[dict],
+        str,
+        str,
+        str,
+        dict[str, str],
+        list[dict],
+        list[dict],
+    ]:
         paths = testdata.TestDataPaths(data_dir=data_root)
         catalog = testdata.catalog_rows(paths)
-        selection = testdata.selection_rows(paths)
         modules = sorted({row["module"] for row in catalog})
+        selection_count = len(testdata.read_rows(paths.selection_csv))
         status = testdata.job_status(job_id)
         message, log_text, log_label, log_style = testdata.job_presentation(
             status,
             catalog_count=len(catalog),
-            selection_count=len(selection),
+            selection_count=selection_count,
         )
         options = [{"label": value, "value": value} for value in modules]
-        action_label = log_label.replace("Log", "Actions", 1)
-        action_style = {**TAB_STYLE, **log_style}
-        selected_action_style = {**SELECTED_TAB_STYLE, **log_style}
+        resources = module_resources.load_module_resources(paths)
         return (
             catalog,
-            selection,
             options,
             message,
             log_text,
-            action_label,
-            action_style,
-            selected_action_style,
+            log_label,
+            {"cursor": "pointer", "fontSize": "11px", **log_style},
+            module_resources.resource_rows(resources, modules),
+            options,
         )
+
+    @app.callback(
+        Output("resource-fasta", "value"),
+        Input("resource-module", "value"),
+        Input("storage-root", "data"),
+    )
+    def show_module_resource(
+        module: str | None,
+        data_root: str,
+    ) -> str:
+        """Populate the editor with the selected module's assignments."""
+        if not module:
+            return ""
+        resource = module_resources.load_module_resources(data_root).for_module(module)
+        if resource is None:
+            return ""
+        return str(resource.fasta_path) if resource.fasta_path else ""
+
+    @app.callback(
+        Output("resource-message", "children"),
+        Output("resource-message", "style"),
+        Input("resource-save-button", "n_clicks"),
+        State("resource-module", "value"),
+        State("resource-fasta", "value"),
+        State("storage-root", "data"),
+        prevent_initial_call=True,
+    )
+    def save_module_resource(
+        _clicks: int,
+        module: str | None,
+        fasta_path: str | None,
+        data_root: str,
+    ) -> tuple[str, dict[str, str]]:
+        """Validate and atomically save one resource assignment."""
+        if not module:
+            return "Choose a module.", {"color": "#b00020", "fontSize": "11px"}
+        try:
+            module_resources.set_module_resource(
+                data_root,
+                module,
+                annotation_path=None,
+                fasta_path=fasta_path,
+            )
+        except (OSError, ValueError, ValidationError) as error:
+            return str(error), {"color": "#b00020", "fontSize": "11px"}
+        return "Assignment saved.", {"color": "#16733c", "fontSize": "11px"}
+
+    @app.callback(
+        Output("convert-level", "options"),
+        Output("convert-level", "value"),
+        Output("convert-hint", "children"),
+        Input("selected-fixture", "data"),
+    )
+    def select_conversion_targets(
+        row: dict | None,
+    ) -> tuple[list[dict], list[str], str]:
+        """Offer only conversion targets supported by the selected fixture."""
+        if not row:
+            return [], [], "Select a fixture."
+        targets = row.get("conversion_targets", [])
+        options = [
+            option for option in CONVERSION_TARGETS if option["value"] in targets
+        ]
+        if not options:
+            return [], [], row.get("conversion_status", "Not convertible.")
+        return options, [options[0]["value"]], row["conversion_status"]
+
+    @app.callback(
+        Output("convert-button", "disabled"),
+        Input("selected-fixture", "data"),
+        Input("convert-level", "value"),
+    )
+    def toggle_convert_button(row: dict | None, levels: list[str] | None) -> bool:
+        """Disable conversion until a fixture and at least one level are selected."""
+        return not row or not levels
 
     @app.callback(
         Output(CONTAINER_TABLE_IDS["mudata"], "rowData"),
@@ -649,6 +873,7 @@ def create_app() -> Dash:
 
     @app.callback(
         Output("anndata-summary", "children"),
+        Input("anndata-level-tabs", "value"),
         Input(CONTAINER_TABLE_IDS["mudata"], "selectedRows"),
         Input(CONTAINER_TABLE_IDS["ion"], "selectedRows"),
         Input(CONTAINER_TABLE_IDS["fragment"], "selectedRows"),
@@ -658,6 +883,7 @@ def create_app() -> Dash:
         Input("storage-root", "data"),
     )
     def show_container_summary(
+        active_tab: str,
         mudata_selected: list[dict] | None,
         ion_selected: list[dict] | None,
         fragment_selected: list[dict] | None,
@@ -677,10 +903,9 @@ def create_app() -> Dash:
             CONTAINER_TABLE_IDS["peptide"]: peptide_selected,
             CONTAINER_TABLE_IDS["protein"]: protein_selected,
         }
-        selected = selections.get(ctx.triggered_id)
-        if not selected:
+        row = _selected_container_row(active_tab, selections, ctx.triggered_id)
+        if row is None:
             return "Select a container."
-        row = selected[0]
         return testdata.container_summary(row["path"], row.get("modality"))
 
     @app.callback(
@@ -689,12 +914,14 @@ def create_app() -> Dash:
         Input("poll", "n_intervals"),
         State("job-id", "data"),
         State("finished-job-id", "data"),
+        State("storage-root", "data"),
         prevent_initial_call=True,
     )
     def show_completed_job(
         _tick: int,
         job_id: str | None,
         finished_job_id: str | None,
+        data_root: str,
     ) -> tuple[object, object]:
         """Show data after success and leave failed-job logs visible."""
         if not job_id or job_id == finished_job_id:
@@ -703,7 +930,16 @@ def create_app() -> Dash:
         if status is None or status.running:
             return no_update, no_update
         if not status.success:
-            return "actions", job_id
+            return "data", job_id
+        action = status.command[1] if len(status.command) > 1 else ""
+        if action in {"annotations", "fasta"}:
+            if action == "fasta":
+                inventory = testdata.fixture_inventory.load_fixture_inventory(data_root)
+                module_resources.sync_fasta_resources(
+                    data_root,
+                    (fixture.module for fixture in inventory.fixtures),
+                )
+            return "resources", job_id
         destination = (
             "anndata"
             if len(status.command) > 1 and status.command[1] == "convert"
@@ -717,19 +953,15 @@ def create_app() -> Dash:
         Output("parameters", "children"),
         Output("selected-fixture", "data"),
         Input("catalog-table", "selectedRows"),
-        Input("selection-table", "selectedRows"),
         Input("storage-root", "data"),
     )
     def show_details(
         catalog_selected: list[dict] | None,
-        selection_selected: list[dict] | None,
         data_root: str,
     ) -> tuple[str, str, str, dict | None]:
-        source = ctx.triggered_id
-        if source == "storage-root":
+        if ctx.triggered_id == "storage-root":
             return "Select a row.", "", "", None
-        selected = catalog_selected if source == "catalog-table" else selection_selected
-        row = selected[0] if selected else None
+        row = catalog_selected[0] if catalog_selected else None
         paths = testdata.TestDataPaths(data_dir=data_root)
         return (*testdata.row_details(paths, row), row)
 

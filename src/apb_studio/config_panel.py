@@ -74,10 +74,7 @@ def configuration_panel() -> html.Div:
                     ),
                     dcc.Dropdown(
                         id="config-kind",
-                        options=[
-                            {"label": "Parsing rule", "value": "rule"},
-                            {"label": "Annotation", "value": "annotation"},
-                        ],
+                        options=[{"label": "Parsing rule", "value": "rule"}],
                         value="rule",
                         clearable=False,
                         style={"width": "145px", "fontSize": "11px"},

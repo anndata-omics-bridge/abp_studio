@@ -1,54 +1,96 @@
-# apb_studio
+# APB Studio
 
-A corpus **dashboard + Snakemake pipeline** over the
-[`anndata_proteomics` (APB)](../anndata_proteomics_bridge) conversion CLI.
+APB Studio provides two local applications over the
+[`anndata_proteomics` (APB)](../apb) CLI:
 
-> *"I have ~90 vendor outputs across ~10 ProteoBench modules. Show me how far each one has
-> progressed through the pipeline, and let me run or clean the missing/stale work — by single
-> dataset, by module, or all at once."*
+- **Fixture Manager** catalogs, selects, downloads, and inspects ProteoBench fixtures and their
+  annotation/FASTA resources.
+- **Corpus Runner** derives every branch supported by APB, launches the complete runnable corpus,
+  and shows stage progress, artifact summaries, and exact failure logs.
 
-## How it fits together
+## Sources of truth
 
-| Piece | File | Role |
-|-------|------|------|
-| Corpus config | `config/corpus.example.yaml` | declares inputs, outputs, module↔annotation map (round-tripped) |
-| Stage registry | `config/registry.yaml` | **single source of truth** for stages; read by both the Snakefile and the dashboard |
-| Pipeline | `workflow/Snakefile` | builds the DAG; shells out to the `apb` CLI |
-| Corpus app | `src/apb_studio/dashboard.py` | Plotly Dash corpus overview |
-| Test-data app | `src/apb_studio/testdata_app.py` | catalog, select, download, and inspect ProteoBench fixtures |
+| Information | Owner |
+| --- | --- |
+| Catalog, download queue, report, and cached fixture files | Fixture Manager via `apb-testdata` |
+| Active test-data root | Fixture Manager setting |
+| ProteoBench module annotations and FASTA resources | Fixture Manager downloads/resource inventory |
+| MuData and standalone levels | APB JSON rules resolved against local inputs and parameters |
+| Output root | Corpus Runner setting |
+| Scope and provenance of one launch | Corpus Runner-generated `run.json` |
+| Completion and runtime failure | Artifacts and authoritative rule failure markers |
 
-The **filesystem is the state**: `output_root/<module>/<dataset>/<stage>.h5ad` existing ⇒ that
-stage is done. No separate database.
+The applications share typed settings stored in the operating system's application-config
+directory. The corpus is every complete local fixture under the active test-data root; the
+selection CSV controls the download queue only. A complete fixture has exactly one `input_file.*`
+and one `param_0.*`.
 
-## Stages
+There is no user-maintained `corpus.yaml`. No fixture table or application setting declares a
+level such as `ion`: APB parses the parameter version and input headers, then resolves the matching
+packaged parsing-rule JSON. The ignored legacy `config/corpus.yaml`, if present in a checkout, is
+left untouched but is no longer read.
 
-`convert` → `mudata.h5mu` (one read → the multi-level MuData; `--level X` is the single-`.h5ad`
-opt-in) · `annotate` (container-agnostic `obs`, one annotation JSON file) · `fasta` (optional, protein
-`var`).
+## Corpus Runner
 
-`make testdata-app` runs the unified test-data application. Its **Configuration** tab catalogs
-APB's software-version JSON documents and can load external parsing-rule or annotation JSON files.
-Selecting a document opens read-only `Base` and level tabs containing the raw source sections.
-One section can be explicitly edited at a time; saves are enabled only for valid changes and use
-whole-document Pydantic validation, stale-file protection, and atomic replacement.
+The Corpus Runner shows one compact table with `Module`, `Dataset`, `Software`, `Level`,
+`Converted`, `Annotated`, and `FASTA annotated`. Each supported fixture fans out to MuData plus all
+supported standalone levels. Unsupported or invalid local fixtures remain visible as one
+unresolved row.
 
-## Historical design
+`Run corpus` freezes fixture identities, resolved branches, paths, resources, output aliases, and
+APB/registry versions into:
 
-The implemented dashboard's historical functional spec is archived at
-[TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md).
+```text
+<output_root>/.apb_studio/runs/<run-id>/run.json
+```
+
+That JSON file is internal execution state, not user configuration. Snakemake consumes the frozen
+snapshot with `--keep-going`; a fixture downloaded during a run joins only after that run finishes
+and the application reloads.
+
+The stage states have precise meanings:
+
+| State | Meaning |
+| --- | --- |
+| blank | Runnable or normally waiting for an upstream stage |
+| `DONE` | The expected artifact exists |
+| `UNSUPPORTED` | APB has no registered capability for the software, or no parsing-rule JSON matches |
+| `BLOCKED` | A required input/resource is invalid or absent, or an upstream stage terminated |
+| `FAILED` | Snakemake attempted that exact rule and its failure marker exists |
+
+Only `FAILED` is red and offers a downloadable rule log. A leftover log alone never means failure,
+and an artifact wins over an old failure marker. Clicking `DONE` shows APB's cumulative artifact
+summary; clicking another terminal state shows its diagnostic.
+
+## Fixture Manager
+
+The Fixture Manager owns the canonical cache lifecycle. Its fixture table combines the generated
+catalog, selection, and download-report CSVs with live filesystem checks. It downloads
+ProteoBench `module_settings.toml` observation annotations and APB's FASTA resources, then resolves
+both by module without requiring manual annotation paths.
+
+Its Configuration workspace catalogs APB parsing-rule JSON documents. The AnnData
+workspace keeps MuData and standalone `.h5ad` outputs distinct and displays APB's stored summaries.
 
 ## Quick start
 
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install -e .
-cp config/corpus.example.yaml config/corpus.yaml   # edit paths
-make dag    # dry-run: what would run
-make app              # open the corpus dashboard
-make testdata-app     # open the ProteoBench test-data application
+uv pip install -e ../apb
+
+make fixture-manager   # Fixture Manager, default Dash port 8050
+make corpus-runner     # Corpus Runner, default Dash port 8051
 ```
 
-The test-data application's **Storage** tab selects one root directory for the
-catalog, selection and manifest CSVs plus downloaded metadata/raw files. Studio
-logs use the operating-system cache. The displayed APB `test_data_download`
-folder remains the default.
+Use `make corpus-runner APP_PORT=8052` if port 8051 is occupied. The preferred console commands
+are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`. `make testdata-app`, `make app`,
+`apb-studio-testdata`, and `apb-studio` remain compatibility aliases.
+
+Run the test suite with `make test`.
+
+## Historical design
+
+The current migration plan is [TODO/TODO_corpus_application.md](TODO/TODO_corpus_application.md).
+The original dashboard specification is archived at
+[TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md).

@@ -1,6 +1,6 @@
-"""Guard the registry/corpus contract that both the Snakefile and dashboard depend on."""
+"""Guard the stage registry shared by the Snakefile and dashboard."""
 
-from apb_studio.registry import REGISTRY_PATH, load_corpus, load_registry
+from apb_studio.registry import REGISTRY_PATH, load_registry
 
 _REPO_ROOT = REGISTRY_PATH.parents[1]
 _REQUIRED_STAGE_KEYS = {"name", "scope", "output_pattern", "command", "depends_on"}
@@ -42,12 +42,8 @@ def test_non_root_stages_declare_artifact_and_resource():
             )
 
 
-def test_example_corpus_loads():
-    corpus = load_corpus(_REPO_ROOT / "config" / "corpus.example.yaml")
-    assert {"input_root", "output_root", "modules"} <= corpus.keys()
-    for module in corpus["modules"].values():
-        # A module holds datasets; `annotation`/`fasta` are optional, module-level.
-        assert "datasets" in module
-        for ds in module["datasets"]:
-            # vendor → `apb convert --software`; input/params per dataset (vendor/level are per dataset).
-            assert {"name", "vendor", "input", "params"} <= ds.keys()
+def test_registry_does_not_encode_fixture_levels() -> None:
+    source = (_REPO_ROOT / "config" / "registry.yaml").read_text()
+
+    assert "level: ion" not in source
+    assert "modules:" not in source

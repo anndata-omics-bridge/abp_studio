@@ -12,7 +12,6 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
-from anndata_proteomics.annotation.loader import parse_annotation
 from anndata_proteomics.rules.loader import (
     parse_rule_source,
     validate_rule_source,
@@ -22,7 +21,7 @@ from anndata_proteomics.rules.registry import (
     iter_packaged_documents,
 )
 
-ConfigKind = Literal["rule", "annotation"]
+ConfigKind = Literal["rule"]
 
 
 class ConfigSaveError(ValueError):
@@ -68,17 +67,12 @@ def load_document(path: Path | str, *, kind: ConfigKind = "rule") -> dict[str, A
     source = resolved.read_text(encoding="utf-8")
     report = validate_source(resolved, source, kind=kind)
 
-    if kind == "annotation":
-        raw = json.loads(source)
-        sections = {"annotation": _pretty_json(raw)}
-        labels = {"annotation": "Annotation"}
-    else:
-        raw = parse_rule_source(source, path=resolved)
-        sections = {"base": _pretty_json(raw["base"])}
-        sections.update(
-            (level, _pretty_json(fragment)) for level, fragment in raw["levels"].items()
-        )
-        labels = {"base": "Base", **{level: level.title() for level in raw["levels"]}}
+    raw = parse_rule_source(source, path=resolved)
+    sections = {"base": _pretty_json(raw["base"])}
+    sections.update(
+        (level, _pretty_json(fragment)) for level, fragment in raw["levels"].items()
+    )
+    labels = {"base": "Base", **{level: level.title() for level in raw["levels"]}}
 
     return {
         "path": str(resolved),
@@ -101,13 +95,9 @@ def validate_source(
     """Validate a complete unsaved document through APB's Pydantic models."""
     resolved = Path(path).expanduser().resolve()
     try:
-        if kind == "annotation":
-            parse_annotation(source, path=resolved)
-            affected = ["annotation"]
-        else:
-            raw = parse_rule_source(source, path=resolved)
-            document = validate_rule_source(raw, path=resolved)
-            affected = list(document.levels)
+        raw = parse_rule_source(source, path=resolved)
+        document = validate_rule_source(raw, path=resolved)
+        affected = list(document.levels)
     except Exception as exc:  # noqa: BLE001 - all config errors are rendered in the UI
         return {"valid": False, "issues": _issues_from_exception(exc), "affected": []}
     return {"valid": True, "issues": [], "affected": affected}
@@ -132,11 +122,8 @@ def validate_section(
             document_source=document_source,
             kind=kind,
         )
-        if kind == "annotation":
-            parse_annotation(candidate, path=resolved)
-        else:
-            raw = parse_rule_source(candidate, path=resolved)
-            validate_rule_source(raw, path=resolved)
+        raw = parse_rule_source(candidate, path=resolved)
+        validate_rule_source(raw, path=resolved)
     except Exception as exc:  # noqa: BLE001 - all config errors are rendered in the UI
         return {
             "valid": False,
@@ -148,10 +135,7 @@ def validate_section(
 
 def format_json_source(source: str, *, kind: ConfigKind) -> str:
     """Return canonical, two-space-indented complete JSON after validation."""
-    if kind == "rule":
-        data = parse_rule_source(source)
-    else:
-        data = json.loads(source)
+    data = parse_rule_source(source)
     return _pretty_json(data)
 
 
@@ -222,14 +206,6 @@ def _candidate_with_section(
     kind: ConfigKind,
 ) -> tuple[str, list[str]]:
     """Replace one raw source section and serialize the candidate document."""
-    if kind == "annotation":
-        if section != "annotation":
-            raise ValueError(f"unknown annotation section {section!r}")
-        candidate = json.loads(section_source)
-        if not isinstance(candidate, dict):
-            raise ValueError("annotation JSON must be an object")
-        return json.dumps(candidate), ["annotation"]
-
     document = parse_rule_source(document_source, path=path)
     fragment = parse_rule_source(section_source, path=f"{path}#{section}")
     levels = document.get("levels")

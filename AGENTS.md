@@ -1,71 +1,76 @@
-# apb_studio
+# APB Studio
 
-Corpus **dashboard + Snakemake pipeline** over the `anndata_proteomics` (APB) conversion CLI.
-It drives conversion/annotation across a whole corpus (~90 vendor outputs across ~10 ProteoBench
-modules) and shows how far each dataset has progressed.
+APB Studio is a consumer of `anndata_proteomics` (APB). Dependency direction is
+`apb_studio → APB`, never the reverse. It provides two applications:
 
-This repo is a **consumer** of APB — it never reimplements conversion. Dependency direction is
-`apb_studio → APB`, never the reverse.
+- **Fixture Manager** owns the local ProteoBench fixture and resource inventory.
+- **Corpus Runner** derives APB-supported branches, launches Snakemake, and reports progress.
 
-## Historical design
+## Architecture
 
-The implemented dashboard's historical functional spec is archived at
-[TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md).
+The Fixture Manager runs `apb-testdata` to create and update catalog, selection, download-report,
+cache, ProteoBench module-annotation TOMLs, and FASTA artifacts. Both applications read one typed
+fixture-inventory API and shared disk-backed settings. The selection CSV is a download queue, not a
+corpus filter; every complete local fixture is part of the Corpus Runner inventory.
 
-## Architecture in one paragraph
+APB's packaged parsing-rule JSONs resolved against each local input and parameter file are the only
+source of supported MuData/standalone levels. Never add a Studio vendor/level map. There is no
+user-maintained `corpus.yaml`, replacement YAML, or scaffold workflow.
 
-The **stage registry** (`config/registry.yaml`) is the single source of truth for pipeline
-stages; both the Snakefile and the dashboard read it. The **corpus config**
-(`config/corpus.example.yaml`) declares inputs, outputs, and the module↔dataset↔annotation-TOML
-map (round-tripped: UI loads it as defaults, a run writes it back). **Snakemake** owns the doing;
-the **filesystem is the database** (a file exists ⇒ that stage is done). The **Dash applications**
-computes coverage by globbing the output tree and triggers run/clean by scope×stage.
+At launch, the Corpus Runner freezes the resolved fixtures, branches, resources, aliases, paths,
+and versions into `<output_root>/.apb_studio/runs/<run-id>/run.json`. This is versioned internal
+execution state and must never become accepted user configuration. While a run is active, keep its
+table pinned to that snapshot.
 
-## Stages (registry-driven)
+The stage registry (`config/registry.yaml`) owns stage topology and command templates. Snakemake
+owns execution. Each discovered branch follows `convert → annotate → fasta`; a missing later-stage
+resource must not suppress an earlier runnable target.
 
-`convert` → `mudata.h5mu` (one read → the multi-level MuData; `--level X` is the single-`.h5ad`
-opt-in) · `annotate` (container-agnostic, writes `obs`, one annotation TOML) · `fasta` (optional,
-protein `var`).
+## Engineering rules
 
-Adding a stage = **one registry entry + one Snakemake rule + one `apb` CLI subcommand**. The
-dashboard re-derives its grid columns and pickers from the registry — no imperative GUI edits.
+- **Reuse before duplicate.** Call APB for conversion, annotation, FASTA handling, capability
+  resolution, and summaries. Use Snakemake for orchestration and Plotly Dash for the applications.
+- **Keep `__init__.py` empty** (a module docstring is acceptable), matching APB.
+- **Use stable fixture identity:** `(canonical module, repository name, full intermediate hash)`.
+- **Preserve existing output associations.** Resolve the app-owned fixture-to-output alias before
+  constructing `output_root/<module>/<alias>/<stage-files>`.
+- **Inventory from live files.** A manifest status is history and cannot override absent or
+  ambiguous `input_file.*`/`param_0.*` files.
+- **Resolve all branches from APB.** Do not copy parsing-rule capabilities into fixture tables,
+  settings, or run configuration.
+- **Keep summaries in APB.** Render `describe_path()` output; do not derive proteomics metrics in
+  Studio.
+- **Keep interfaces consistent.** Both applications use the same settings, fixture records,
+  resources, and identifiers.
 
-## Rules
+## Status contract
 
-- **Reuse before duplicate.** Conversion/annotation lives in APB and is called via the `apb` CLI.
-  Orchestration is Snakemake; the GUI is Plotly Dash; config/registry are YAML. Do not reimplement any
-  of these.
-- **Keep `__init__.py` empty** (module docstring only), matching APB.
-- **Hierarchical output layout, by module:** `output_root/<module>/<dataset>/<stage-files>`.
+- blank: runnable/pending, including a downstream stage normally waiting for its upstream output.
+- `DONE`: the expected artifact exists.
+- `UNSUPPORTED`: APB has no registered capability for the software, or no parsing-rule JSON
+  matches.
+- `BLOCKED`: a required input/resource is absent or invalid, or an upstream stage terminated.
+- `FAILED`: Snakemake attempted that concrete rule, it exited non-zero, and its failure marker
+  exists.
 
-## Status
-
-The `apb` CLI exists (`apb convert/annotate/fasta/validate/list`); apb is a pure library + CLI. The
-pipeline is **implemented** against the real CLI — `pipeline.py` (the registry-driven core: paths +
-rendered commands + coverage, the single source of truth), a wildcard-output `Snakefile`, an
-`execution.py`/`jobrunner.py` background-run layer, a per-rule `provenance.py` sidecar, and a Dash
-`dashboard.py` (coverage grid + Run/Clean triggers). See the
-[archived design](TODO/Archive/TODO_workflow_dashboard_plan.md) for its original decision record.
-
-Stages, all driven from `config/registry.yaml`: `apb convert <data> --software <v> --params <p>
---output <o>` → `mudata.h5mu` (one read; `<level>.h5ad` when a module declares `level` — decision
-16; **no `assemble-mudata`**) · `apb annotate <data> <toml>` (one annotation TOML, container-agnostic)
-· optional `apb fasta` (protein `var`). Each rule appends `python -m apb_studio.provenance` so every
-artifact gets a `provenance.json`.
-
-Verified: `pytest` (44) green, `ruff` clean, `snakemake -n` resolves both vendor shapes, and a
-stubbed `make run` produces convert+annotate artifacts + provenance with coverage flipping to done.
-**Not yet done:** a *real* apb conversion needs a param file apb recognizes (apb's contract); the
-interactive dashboard wants a manual `make app` smoke; and the comment-preserving `corpus.yaml`
-write-back (decision 8) is deferred.
+Unreadable input or parameters are `BLOCKED`, not `UNSUPPORTED`. A log alone never means failure.
+An artifact wins over an old marker. If conversion fails, its unattempted descendants are
+`BLOCKED`. Only an actual `FAILED` cell offers a log download.
 
 ## Development
 
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install -e .
-uv pip install -e ../anndata_proteomics_bridge   # provides the `apb` CLI (when it exists)
-make app              # open the corpus dashboard
-make testdata-app     # open the ProteoBench test-data application
-make dag    # snakemake dry-run: what's pending
+uv pip install -e ../apb
+make fixture-manager
+make corpus-runner
+make test
 ```
+
+Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
+`make testdata-app`/`make app` and `apb-studio-testdata`/`apb-studio` are compatibility aliases.
+
+See [TODO/TODO_corpus_application.md](TODO/TODO_corpus_application.md) for the approved migration
+plan and [TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md)
+for the original dashboard design.

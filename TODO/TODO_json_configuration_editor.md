@@ -24,7 +24,7 @@
   and arrays of rule objects append in base-to-level order.
 - Make `--rule-config` accept the same document format as packaged rules. With `LEVEL`, it converts
   that level; without `LEVEL`, it converts every matching level and emits MuData when appropriate.
-- Keep annotation JSON separate; this document format applies only to parsing rules.
+- Observation annotation tables are external resources; this document format applies only to parsing rules.
 - Make Studio primarily a configuration viewer:
   - compact catalog containing software and version documents, not one row per level;
   - selecting a document shows its `Base` section;

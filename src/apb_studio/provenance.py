@@ -1,11 +1,13 @@
-"""Per-artifact provenance sidecars (decision 17) — apb stores search parameters in the result's
-``uns`` but writes no sidecar, so apb_studio writes one.
+"""Per-artifact provenance sidecars (decision 17).
 
-``provenance.json`` sits in each dataset's output dir, keyed by stage, recording the rendered
-command (which carries ``--software``/``--params``), the inputs, the apb version, and a timestamp.
-It is written by the **Snakefile** right after each rule succeeds (``python -m apb_studio.provenance
---config <corpus> --output <artifact>``), so every artifact gets a sidecar regardless of whether the
-run was driven by the dashboard or the CLI.
+APB stores search parameters in the result's ``uns`` but writes no sidecar, so apb_studio writes
+one adjacent ``<artifact>.provenance.json`` for every output artifact. Each sidecar records the
+rendered command (which carries ``--software``/``--params``), inputs, APB version, and timestamp.
+Artifact-specific filenames keep same-stage records from independent output branches distinct.
+
+The **Snakefile** writes a sidecar right after each rule succeeds with
+``python -m apb_studio.provenance --run <run.json> --output <artifact>``, whether the run was
+started from the dashboard or the CLI.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from apb_studio.pipeline import Target, expand_targets, load_corpus, load_registry
+from apb_studio.pipeline import RunSnapshot, Target, load_run_snapshot
 
 
 def apb_version(apb_exe: str | None = None) -> str | None:
@@ -50,6 +52,7 @@ def record(
     timestamp: str,
     version: str | None = None,
     warning: str | None = None,
+    run: RunSnapshot | None = None,
 ) -> dict:
     """The provenance record for one Target (pure). The rendered command carries vendor/params.
 
@@ -68,6 +71,19 @@ def record(
     }
     if warning:
         rec["warning"] = warning
+    if run is not None:
+        fixture = next(
+            (
+                item
+                for item in run.fixtures
+                if item.repo_name == target.module and item.dataset == target.dataset
+            ),
+            None,
+        )
+        rec["run_id"] = run.run_id
+        rec["registry_digest"] = run.registry_digest
+        if fixture is not None:
+            rec["fixture_identity"] = list(fixture.identity)
     return rec
 
 
@@ -104,11 +120,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _load_sidecar(path: Path) -> dict:
-    """Read an existing provenance.json into a dict; tolerate corrupt/odd-shaped files (start fresh
-    but back the bad file up so prior history is not silently lost)."""
+def sidecar_path(output: Path) -> Path:
+    """Return the provenance sidecar adjacent to an output artifact."""
+    return Path(f"{output}.provenance.json")
+
+
+def _preserve_corrupt_sidecar(path: Path) -> None:
+    """Back up an invalid existing sidecar before it is replaced."""
     if not path.exists():
-        return {}
+        return
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -118,19 +138,25 @@ def _load_sidecar(path: Path) -> dict:
             path.replace(path.with_suffix(".json.bak"))
         except OSError:
             pass
-        return {}
-    return data
 
 
 def write_for_target(
-    target: Target, *, timestamp: str | None = None, version: str | None = None
+    target: Target,
+    *,
+    timestamp: str | None = None,
+    version: str | None = None,
+    run: RunSnapshot | None = None,
 ) -> Path:
-    """Write/merge ``provenance.json`` next to the target's output, keyed by stage. Returns the path."""
-    path = target.output.parent / "provenance.json"
-    data = _load_sidecar(path)
+    """Write the target's adjacent artifact-specific provenance and return its path."""
+    path = sidecar_path(target.output)
+    _preserve_corrupt_sidecar(path)
     warning = read_params_warning(target.output) if target.output.exists() else None
-    data[target.stage] = record(
-        target, timestamp=timestamp or _now(), version=version, warning=warning
+    data = record(
+        target,
+        timestamp=timestamp or _now(),
+        version=version,
+        warning=warning,
+        run=run,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -138,41 +164,44 @@ def write_for_target(
 
 
 def prune_for_target(target: Target) -> None:
-    """Drop a stage's entry from its sibling ``provenance.json`` (called when its artifact is cleaned),
-    so the sidecar never outlives the artifact it documents. Removes the file once empty."""
-    path = target.output.parent / "provenance.json"
-    if not path.exists():
-        return
-    data = _load_sidecar(path)
-    data.pop(target.stage, None)
-    if data:
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    else:
+    """Remove provenance for a cleaned artifact without touching sibling branches."""
+    path = sidecar_path(target.output)
+    if path.exists():
         path.unlink()
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI used by the Snakefile post-rule: write provenance for the target that produced --output."""
     parser = argparse.ArgumentParser(prog="apb_studio.provenance")
-    parser.add_argument("--config", required=True, help="corpus config YAML")
+    parser.add_argument("--run", required=True, help="generated Corpus Runner JSON")
     parser.add_argument(
         "--output", required=True, help="the artifact path that was just produced"
     )
     args = parser.parse_args(argv)
 
-    corpus = load_corpus(args.config)
+    run = load_run_snapshot(args.run)
     target_path = str(Path(args.output))
     target = next(
-        (
-            t
-            for t in expand_targets(load_registry(), corpus)
-            if str(t.output) == target_path
-        ),
+        (t for t in run.targets if str(t.output) == target_path),
         None,
     )
-    if target is None:  # output not in the corpus → nothing to record
-        return 0
-    write_for_target(target, version=apb_version())
+    if target is None:
+        print(
+            f"Refusing provenance for output outside this run: {target_path}",
+            file=sys.stderr,
+        )
+        return 2
+    if not target.output.is_file():
+        print(
+            f"Rule command completed without creating its artifact: {target.output}",
+            file=sys.stderr,
+        )
+        return 1
+    write_for_target(
+        target,
+        version=run.apb_version or apb_version(),
+        run=run,
+    )
     return 0
 
 

@@ -1,14 +1,8 @@
-"""Registry-driven core — the single source of truth (decision 5).
+"""Registry-driven target expansion and corpus progress state.
 
-Turns (stage registry + corpus config) into concrete `Target`s: an output path, a fully-rendered
-`apb` command (argv), and the upstream inputs that feed it. The Snakefile and the dashboard both
-call these functions; neither restates stage knowledge, so the registry and the GUI cannot drift.
-
-The stage graph is a DAG: nodes are artifacts (= the kanban baskets), edges are tools (= stages).
-`expand_targets` derives every edge from the registry's `depends_on` (no hardcoded wiring), so
-adding a stage is a registry edit — the topology is data (§13). The kanban renders the path case.
-
-See TODO/Archive/TODO_workflow_dashboard_plan.md §7, §8, §13.
+APB's parsing-rule JSONs decide which conversion branches an input supports. This module expands
+each discovered branch through the registry's stage DAG, producing the concrete paths and commands
+shared by Snakemake and the dashboard.
 """
 
 from __future__ import annotations
@@ -16,30 +10,20 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from apb_studio.registry import load_corpus, load_registry  # noqa: F401 (re-exported for callers)
+from anndata_proteomics.converters import pipeline as conversion_pipeline
 
-# Vendors whose `apb convert` (no --level) emits a multi-level MuData. Every other vendor is
-# single-level and MUST declare `level` in the corpus config (decision 16); otherwise APB chooses
-# an .h5ad suffix while Snakemake is waiting for the configured .h5mu target.
-MULTI_LEVEL_VENDORS = frozenset({"diann", "spectronaut"})
+from apb_studio import capabilities
+from apb_studio.registry import load_registry  # noqa: F401 (re-exported for callers)
 
-# The quantification level apb's packaged rules emit for each SINGLE-level vendor (mirrors apb's
-# supported vendor/level table). The level is a property of the VENDOR, not of the benchmark module's
-# name — e.g. WOMBAT is peptidoform even inside an "…_ion_…" module — so `make scaffold` declares
-# this per dataset (decision 16) rather than taking the module-name level. A vendor not listed here
-# falls back to the module-name level.
-SINGLE_LEVEL_VENDOR_LEVELS = {
-    "maxquant": "ion",
-    "fragpipe": "ion",
-    "peaks": "ion",
-    "wombat": "peptidoform",
-}
-
-# Quantification levels apb can emit as a standalone AnnData (used for the convert wildcard).
-LEVELS = ("ion", "fragment", "peptidoform", "peptide", "protein")
+MUDATA = conversion_pipeline.MUDATA
+LEVELS = tuple(conversion_pipeline.LEVELS)
+BRANCHES = (MUDATA, *LEVELS)
+CapabilityResolver = Callable[[Path, Path, str], capabilities.CapabilityDiscovery]
 
 # The basket a dataset sits in before any stage has run (the DAG source). Kept here so the
 # dashboard and baskets() agree on the label without hardcoding it in the GUI.
@@ -47,9 +31,13 @@ INPUTS_BASKET = "inputs"
 
 # Wildcard-constraint regexes the Snakefile uses to route one `{artifact}` wildcard to the right
 # stage rule (the three are disjoint, so there is no ambiguity).
-CONVERT_ARTIFACT_RE = r"mudata\.h5mu|(?:" + "|".join(LEVELS) + r")\.h5ad"
-ANNOTATE_ARTIFACT_RE = r"annotated\.(?:h5mu|h5ad)"
-FASTA_ARTIFACT_RE = r"annotated_fasta\.(?:h5mu|h5ad)"
+_LEVEL_RE = "|".join(LEVELS)
+CONVERT_ARTIFACT_RE = rf"{MUDATA}\.h5mu|(?:{_LEVEL_RE})\.h5ad"
+ANNOTATE_ARTIFACT_RE = rf"{MUDATA}\.annotated\.h5mu|(?:{_LEVEL_RE})\.annotated\.h5ad"
+FASTA_ARTIFACT_RE = (
+    rf"{MUDATA}\.annotated_fasta\.h5mu|"
+    rf"(?:{_LEVEL_RE})\.annotated_fasta\.h5ad"
+)
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
@@ -60,7 +48,7 @@ class CleanGuardError(Exception):
 
 @dataclass(frozen=True)
 class Target:
-    """One (module, dataset, stage) unit of work."""
+    """One ``(module, dataset, branch, stage)`` unit of work."""
 
     module: str
     dataset: str
@@ -68,47 +56,246 @@ class Target:
     output: Path  # absolute, under output_root
     command: list[str]  # fully-rendered argv (ready for shell / preview)
     inputs: list[Path] = field(default_factory=list)
-    vendor: str = ""  # the dataset's software (decision 14) — carried for baskets()
-    level: str | None = (
-        None  # the dataset's level (single-level vendor) or None (multi-level)
+    vendor: str = ""
+    level: str | None = None
+    branch: str = MUDATA
+    blocked_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedFixture:
+    """One complete local fixture resolved against APB's parsing rules."""
+
+    module: str
+    repo_name: str
+    intermediate_hash: str
+    dataset: str
+    software: str
+    vendor: str
+    input_path: Path
+    parameter_path: Path
+    branches: tuple[str, ...]
+    capability_status: str
+    diagnostic: str | None = None
+    annotation_path: Path | None = None
+    fasta_path: Path | None = None
+    annotation_error: str | None = None
+    fasta_error: str | None = None
+
+    @property
+    def identity(self) -> tuple[str, str, str]:
+        """Return the stable fixture identity used by the output-alias store."""
+        return self.module, self.repo_name, self.intermediate_hash
+
+
+@dataclass(frozen=True, slots=True)
+class RunSnapshot:
+    """Immutable execution input generated by Corpus Runner for one launch."""
+
+    schema_version: int
+    run_id: str
+    created_at: str
+    test_data_root: Path
+    output_root: Path
+    registry_digest: str
+    apb_version: str | None
+    fixtures: tuple[ResolvedFixture, ...]
+    targets: tuple[Target, ...]
+
+
+RUN_SNAPSHOT_SCHEMA_VERSION = 1
+
+
+def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
+    """Return the JSON-compatible representation of one generated run."""
+    return {
+        "schema_version": snapshot.schema_version,
+        "run_id": snapshot.run_id,
+        "created_at": snapshot.created_at,
+        "test_data_root": str(snapshot.test_data_root),
+        "output_root": str(snapshot.output_root),
+        "registry_digest": snapshot.registry_digest,
+        "apb_version": snapshot.apb_version,
+        "fixtures": [
+            {
+                "module": fixture.module,
+                "repo_name": fixture.repo_name,
+                "intermediate_hash": fixture.intermediate_hash,
+                "dataset": fixture.dataset,
+                "software": fixture.software,
+                "vendor": fixture.vendor,
+                "input_path": str(fixture.input_path),
+                "parameter_path": str(fixture.parameter_path),
+                "branches": list(fixture.branches),
+                "capability_status": fixture.capability_status,
+                "diagnostic": fixture.diagnostic,
+                "annotation_path": (
+                    str(fixture.annotation_path)
+                    if fixture.annotation_path is not None
+                    else None
+                ),
+                "fasta_path": (
+                    str(fixture.fasta_path) if fixture.fasta_path is not None else None
+                ),
+                "annotation_error": fixture.annotation_error,
+                "fasta_error": fixture.fasta_error,
+            }
+            for fixture in snapshot.fixtures
+        ],
+        "targets": [
+            {
+                "module": target.module,
+                "dataset": target.dataset,
+                "stage": target.stage,
+                "output": str(target.output),
+                "command": list(target.command),
+                "inputs": [str(path) for path in target.inputs],
+                "vendor": target.vendor,
+                "level": target.level,
+                "branch": target.branch,
+                "blocked_reason": target.blocked_reason,
+            }
+            for target in snapshot.targets
+        ],
+    }
+
+
+def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
+    """Validate and decode a generated run JSON object."""
+    version = data.get("schema_version")
+    if version != RUN_SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(
+            "Unsupported run snapshot schema version "
+            f"{version!r}; expected {RUN_SNAPSHOT_SCHEMA_VERSION}."
+        )
+    fixtures = tuple(
+        ResolvedFixture(
+            module=str(item["module"]),
+            repo_name=str(item["repo_name"]),
+            intermediate_hash=str(item["intermediate_hash"]),
+            dataset=str(item["dataset"]),
+            software=str(item["software"]),
+            vendor=str(item["vendor"]),
+            input_path=Path(item["input_path"]),
+            parameter_path=Path(item["parameter_path"]),
+            branches=tuple(str(branch) for branch in item.get("branches", [])),
+            capability_status=str(item["capability_status"]),
+            diagnostic=(
+                str(item["diagnostic"]) if item.get("diagnostic") is not None else None
+            ),
+            annotation_path=(
+                Path(item["annotation_path"])
+                if item.get("annotation_path") is not None
+                else None
+            ),
+            fasta_path=(
+                Path(item["fasta_path"]) if item.get("fasta_path") is not None else None
+            ),
+            annotation_error=(
+                str(item["annotation_error"])
+                if item.get("annotation_error") is not None
+                else None
+            ),
+            fasta_error=(
+                str(item["fasta_error"])
+                if item.get("fasta_error") is not None
+                else None
+            ),
+        )
+        for item in data.get("fixtures", [])
     )
+    targets = tuple(
+        Target(
+            module=str(item["module"]),
+            dataset=str(item["dataset"]),
+            stage=str(item["stage"]),
+            output=Path(item["output"]),
+            command=[str(token) for token in item.get("command", [])],
+            inputs=[Path(path) for path in item.get("inputs", [])],
+            vendor=str(item.get("vendor", "")),
+            level=str(item["level"]) if item.get("level") is not None else None,
+            branch=str(item.get("branch", MUDATA)),
+            blocked_reason=(
+                str(item["blocked_reason"])
+                if item.get("blocked_reason") is not None
+                else None
+            ),
+        )
+        for item in data.get("targets", [])
+    )
+    snapshot = RunSnapshot(
+        schema_version=RUN_SNAPSHOT_SCHEMA_VERSION,
+        run_id=str(data["run_id"]),
+        created_at=str(data["created_at"]),
+        test_data_root=Path(data["test_data_root"]),
+        output_root=Path(data["output_root"]),
+        registry_digest=str(data["registry_digest"]),
+        apb_version=(
+            str(data["apb_version"]) if data.get("apb_version") is not None else None
+        ),
+        fixtures=fixtures,
+        targets=targets,
+    )
+    _validate_snapshot_paths(snapshot)
+    return snapshot
 
 
-def convert_artifact(dataset_cfg: dict) -> str:
-    """The convert stage's filename for a dataset (decision 16).
+def _validate_snapshot_paths(snapshot: RunSnapshot) -> None:
+    """Reject malformed snapshots whose outputs escape the frozen output root."""
+    output_root = snapshot.output_root.resolve()
+    for target in snapshot.targets:
+        output = target.output.resolve()
+        if output_root != output and output_root not in output.parents:
+            raise ValueError(
+                f"Run target {target.output} is outside output root {snapshot.output_root}."
+            )
 
-    A dataset carries its own `vendor` and optional `level` (the *module* is the benchmark — the
-    shared raw runs — and holds datasets from several tools). `mudata.h5mu` when the dataset omits
-    `level` (a multi-level vendor); `<level>.h5ad` otherwise. The PRECONDITION (a single-level vendor
-    must declare `level`) is enforced by `validate_dataset`.
-    """
-    level = dataset_cfg.get("level")
-    return f"{level}.h5ad" if level else "mudata.h5mu"
+
+def write_run_snapshot(snapshot: RunSnapshot, path: Path | str) -> Path:
+    """Create one run JSON exactly once and return its path."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("x", encoding="utf-8") as stream:
+        json.dump(run_snapshot_data(snapshot), stream, indent=2)
+        stream.write("\n")
+    return destination
 
 
-def convert_suffix(dataset_cfg: dict) -> str:
-    """`.h5ad` for a single-level (level-bearing) dataset, else `.h5mu` — annotate/fasta track this."""
-    return ".h5ad" if dataset_cfg.get("level") else ".h5mu"
+def load_run_snapshot(path: Path | str) -> RunSnapshot:
+    """Load and validate a Corpus Runner-generated run JSON file."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Run snapshot must contain one JSON object.")
+    return run_snapshot_from_data(data)
+
+
+def convert_artifact(branch: str) -> str:
+    """Return the converted artifact name for a discovered branch."""
+    if branch not in BRANCHES:
+        raise ValueError(
+            f"unknown conversion branch {branch!r}; expected one of {BRANCHES}"
+        )
+    return f"{branch}{convert_suffix(branch)}"
+
+
+def convert_suffix(branch: str) -> str:
+    """Return ``.h5mu`` for MuData and ``.h5ad`` for standalone levels."""
+    return ".h5mu" if branch == MUDATA else ".h5ad"
+
+
+def stage_artifact(stage: dict, branch: str) -> str:
+    """Return the branch-qualified artifact name produced by one stage."""
+    if not stage.get("depends_on"):
+        return convert_artifact(branch)
+    return f"{branch}.{stage['artifact']}{convert_suffix(branch)}"
 
 
 def validate_dataset(module: str, dataset_cfg: dict) -> None:
-    """Validate a dataset's `vendor`/`level` (decision 16). Vendor + level are PER DATASET."""
+    """Validate the corpus-manifest fields needed for capability discovery."""
     name = dataset_cfg.get("name", "?")
-    vendor = dataset_cfg.get("vendor")
-    if not vendor:
-        raise ValueError(f"{module}/{name}: missing required 'vendor'")
-    level = dataset_cfg.get("level")
-    if not level and vendor not in MULTI_LEVEL_VENDORS:
-        raise ValueError(
-            f"{module}/{name}: vendor {vendor!r} is single-level — declare a 'level' "
-            f"(decision 16). Only {sorted(MULTI_LEVEL_VENDORS)} may omit it."
-        )
-    if level is not None and level not in LEVELS:
-        # Keep the convert artifact name (<level>.h5ad) inside the Snakefile's wildcard constraint;
-        # an unknown level would otherwise yield a target no rule can build.
-        raise ValueError(
-            f"{module}/{name}: level {level!r} is not a known quantification level — one of {LEVELS}"
-        )
+    for field_name in ("name", "vendor", "input", "params"):
+        if not dataset_cfg.get(field_name):
+            raise ValueError(f"{module}/{name}: missing required {field_name!r}")
 
 
 def render_command(template: str, ctx: dict) -> list[str]:
@@ -218,21 +405,29 @@ def _nearest_upstream(
     return None
 
 
+def discover_dataset_branches(
+    dataset_cfg: dict,
+    input_root: Path,
+    *,
+    discover: CapabilityResolver = capabilities.discover_capabilities,
+) -> capabilities.CapabilityDiscovery:
+    """Resolve one dataset's APB branches from its input, parameters, and parsing JSONs."""
+    return discover(
+        _resolve(dataset_cfg["input"], input_root),
+        _resolve(dataset_cfg["params"], input_root),
+        dataset_cfg["vendor"],
+    )
+
+
 def expand_targets(
     registry: list[dict],
     corpus: dict,
     output_root: Path | str | None = None,
     input_root: Path | str | None = None,
+    *,
+    discover: CapabilityResolver = capabilities.discover_capabilities,
 ) -> list[Target]:
-    """Expand (registry × corpus) into concrete `Target`s with rendered commands and input edges.
-
-    A module is the benchmark (shared runs); each **dataset** carries its own `vendor` and optional
-    `level`. Edges are derived from each stage's `depends_on` — the DAG root (`depends_on: []`) reads
-    the raw dataset (`input`/`params`); every other stage consumes its nearest emitted upstream
-    artifact and, if it declares a `resource`, the module-level file that resource names (which also
-    GATES the stage: a module lacking the resource simply doesn't get it). Non-root output basenames
-    are `f"{artifact}{suffix}"` with `{suffix}` tracking the dataset's convert artifact.
-    """
+    """Expand the corpus's JSON-supported branches through the registry stage DAG."""
     reg = {s["name"]: s for s in registry}
     order = stage_order(registry)
     out_root = Path(output_root if output_root is not None else corpus["output_root"])
@@ -242,61 +437,169 @@ def expand_targets(
     for module, mcfg in corpus["modules"].items():
         for ds in mcfg["datasets"]:
             validate_dataset(module, ds)
-            suffix = convert_suffix(ds)
-            base = out_root / module / ds["name"]
-            emitted: dict[str, Path] = {}  # stage name -> output path, for this dataset
+            discovery = discover_dataset_branches(ds, in_root, discover=discover)
+            for branch in discovery.branches:
+                base = out_root / module / ds["name"]
+                emitted: dict[str, Path] = {}
+
+                for name in order:
+                    stage = reg[name]
+                    deps = list(stage.get("depends_on") or [])
+
+                    if not deps:
+                        output = base / stage_artifact(stage, branch)
+                        command = render_command(
+                            stage["command"],
+                            {
+                                "input": _resolve(ds["input"], in_root),
+                                "output": output.with_suffix(""),
+                                "vendor": ds["vendor"],
+                                "params": _resolve(ds["params"], in_root),
+                            },
+                        )
+                        if branch != MUDATA:
+                            command += ["--level", branch]
+                        inputs = [
+                            _resolve(ds["input"], in_root),
+                            _resolve(ds["params"], in_root),
+                        ]
+                    else:
+                        resource = stage.get("resource")
+                        resource_path = None
+                        if resource is not None:
+                            raw_resource = mcfg.get(resource)
+                            if raw_resource is None:
+                                continue
+                            resource_path = _resolve(raw_resource, in_root)
+
+                        # A required missing stage blocks its descendants. Only explicitly optional
+                        # intermediate stages may reconnect to the nearest emitted ancestor.
+                        required_missing = any(
+                            dep not in emitted and not reg.get(dep, {}).get("optional")
+                            for dep in deps
+                        )
+                        if required_missing:
+                            continue
+                        upstream = _nearest_upstream(deps, emitted, reg)
+                        if upstream is None:
+                            continue
+                        output = base / stage_artifact(stage, branch)
+                        context = {"input": upstream, "output": output}
+                        if resource is not None:
+                            context[resource] = resource_path
+                        command = render_command(stage["command"], context)
+                        inputs = [upstream]
+                        if resource_path is not None:
+                            inputs.append(resource_path)
+
+                    emitted[name] = output
+                    targets.append(
+                        Target(
+                            module=module,
+                            dataset=ds["name"],
+                            stage=name,
+                            output=output,
+                            command=command,
+                            inputs=inputs,
+                            vendor=ds["vendor"],
+                            level=None if branch == MUDATA else branch,
+                            branch=branch,
+                        )
+                    )
+    return targets
+
+
+def expand_resolved_targets(
+    registry: list[dict],
+    fixtures: tuple[ResolvedFixture, ...] | list[ResolvedFixture],
+    output_root: Path | str,
+) -> list[Target]:
+    """Expand frozen fixture branches into concrete stage targets.
+
+    Every stage receives a target, even when its own module resource is absent. Such a target
+    carries ``blocked_reason`` and is excluded from Snakemake while its independent ancestors stay
+    runnable. This preserves the complete branch topology needed for truthful status propagation.
+    """
+    reg = {stage["name"]: stage for stage in registry}
+    order = stage_order(registry)
+    out_root = Path(output_root)
+    targets: list[Target] = []
+
+    for fixture in fixtures:
+        for branch in fixture.branches:
+            base = out_root / fixture.repo_name / fixture.dataset
+            emitted: dict[str, Path] = {}
 
             for name in order:
                 stage = reg[name]
-                deps = list(stage.get("depends_on") or [])
+                dependencies = list(stage.get("depends_on") or [])
+                blocked_reason: str | None = None
 
-                if (
-                    not deps
-                ):  # DAG root (convert): reads the raw dataset file + its params
-                    output = base / convert_artifact(ds)
+                if not dependencies:
+                    output = base / stage_artifact(stage, branch)
                     command = render_command(
                         stage["command"],
                         {
-                            "input": in_root / ds["input"],
-                            # APB chooses the container suffix from the result type; Snakemake's
-                            # declared target retains that chosen suffix.
+                            "input": fixture.input_path,
                             "output": output.with_suffix(""),
-                            "vendor": ds["vendor"],
-                            "params": in_root / ds["params"],
+                            "vendor": fixture.vendor,
+                            "params": fixture.parameter_path,
                         },
                     )
-                    if ds.get("level"):
-                        command += ["--level", ds["level"]]
-                    inputs = [in_root / ds["input"], in_root / ds["params"]]
+                    if branch != MUDATA:
+                        command += ["--level", branch]
+                    inputs = [fixture.input_path, fixture.parameter_path]
                 else:
-                    resource = stage.get("resource")
-                    res_path = None
-                    if resource is not None:
-                        raw = mcfg.get(resource)
-                        if raw is None:
-                            continue  # module doesn't supply this resource → skip the stage
-                        res_path = _resolve(raw, in_root)
-                    upstream = _nearest_upstream(deps, emitted, reg)
+                    upstream = _nearest_upstream(dependencies, emitted, reg)
+                    output = base / stage_artifact(stage, branch)
+                    inputs = [] if upstream is None else [upstream]
+                    context: dict[str, Path] = {}
                     if upstream is None:
-                        continue  # no upstream emitted (its resource was absent) → skip
-                    output = base / f"{stage['artifact']}{suffix}"
-                    ctx = {"input": upstream, "output": output}
-                    if resource is not None:
-                        ctx[resource] = res_path
-                    command = render_command(stage["command"], ctx)
-                    inputs = [upstream] + ([res_path] if res_path is not None else [])
+                        blocked_reason = "Blocked by unavailable stage: " + ", ".join(
+                            dependencies
+                        )
+                    else:
+                        context = {"input": upstream, "output": output}
+
+                    resource_name = stage.get("resource")
+                    if resource_name is not None:
+                        resource_error = getattr(
+                            fixture,
+                            f"{resource_name}_error",
+                            None,
+                        )
+                        resource_path = getattr(
+                            fixture,
+                            f"{resource_name}_path",
+                            None,
+                        )
+                        if resource_error is not None:
+                            blocked_reason = resource_error
+                        elif resource_path is None:
+                            blocked_reason = f"Missing module resource: {resource_name}"
+                        else:
+                            context[resource_name] = resource_path
+                            inputs.append(resource_path)
+
+                    command = (
+                        render_command(stage["command"], context)
+                        if blocked_reason is None
+                        else []
+                    )
 
                 emitted[name] = output
                 targets.append(
                     Target(
-                        module,
-                        ds["name"],
-                        name,
-                        output,
-                        command,
-                        inputs,
-                        vendor=ds["vendor"],
-                        level=ds.get("level"),
+                        module=fixture.repo_name,
+                        dataset=fixture.dataset,
+                        stage=name,
+                        output=output,
+                        command=command,
+                        inputs=inputs,
+                        vendor=fixture.vendor,
+                        level=None if branch == MUDATA else branch,
+                        branch=branch,
+                        blocked_reason=blocked_reason,
                     )
                 )
     return targets
@@ -308,11 +611,72 @@ def coverage(targets: list[Target]) -> list[dict]:
         {
             "module": t.module,
             "dataset": t.dataset,
+            "branch": t.branch,
             "stage": t.stage,
             "artifact": t.output.name,
             "done": t.output.exists(),
         }
         for t in targets
+    ]
+
+
+def target_blocker(
+    target: Target,
+    targets: list[Target],
+    *,
+    existing_artifacts_satisfy: bool = True,
+) -> str | None:
+    """Return the first missing external prerequisite in a target's upstream chain.
+
+    ``existing_artifacts_satisfy`` is true for display state: a completed artifact is usable even
+    when an old source has since disappeared. Snakemake target selection sets it false so every
+    declared input chain is valid before asking Snakemake to assess timestamps.
+    """
+    by_output = {item.output: item for item in targets}
+    memo: dict[Path, str | None] = {}
+
+    def visit(item: Target) -> str | None:
+        if item.output in memo:
+            return memo[item.output]
+        if existing_artifacts_satisfy and item.output.exists():
+            memo[item.output] = None
+            return None
+        if item.blocked_reason is not None:
+            memo[item.output] = item.blocked_reason
+            return item.blocked_reason
+        memo[item.output] = None
+        for input_path in item.inputs:
+            upstream = by_output.get(input_path)
+            if upstream is not None:
+                blocker = visit(upstream)
+                if blocker is not None:
+                    memo[item.output] = blocker
+                    return blocker
+            elif not input_path.exists():
+                blocker = f"Missing prerequisite: {input_path}"
+                memo[item.output] = blocker
+                return blocker
+        return None
+
+    return visit(target)
+
+
+def runnable_targets(targets: list[Target]) -> list[Target]:
+    """Return targets Snakemake can safely assess, including existing outputs.
+
+    Existing artifacts remain in the target set so Snakemake, rather than the dashboard, decides
+    whether they are stale. Targets with any missing external prerequisite are excluded so one bad
+    resource cannot prevent DAG construction for independent branches.
+    """
+    return [
+        target
+        for target in targets
+        if target_blocker(
+            target,
+            targets,
+            existing_artifacts_satisfy=False,
+        )
+        is None
     ]
 
 
@@ -338,8 +702,33 @@ def _log_error(logpath: Path) -> str | None:
     return lines[-1]
 
 
+def failure_marker_path(output: Path | str) -> Path:
+    """Return the marker written only after a rule command exits unsuccessfully."""
+    return Path(f"{output}.failed")
+
+
+def _failed_rule_error(output: Path | str) -> str | None:
+    """Return a rule failure only when its authoritative failure marker exists.
+
+    A rule's ``tee`` log is created and populated while that rule is still running, so log
+    existence alone cannot distinguish live progress from failure. The Snakefile clears this
+    marker immediately before each attempt and writes it only after a non-zero command exit.
+    """
+    marker = failure_marker_path(output)
+    if not marker.exists():
+        return None
+    error = _log_error(Path(f"{output}.log"))
+    if error is not None:
+        return error
+    try:
+        exit_status = marker.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        exit_status = ""
+    return f"Rule failed{f' ({exit_status})' if exit_status else ''}"
+
+
 def _provenance_warnings(sidecar: Path) -> list[str]:
-    """Any ``warning`` fields recorded in a dataset's provenance.json (e.g. unparsable params)."""
+    """Return warning fields from an artifact provenance sidecar."""
     if not sidecar.exists():
         return []
     try:
@@ -348,11 +737,9 @@ def _provenance_warnings(sidecar: Path) -> list[str]:
         return []
     if not isinstance(data, dict):
         return []
-    out = []
-    for stage, rec in data.items():
-        if isinstance(rec, dict) and rec.get("warning"):
-            out.append(f"{stage}: {rec['warning']}")
-    return out
+    if data.get("warning"):
+        return [f"{data.get('stage', 'artifact')}: {data['warning']}"]
+    return []
 
 
 def problems(corpus: dict, targets: list[Target]) -> dict[tuple[str, str], list[str]]:
@@ -376,22 +763,252 @@ def problems(corpus: dict, targets: list[Target]) -> dict[tuple[str, str], list[
             if ds.get("params") and not _resolve(ds["params"], in_root).exists():
                 out[key].append(f"params file missing: {ds['params']}")
             if ann_missing:
-                out[key].append(f"annotation JSON missing: {ann}")
+                out[key].append(f"annotation resource missing: {ann}")
             if fasta_missing:
                 out[key].append(f"fasta missing: {fasta}")
-    # runtime warnings from each dataset's provenance sidecar (one dir per (module, dataset))
-    for (module, dataset), sidecar in {
-        (t.module, t.dataset): t.output.parent / "provenance.json" for t in targets
-    }.items():
-        out[(module, dataset)].extend(_provenance_warnings(sidecar))
-    # runtime FAILURES: a stage whose artifact is missing but whose per-rule log exists was attempted
-    # and failed (e.g. "no rule covers version …"); a stage never attempted has no log (→ just pending).
+    for target in targets:
+        sidecar = Path(f"{target.output}.provenance.json")
+        out[(target.module, target.dataset)].extend(_provenance_warnings(sidecar))
+    # Runtime failures have an explicit marker written only after the rule command exits non-zero.
+    # A growing tee log without that marker belongs to a rule that may still be running.
     for t in targets:
         if not t.output.exists():
-            err = _log_error(Path(f"{t.output}.log"))
+            err = _failed_rule_error(t.output)
             if err:
                 out[(t.module, t.dataset)].append(f"{t.stage} failed: {err}")
     return {k: v for k, v in out.items() if v}
+
+
+def _missing_stage_reason(
+    stage: dict,
+    module_config: dict,
+    emitted_stages: set[str],
+) -> str:
+    """Explain why a stage has no concrete Target for a discovered branch."""
+    resource = stage.get("resource")
+    if resource and not module_config.get(resource):
+        return f"Missing module resource: {resource}"
+    missing_dependencies = [
+        dependency
+        for dependency in stage.get("depends_on") or []
+        if dependency not in emitted_stages
+    ]
+    if missing_dependencies:
+        return f"Blocked by unavailable stage: {', '.join(missing_dependencies)}"
+    return "Stage target could not be created"
+
+
+def _terminal_blocker(target: Target, targets: list[Target]) -> str | None:
+    """Return a static or terminal upstream blocker, but never a pending dependency."""
+    by_output = {item.output: item for item in targets}
+    memo: dict[Path, str | None] = {}
+
+    def visit(item: Target) -> str | None:
+        if item.output in memo:
+            return memo[item.output]
+        if item.output.exists():
+            memo[item.output] = None
+            return None
+        if item.blocked_reason is not None:
+            memo[item.output] = item.blocked_reason
+            return item.blocked_reason
+
+        memo[item.output] = None
+        for input_path in item.inputs:
+            upstream = by_output.get(input_path)
+            if upstream is None:
+                if not input_path.exists():
+                    reason = f"Missing prerequisite: {input_path}"
+                    memo[item.output] = reason
+                    return reason
+                continue
+            if upstream.output.exists():
+                continue
+            upstream_error = _failed_rule_error(upstream.output)
+            if upstream_error is not None:
+                reason = (
+                    f"Blocked by failed upstream stage {upstream.stage}: "
+                    f"{upstream_error}"
+                )
+                memo[item.output] = reason
+                return reason
+            upstream_blocker = visit(upstream)
+            if upstream_blocker is not None:
+                reason = (
+                    f"Blocked by upstream stage {upstream.stage}: {upstream_blocker}"
+                )
+                memo[item.output] = reason
+                return reason
+        return None
+
+    return visit(target)
+
+
+def _stage_detail(
+    target: Target | None,
+    *,
+    targets: list[Target],
+    missing_reason: str | None = None,
+) -> dict[str, str]:
+    """Build one JSON-compatible table-cell detail payload."""
+    if target is None:
+        return {
+            "state": "blocked",
+            "display": "BLOCKED",
+            "error": missing_reason or "Stage target unavailable",
+        }
+
+    artifact = str(target.output)
+    log_path = str(Path(f"{target.output}.log"))
+    base = {"artifact": artifact, "log": log_path}
+    if target.output.exists():
+        return {**base, "state": "completed", "display": "DONE"}
+    error = _failed_rule_error(target.output)
+    if error is not None:
+        return {**base, "state": "failed", "display": "FAILED", "error": error}
+    blocker = _terminal_blocker(target, targets)
+    if blocker is not None:
+        return {**base, "state": "blocked", "display": "BLOCKED", "error": blocker}
+    return {**base, "state": "pending", "display": ""}
+
+
+def branch_rows(
+    run: RunSnapshot | dict,
+    targets: list[Target],
+    *,
+    registry: list[dict] | None = None,
+    discover: CapabilityResolver = capabilities.discover_capabilities,
+) -> list[dict]:
+    """Return one compact progress row per JSON-supported dataset branch."""
+    registry = registry or load_registry()
+    if isinstance(run, dict):
+        run = _legacy_run_snapshot(registry, run, targets, discover=discover)
+
+    order = stage_order(registry)
+    by_key = {
+        (target.module, target.dataset, target.branch, target.stage): target
+        for target in targets
+    }
+    rows: list[dict] = []
+
+    for fixture in run.fixtures:
+        if not fixture.branches:
+            status = fixture.capability_status.lower()
+            state = "unsupported" if status == "unsupported" else "blocked"
+            display = "UNSUPPORTED" if state == "unsupported" else "BLOCKED"
+            root_stage = order[0]
+            details = {
+                root_stage: {
+                    "state": state,
+                    "display": display,
+                    "error": fixture.diagnostic or "No supported APB branch",
+                }
+            }
+            details.update(
+                {
+                    stage_name: {"state": "pending", "display": ""}
+                    for stage_name in order[1:]
+                }
+            )
+            row = {
+                "module": fixture.repo_name,
+                "dataset": fixture.dataset,
+                "software": fixture.vendor,
+                "level": "Unresolved",
+                root_stage: display,
+                "_stage_details": details,
+            }
+            row.update({name: "" for name in order[1:]})
+            rows.append(row)
+            continue
+
+        for branch in fixture.branches:
+            details: dict[str, dict[str, str]] = {}
+            row = {
+                "module": fixture.repo_name,
+                "dataset": fixture.dataset,
+                "software": fixture.vendor,
+                "level": "MuData" if branch == MUDATA else branch,
+            }
+            for stage_name in order:
+                target = by_key.get(
+                    (fixture.repo_name, fixture.dataset, branch, stage_name)
+                )
+                detail = _stage_detail(
+                    target,
+                    targets=targets,
+                    missing_reason="Stage target unavailable",
+                )
+                details[stage_name] = detail
+                row[stage_name] = detail["display"]
+            row["_stage_details"] = details
+            rows.append(row)
+    return rows
+
+
+def _capability_status(discovery: capabilities.CapabilityDiscovery) -> str:
+    """Return the structured discovery status as a stable lowercase value."""
+    status = getattr(discovery, "status", None)
+    if status is None:
+        return "supported" if discovery.branches else "unsupported"
+    value = getattr(status, "value", status)
+    return str(value).lower()
+
+
+def _legacy_run_snapshot(
+    registry: list[dict],
+    corpus: dict,
+    targets: list[Target],
+    *,
+    discover: CapabilityResolver,
+) -> RunSnapshot:
+    """Adapt the retired corpus mapping for compatibility with non-runtime callers."""
+    input_root = Path(corpus["input_root"])
+    fixtures: list[ResolvedFixture] = []
+    for module, module_config in corpus.get("modules", {}).items():
+        annotation = module_config.get("annotation")
+        fasta = module_config.get("fasta")
+        for dataset in module_config.get("datasets", []):
+            validate_dataset(module, dataset)
+            discovery = discover_dataset_branches(
+                dataset,
+                input_root,
+                discover=discover,
+            )
+            fixtures.append(
+                ResolvedFixture(
+                    module=module,
+                    repo_name=module,
+                    intermediate_hash=dataset["name"],
+                    dataset=dataset["name"],
+                    software=dataset["vendor"],
+                    vendor=dataset["vendor"],
+                    input_path=_resolve(dataset["input"], input_root),
+                    parameter_path=_resolve(dataset["params"], input_root),
+                    branches=tuple(discovery.branches),
+                    capability_status=_capability_status(discovery),
+                    diagnostic=discovery.diagnostic,
+                    annotation_path=(
+                        _resolve(annotation, input_root)
+                        if annotation is not None
+                        else None
+                    ),
+                    fasta_path=(
+                        _resolve(fasta, input_root) if fasta is not None else None
+                    ),
+                )
+            )
+    return RunSnapshot(
+        schema_version=RUN_SNAPSHOT_SCHEMA_VERSION,
+        run_id="legacy",
+        created_at="",
+        test_data_root=input_root,
+        output_root=Path(corpus["output_root"]),
+        registry_digest="",
+        apb_version=None,
+        fixtures=tuple(fixtures),
+        targets=tuple(targets),
+    )
 
 
 def baskets(
@@ -414,11 +1031,11 @@ def baskets(
     problems = problems or {}
     result: dict[str, list[dict]] = {b: [] for b in basket_names(registry)}
 
-    by_ds: dict[tuple[str, str], list[Target]] = defaultdict(list)
+    by_ds: dict[tuple[str, str, str], list[Target]] = defaultdict(list)
     for t in targets:
-        by_ds[(t.module, t.dataset)].append(t)
+        by_ds[(t.module, t.dataset, t.branch)].append(t)
 
-    for (module, dataset), ts in by_ds.items():
+    for (module, dataset, branch), ts in by_ds.items():
         stages_here = {t.stage for t in ts}
         applicable = [
             s for s in order if s in stages_here
@@ -439,7 +1056,7 @@ def baskets(
                 "module": module,
                 "dataset": dataset,
                 "software": ts[0].vendor,
-                "level": ts[0].level or "",
+                "level": "MuData" if branch == MUDATA else branch,
                 "basket": basket,
                 "next_stage": next_stage,
                 "runnable": next_stage is not None,
