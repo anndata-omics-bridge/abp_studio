@@ -69,7 +69,7 @@ make test
 ```
 
 Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
-`make testdata-app`/`make app` and `apb-studio-testdata`/`apb-studio` are compatibility aliases.
+`apb-studio-testdata`/`apb-studio` are compatibility aliases.
 
 See [TODO/TODO_corpus_application.md](TODO/TODO_corpus_application.md) for the approved migration
 plan and [TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md)

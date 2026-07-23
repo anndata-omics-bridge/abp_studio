@@ -2,7 +2,7 @@ APP_PORT ?= 8051
 PYTHON ?= python
 
 .DEFAULT_GOAL := help
-.PHONY: help corpus-runner fixture-manager app testdata-app test
+.PHONY: help corpus-runner fixture-manager test
 
 help:                     ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -13,10 +13,6 @@ corpus-runner:            ## run APB Studio — Corpus Runner
 
 fixture-manager:          ## run APB Studio — Fixture Manager
 	PYTHONPATH=src $(PYTHON) -m apb_studio.testdata_app
-
-app: corpus-runner        ## deprecated alias for corpus-runner
-
-testdata-app: fixture-manager ## deprecated alias for fixture-manager
 
 test:                     ## run the test suite
 	pytest -q

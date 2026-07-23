@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-07-23: Remove the deprecated `make app`/`make testdata-app` alias targets from the Makefile
+  (the `corpus-runner`/`fixture-manager` targets remain; console-script aliases are unchanged).
 - 2026-07-22: Add an independent ProteoBench scoring stage for the module-selected MuData/AnnData
   branches, managed per-tool settings, `.proteobench` artifacts, dashboard status, and Snakemake
   orchestration without making annotation or FASTA prerequisites.
