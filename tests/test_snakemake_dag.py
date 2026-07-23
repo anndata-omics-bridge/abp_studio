@@ -384,3 +384,19 @@ def test_success_without_declared_artifact_is_a_failed_rule(tmp_path: Path) -> N
     assert "success-without-artifact" in log
     assert "without creating its artifact" in log
     assert failure_marker_path(output).read_text().strip() == "exit 1"
+
+
+@pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
+def test_apb_command_resolves_from_snakemake_virtualenv(tmp_path: Path) -> None:
+    run_path, output = _single_command_run(
+        tmp_path,
+        ["apb", "--version"],
+        run_id="apb-executable-test",
+    )
+
+    proc = _run_real_target(tmp_path, run_path, output)
+
+    assert proc.returncode != 0  # the version command intentionally creates no artifact
+    log = Path(f"{output}.log").read_text()
+    assert "command not found" not in log
+    assert "Rule command completed without creating its artifact" in log

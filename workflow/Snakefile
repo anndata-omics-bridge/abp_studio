@@ -13,6 +13,7 @@
 import shlex
 import sys
 import os
+import shutil
 from pathlib import Path
 
 # Make both workspace packages importable from a plain checkout (no install required). An installed
@@ -50,6 +51,14 @@ DEFAULT_TARGETS = [str(t.output) for t in runnable_targets(TARGETS)]
 # For the per-rule provenance hook (decision 17): the run we were invoked with, this venv's
 # python, and the src dir so the subprocess can import apb_studio without an install.
 _PYTHONPATH = os.pathsep.join(str(path) for path in _SRC_PATHS if path.exists())
+_LOCAL_APB = Path(sys.executable).with_name("apb")
+_APB_EXECUTABLE = (
+    str(_LOCAL_APB) if _LOCAL_APB.is_file() else shutil.which("apb")
+)
+if _APB_EXECUTABLE is None:
+    raise ValueError(
+        "apb_studio: APB executable is absent from the Snakemake environment"
+    )
 
 
 def _target(wildcards):
@@ -63,9 +72,12 @@ def _inputs(wildcards):
 def _command(wildcards):
     """The apb command, then write the provenance sidecar (decision 17) — runs for CLI and GUI alike."""
     target = _target(wildcards)
+    command = list(target.command)
+    if command and command[0] == "apb":
+        command[0] = _APB_EXECUTABLE
     prov = [sys.executable, "-m", "apb_studio.provenance",
             "--run", _RUN_PATH, "--output", str(target.output)]
-    return shlex.join(target.command) + f" && PYTHONPATH={shlex.quote(_PYTHONPATH)} " + shlex.join(prov)
+    return shlex.join(command) + f" && PYTHONPATH={shlex.quote(_PYTHONPATH)} " + shlex.join(prov)
 
 
 def _failure_marker(wildcards):

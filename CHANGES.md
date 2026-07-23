@@ -1,5 +1,9 @@
 # Changes
 
+- 2026-07-23: Resolve the APB executable from Snakemake's virtual environment so
+  Corpus Runner jobs do not depend on the parent shell's `PATH`.
+- 2026-07-23: Add a `.pre-commit-config.yaml` (ruff lint+format, then pytest) mirroring apb; the
+  repo previously had no pre-commit hooks. pyright/deptry are deferred until existing findings clear.
 - 2026-07-23: Remove the deprecated `make app`/`make testdata-app` alias targets from the Makefile
   (the `corpus-runner`/`fixture-manager` targets remain; console-script aliases are unchanged).
 - 2026-07-22: Add an independent ProteoBench scoring stage for the module-selected MuData/AnnData
