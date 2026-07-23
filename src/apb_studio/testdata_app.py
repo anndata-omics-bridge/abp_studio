@@ -216,7 +216,7 @@ def download_controls() -> html.Div:
                         style=BUTTON_STYLE,
                     ),
                     html.Button(
-                        "Download annotations",
+                        "Download module + scoring settings",
                         id="annotations-button",
                         style=BUTTON_STYLE,
                     ),
@@ -442,7 +442,7 @@ def storage_panel(paths: testdata.TestDataPaths = DEFAULT_PATHS) -> html.Div:
 
 
 def resources_panel() -> html.Div:
-    """Build managed annotation status and optional FASTA overrides."""
+    """Build managed module-settings status and optional FASTA overrides."""
     return html.Div(
         [
             html.Div(
@@ -454,7 +454,7 @@ def resources_panel() -> html.Div:
                         style={"fontSize": "11px", "minWidth": "220px"},
                     ),
                     html.Span(
-                        "Annotations are downloaded from ProteoBench module_settings.toml",
+                        "Module and golden-verified per-tool settings come from ProteoBench",
                         style={"fontSize": "11px", "color": "#555"},
                     ),
                     dcc.Input(

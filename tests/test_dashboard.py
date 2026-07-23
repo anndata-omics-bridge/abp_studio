@@ -45,11 +45,13 @@ def test_columns_are_one_compact_branch_table() -> None:
         "Converted",
         "Annotated",
         "FASTA annotated",
+        "Proteobench scored",
     ]
-    assert [column["field"] for column in columns[-3:]] == [
+    assert [column["field"] for column in columns[-4:]] == [
         "convert",
         "annotate",
         "fasta",
+        "proteobench",
     ]
     failed_style = columns[-1]["cellStyle"]["styleConditions"][0]
     assert "FAILED" in failed_style["condition"]

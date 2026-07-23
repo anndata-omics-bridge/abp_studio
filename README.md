@@ -4,7 +4,7 @@ APB Studio provides two local applications over the
 [`anndata_proteomics` (APB)](../apb) CLI:
 
 - **Fixture Manager** catalogs, selects, downloads, and inspects ProteoBench fixtures and their
-  annotation/FASTA resources.
+  module, per-tool scoring, and FASTA resources.
 - **Corpus Runner** derives every branch supported by APB, launches the complete runnable corpus,
   and shows stage progress, artifact summaries, and exact failure logs.
 
@@ -14,7 +14,7 @@ APB Studio provides two local applications over the
 | --- | --- |
 | Catalog, download queue, report, and cached fixture files | Fixture Manager via `apb-testdata` |
 | Active test-data root | Fixture Manager setting |
-| ProteoBench module annotations and FASTA resources | Fixture Manager downloads/resource inventory |
+| ProteoBench module TOMLs, golden-verified per-tool scoring TOMLs, and FASTA resources | Fixture Manager downloads/resource inventory |
 | MuData and standalone levels | APB JSON rules resolved against local inputs and parameters |
 | Output root | Corpus Runner setting |
 | Scope and provenance of one launch | Corpus Runner-generated `run.json` |
@@ -33,9 +33,10 @@ left untouched but is no longer read.
 ## Corpus Runner
 
 The Corpus Runner shows one compact table with `Module`, `Dataset`, `Software`, `Level`,
-`Converted`, `Annotated`, and `FASTA annotated`. Each supported fixture fans out to MuData plus all
-supported standalone levels. Unsupported or invalid local fixtures remain visible as one
-unresolved row.
+`Converted`, `Annotated`, `FASTA annotated`, and `ProteoBench scored`. Each supported fixture fans
+out to MuData plus all supported standalone levels. Annotation, FASTA, and ProteoBench scoring are
+independent children of conversion, so one missing resource does not block the other enrichments.
+Unsupported or invalid local fixtures remain visible as one unresolved row.
 
 `Run corpus` freezes fixture identities, resolved branches, paths, resources, output aliases, and
 APB/registry versions into:
@@ -66,8 +67,10 @@ summary; clicking another terminal state shows its diagnostic.
 
 The Fixture Manager owns the canonical cache lifecycle. Its fixture table combines the generated
 catalog, selection, and download-report CSVs with live filesystem checks. It downloads
-ProteoBench `module_settings.toml` observation annotations and APB's FASTA resources, then resolves
-both by module without requiring manual annotation paths.
+ProteoBench `module_settings.toml` files, golden-verified per-tool scoring TOMLs, and APB's FASTA
+resources, then resolves them without requiring manual paths. The same module TOML supplies sample
+annotation and the ProteoBench experiment-design contract; these remain independent execution
+stages.
 
 Its Configuration workspace catalogs APB parsing-rule JSON documents. The AnnData
 workspace keeps MuData and standalone `.h5ad` outputs distinct and displays APB's stored summaries.

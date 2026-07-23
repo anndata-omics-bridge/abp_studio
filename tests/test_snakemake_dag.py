@@ -168,6 +168,8 @@ def _fixture_run(tmp_path):
             software,
         )
         assert discovery.branches, discovery.diagnostic
+        tool_settings = in_root / f"{dataset}_tool.toml"
+        tool_settings.write_text("[mapper]\nProtein = 'Proteins'\n")
         fixtures.append(
             ResolvedFixture(
                 module=module,
@@ -182,6 +184,8 @@ def _fixture_run(tmp_path):
                 capability_status=discovery.status.value,
                 annotation_path=annotation,
                 fasta_path=fasta,
+                tool_settings_path=tool_settings,
+                proteobench_level="ion",
             )
         )
     resolved = tuple(fixtures)
@@ -228,10 +232,14 @@ def test_dry_run_resolves_default_dag(tmp_path):
     assert "convert" in out
     assert "annotate" in out
     assert "fasta" in out
-    assert "spectronaut-runS/mudata.annotated_fasta.h5mu" in out
-    assert "spectronaut-runS/ion.annotated_fasta.h5ad" in out
-    assert "spectronaut-runS/protein.annotated_fasta.h5ad" in out
-    assert "spectronaut-runS/fragment.annotated_fasta.h5ad" in out
+    assert "proteobench" in out
+    assert "spectronaut-runS/mudata.fasta.h5mu" in out
+    assert "spectronaut-runS/ion.fasta.h5ad" in out
+    assert "spectronaut-runS/protein.fasta.h5ad" in out
+    assert "spectronaut-runS/fragment.fasta.h5ad" in out
+    assert "spectronaut-runS/mudata.proteobench.h5mu" in out
+    assert "spectronaut-runS/ion.proteobench.h5ad" in out
+    assert "spectronaut-runS/protein.proteobench.h5ad" not in out
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")

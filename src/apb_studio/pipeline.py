@@ -30,13 +30,17 @@ CapabilityResolver = Callable[[Path, Path, str], capabilities.CapabilityDiscover
 INPUTS_BASKET = "inputs"
 
 # Wildcard-constraint regexes the Snakefile uses to route one `{artifact}` wildcard to the right
-# stage rule (the three are disjoint, so there is no ambiguity).
+# stage rule (the four are disjoint, so there is no ambiguity).
 _LEVEL_RE = "|".join(LEVELS)
 CONVERT_ARTIFACT_RE = rf"{MUDATA}\.h5mu|(?:{_LEVEL_RE})\.h5ad"
 ANNOTATE_ARTIFACT_RE = rf"{MUDATA}\.annotated\.h5mu|(?:{_LEVEL_RE})\.annotated\.h5ad"
 FASTA_ARTIFACT_RE = (
-    rf"{MUDATA}\.annotated_fasta\.h5mu|"
-    rf"(?:{_LEVEL_RE})\.annotated_fasta\.h5ad"
+    rf"{MUDATA}\.fasta\.h5mu|"
+    rf"(?:{_LEVEL_RE})\.fasta\.h5ad"
+)
+PROTEOBENCH_ARTIFACT_RE = (
+    rf"{MUDATA}\.proteobench\.h5mu|"
+    rf"(?:ion|peptidoform)\.proteobench\.h5ad"
 )
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
@@ -81,6 +85,10 @@ class ResolvedFixture:
     fasta_path: Path | None = None
     annotation_error: str | None = None
     fasta_error: str | None = None
+    tool_settings_path: Path | None = None
+    module_settings_error: str | None = None
+    tool_settings_error: str | None = None
+    proteobench_level: str | None = None
 
     @property
     def identity(self) -> tuple[str, str, str]:
@@ -139,6 +147,14 @@ def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
                 ),
                 "annotation_error": fixture.annotation_error,
                 "fasta_error": fixture.fasta_error,
+                "tool_settings_path": (
+                    str(fixture.tool_settings_path)
+                    if fixture.tool_settings_path is not None
+                    else None
+                ),
+                "module_settings_error": fixture.module_settings_error,
+                "tool_settings_error": fixture.tool_settings_error,
+                "proteobench_level": fixture.proteobench_level,
             }
             for fixture in snapshot.fixtures
         ],
@@ -199,6 +215,26 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
             fasta_error=(
                 str(item["fasta_error"])
                 if item.get("fasta_error") is not None
+                else None
+            ),
+            tool_settings_path=(
+                Path(item["tool_settings_path"])
+                if item.get("tool_settings_path") is not None
+                else None
+            ),
+            module_settings_error=(
+                str(item["module_settings_error"])
+                if item.get("module_settings_error") is not None
+                else None
+            ),
+            tool_settings_error=(
+                str(item["tool_settings_error"])
+                if item.get("tool_settings_error") is not None
+                else None
+            ),
+            proteobench_level=(
+                str(item["proteobench_level"])
+                if item.get("proteobench_level") is not None
                 else None
             ),
         )
@@ -384,6 +420,44 @@ def _resolve(value: str, base: Path) -> Path:
     return p if p.is_absolute() else base / p
 
 
+def _resource_names(stage: dict) -> tuple[str, ...]:
+    """Return a stage's one-or-many resource placeholders."""
+    resources = stage.get("resources")
+    if resources is not None:
+        return tuple(resources)
+    resource = stage.get("resource")
+    return (resource,) if resource is not None else ()
+
+
+def _stage_applies_to_branch(
+    stage: dict,
+    branch: str,
+    *,
+    proteobench_level: str | None,
+) -> bool:
+    """Apply registry branch policies before a target enters the DAG."""
+    if stage.get("branch_policy") != "module_level":
+        return True
+    if branch == MUDATA:
+        return proteobench_level in {None, "ion", "peptidoform"}
+    if proteobench_level is None:
+        return branch in {"ion", "peptidoform"}
+    return branch == proteobench_level
+
+
+def _resolved_resource(
+    fixture: ResolvedFixture,
+    name: str,
+) -> tuple[Path | None, str | None]:
+    """Resolve a registry resource name against one frozen fixture."""
+    if name == "module_settings":
+        return fixture.annotation_path, fixture.module_settings_error
+    return (
+        getattr(fixture, f"{name}_path", None),
+        getattr(fixture, f"{name}_error", None),
+    )
+
+
 def _nearest_upstream(
     deps: list[str], emitted: dict[str, Path], reg: dict[str, dict]
 ) -> Path | None:
@@ -444,6 +518,12 @@ def expand_targets(
 
                 for name in order:
                     stage = reg[name]
+                    if not _stage_applies_to_branch(
+                        stage,
+                        branch,
+                        proteobench_level=mcfg.get("proteobench_level"),
+                    ):
+                        continue
                     deps = list(stage.get("depends_on") or [])
 
                     if not deps:
@@ -464,13 +544,19 @@ def expand_targets(
                             _resolve(ds["params"], in_root),
                         ]
                     else:
-                        resource = stage.get("resource")
-                        resource_path = None
-                        if resource is not None:
-                            raw_resource = mcfg.get(resource)
+                        resource_paths: dict[str, Path] = {}
+                        missing_resource = False
+                        for resource in _resource_names(stage):
+                            config_name = (
+                                "annotation" if resource == "module_settings" else resource
+                            )
+                            raw_resource = mcfg.get(config_name)
                             if raw_resource is None:
-                                continue
-                            resource_path = _resolve(raw_resource, in_root)
+                                missing_resource = True
+                                break
+                            resource_paths[resource] = _resolve(raw_resource, in_root)
+                        if missing_resource:
+                            continue
 
                         # A required missing stage blocks its descendants. Only explicitly optional
                         # intermediate stages may reconnect to the nearest emitted ancestor.
@@ -485,12 +571,10 @@ def expand_targets(
                             continue
                         output = base / stage_artifact(stage, branch)
                         context = {"input": upstream, "output": output}
-                        if resource is not None:
-                            context[resource] = resource_path
+                        context.update(resource_paths)
                         command = render_command(stage["command"], context)
                         inputs = [upstream]
-                        if resource_path is not None:
-                            inputs.append(resource_path)
+                        inputs.extend(resource_paths.values())
 
                     emitted[name] = output
                     targets.append(
@@ -532,6 +616,12 @@ def expand_resolved_targets(
 
             for name in order:
                 stage = reg[name]
+                if not _stage_applies_to_branch(
+                    stage,
+                    branch,
+                    proteobench_level=fixture.proteobench_level,
+                ):
+                    continue
                 dependencies = list(stage.get("depends_on") or [])
                 blocked_reason: str | None = None
 
@@ -561,17 +651,10 @@ def expand_resolved_targets(
                     else:
                         context = {"input": upstream, "output": output}
 
-                    resource_name = stage.get("resource")
-                    if resource_name is not None:
-                        resource_error = getattr(
+                    for resource_name in _resource_names(stage):
+                        resource_path, resource_error = _resolved_resource(
                             fixture,
-                            f"{resource_name}_error",
-                            None,
-                        )
-                        resource_path = getattr(
-                            fixture,
-                            f"{resource_name}_path",
-                            None,
+                            resource_name,
                         )
                         if resource_error is not None:
                             blocked_reason = resource_error

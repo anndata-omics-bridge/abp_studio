@@ -1,5 +1,8 @@
 # Changes
 
+- 2026-07-22: Add an independent ProteoBench scoring stage for the module-selected MuData/AnnData
+  branches, managed per-tool settings, `.proteobench` artifacts, dashboard status, and Snakemake
+  orchestration without making annotation or FASTA prerequisites.
 - 2026-07-22: Download ProteoBench `module_settings.toml` observation annotations in Fixture
   Manager and resolve them automatically instead of requesting manual annotation JSON paths.
 - 2026-07-22: Name the applications **Fixture Manager** and **Corpus Runner**, replace the

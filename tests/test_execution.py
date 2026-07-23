@@ -324,7 +324,7 @@ def test_clean_cascade_removes_stray_downstream_artifact(tmp_path):
 
     assert {p.name for p in deleted} == {
         "mudata.h5mu",
-        "mudata.annotated_fasta.h5mu",
+        "mudata.fasta.h5mu",
     }
     assert not any(t.output.exists() for t in targets)  # nothing orphaned
 
@@ -417,7 +417,7 @@ def test_load_overview_resolves_shared_inventory(tmp_path: Path) -> None:
     assert {(target.branch, target.stage) for target in targets} == {
         (branch, stage)
         for branch in ("mudata", "ion")
-        for stage in ("convert", "annotate", "fasta")
+        for stage in ("convert", "annotate", "fasta", "proteobench")
     }
     assert len(rows) == len(targets)
 

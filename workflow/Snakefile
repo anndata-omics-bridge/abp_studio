@@ -7,7 +7,8 @@
 # State lives entirely in the output tree (filesystem-as-database):
 #   output_root/<module>/<dataset>/<branch>.{h5mu,h5ad}
 #   output_root/<module>/<dataset>/<branch>.annotated.{h5mu,h5ad}
-#   output_root/<module>/<dataset>/<branch>.annotated_fasta.{h5mu,h5ad}
+#   output_root/<module>/<dataset>/<branch>.fasta.{h5mu,h5ad}
+#   output_root/<module>/<dataset>/<branch>.proteobench.{h5mu,h5ad}
 
 import shlex
 import sys
@@ -25,6 +26,7 @@ from apb_studio.pipeline import (
     ANNOTATE_ARTIFACT_RE,
     CONVERT_ARTIFACT_RE,
     FASTA_ARTIFACT_RE,
+    PROTEOBENCH_ARTIFACT_RE,
     load_run_snapshot,
     runnable_targets,
 )
@@ -81,7 +83,7 @@ rule all:
         DEFAULT_TARGETS
 
 # Disjoint artifact constraints make the three rules unambiguous; ruleorder is a backstop.
-ruleorder: fasta > annotate > convert
+ruleorder: proteobench > fasta > annotate > convert
 
 
 rule convert:
@@ -139,6 +141,25 @@ rule fasta:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
     shell:
         # See convert: clear stale failure state, stream progress, then mark only a real failure.
+        "rm -f {params.failure_marker:q}; "
+        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
+        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
+        "exit \"$status\"; fi"
+
+
+rule proteobench:
+    output:
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
+    wildcard_constraints:
+        artifact=PROTEOBENCH_ARTIFACT_RE
+    input:
+        _inputs
+    params:
+        cmd=_command,
+        failure_marker=_failure_marker
+    log:
+        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
+    shell:
         "rm -f {params.failure_marker:q}; "
         "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
         "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "

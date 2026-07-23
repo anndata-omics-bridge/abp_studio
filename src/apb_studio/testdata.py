@@ -53,6 +53,7 @@ def storage_summary(paths: TestDataPaths) -> str:
             f"Manifest CSV:   {paths.manifest_csv}",
             f"Metadata/raw:   {paths.cache_dir}",
             f"Annotations:    {paths.annotation_dir}",
+            f"PB settings:    {paths.proteobench_settings_dir}",
             f"FASTA cache:    {paths.fasta_dir}",
             f"Resources CSV:  {paths.resource_csv}",
             f"Studio logs:    {paths.log_dir}",

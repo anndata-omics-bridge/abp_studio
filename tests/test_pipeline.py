@@ -12,6 +12,7 @@ from apb_studio.pipeline import (
     ANNOTATE_ARTIFACT_RE,
     CONVERT_ARTIFACT_RE,
     FASTA_ARTIFACT_RE,
+    PROTEOBENCH_ARTIFACT_RE,
     RUN_SNAPSHOT_SCHEMA_VERSION,
     CleanGuardError,
     ResolvedFixture,
@@ -120,6 +121,8 @@ def _resolved_fixture(
     capability_status: str = "supported",
     annotation: Path | None = None,
     fasta: Path | None = None,
+    tool_settings: Path | None = None,
+    proteobench_level: str | None = None,
     diagnostic: str | None = None,
 ) -> ResolvedFixture:
     input_path = tmp_path / "input.tsv"
@@ -140,6 +143,8 @@ def _resolved_fixture(
         diagnostic=diagnostic,
         annotation_path=annotation,
         fasta_path=fasta,
+        tool_settings_path=tool_settings,
+        proteobench_level=proteobench_level,
     )
 
 
@@ -216,13 +221,13 @@ def test_expand_fans_out_every_json_supported_branch_through_all_stages(
     assert {
         "mudata.h5mu",
         "mudata.annotated.h5mu",
-        "mudata.annotated_fasta.h5mu",
+        "mudata.fasta.h5mu",
         "ion.h5ad",
         "ion.annotated.h5ad",
-        "ion.annotated_fasta.h5ad",
+        "ion.fasta.h5ad",
         "fragment.h5ad",
         "fragment.annotated.h5ad",
-        "fragment.annotated_fasta.h5ad",
+        "fragment.fasta.h5ad",
     } <= names
 
     mudata = next(
@@ -266,7 +271,7 @@ def test_stage_edges_and_branch_suffixes_are_isolated(tmp_path: Path) -> None:
             if target.branch == branch and target.stage == "fasta"
         )
         assert annotated.inputs[0] == converted.output
-        assert fasta.inputs[0] == annotated.output
+        assert fasta.inputs[0] == converted.output
         assert annotated.output.suffix == converted.output.suffix
         assert fasta.output.suffix == converted.output.suffix
 
@@ -275,7 +280,12 @@ def test_registry_has_no_optional_stage_and_order_is_topological() -> None:
     assert not {stage["name"] for stage in _REGISTRY if stage.get("optional")}
     order = stage_order(_REGISTRY)
     assert order.index("convert") < order.index("annotate") < order.index("fasta")
-    assert descendants(_REGISTRY, "convert") == {"annotate", "fasta"}
+    assert order.index("convert") < order.index("proteobench")
+    assert descendants(_REGISTRY, "convert") == {
+        "annotate",
+        "fasta",
+        "proteobench",
+    }
 
 
 def test_artifact_regexes_are_disjoint_and_branch_qualified() -> None:
@@ -283,7 +293,9 @@ def test_artifact_regexes_are_disjoint_and_branch_qualified() -> None:
 
     assert re.fullmatch(CONVERT_ARTIFACT_RE, "ion.h5ad")
     assert re.fullmatch(ANNOTATE_ARTIFACT_RE, "ion.annotated.h5ad")
-    assert re.fullmatch(FASTA_ARTIFACT_RE, "ion.annotated_fasta.h5ad")
+    assert re.fullmatch(FASTA_ARTIFACT_RE, "ion.fasta.h5ad")
+    assert re.fullmatch(PROTEOBENCH_ARTIFACT_RE, "ion.proteobench.h5ad")
+    assert not re.fullmatch(PROTEOBENCH_ARTIFACT_RE, "protein.proteobench.h5ad")
     assert not re.fullmatch(ANNOTATE_ARTIFACT_RE, "annotated.h5ad")
 
 
@@ -338,15 +350,22 @@ def test_resolved_expansion_keeps_blocked_descendants_without_suppressing_conver
     fixture = _resolved_fixture(tmp_path)
     targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
 
-    assert [target.stage for target in targets] == ["convert", "annotate", "fasta"]
+    assert [target.stage for target in targets] == [
+        "convert",
+        "annotate",
+        "fasta",
+        "proteobench",
+    ]
     assert [target.stage for target in runnable_targets(targets)] == ["convert"]
     assert targets[1].blocked_reason == "Missing module resource: annotation"
     assert targets[2].blocked_reason == "Missing module resource: fasta"
+    assert targets[3].blocked_reason == "Missing module resource: tool_settings"
 
     rows = branch_rows(_run_snapshot(tmp_path, fixture, targets), targets)
     assert rows[0]["convert"] == ""
     assert rows[0]["annotate"] == "BLOCKED"
     assert rows[0]["fasta"] == "BLOCKED"
+    assert rows[0]["proteobench"] == "BLOCKED"
     assert "annotation" in rows[0]["_stage_details"]["annotate"]["error"]
 
 
@@ -416,8 +435,36 @@ def test_rows_update_from_pending_to_completed_and_failed(tmp_path: Path) -> Non
     )[0]
     assert row["convert"] == "DONE"
     assert row["annotate"] == "FAILED"
-    assert row["fasta"] == "BLOCKED"
+    assert row["fasta"] == ""
     assert "group mismatch" in row["_stage_details"]["annotate"]["error"]
+
+
+def test_proteobench_uses_convert_and_only_module_level_branches(tmp_path: Path) -> None:
+    annotation = tmp_path / "module.toml"
+    annotation.write_text("[general]\nlevel = 'ion'\n")
+    tool = tmp_path / "tool.toml"
+    tool.write_text("[mapper]\nProtein = 'Proteins'\n")
+    fixture = _resolved_fixture(
+        tmp_path,
+        branches=("mudata", "ion", "fragment", "protein"),
+        annotation=annotation,
+        tool_settings=tool,
+        proteobench_level="ion",
+    )
+
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
+    scoring = [target for target in targets if target.stage == "proteobench"]
+
+    assert {target.branch for target in scoring} == {"mudata", "ion"}
+    for target in scoring:
+        converted = next(
+            item
+            for item in targets
+            if item.branch == target.branch and item.stage == "convert"
+        )
+        assert target.inputs == [converted.output, annotation, tool]
+        assert target.command[:3] == ["apb", "proteobench", str(converted.output)]
+        assert target.command[3:5] == [str(annotation), str(tool)]
 
 
 def test_growing_rule_log_is_pending_until_failure_marker_exists(

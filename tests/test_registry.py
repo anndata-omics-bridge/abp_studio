@@ -37,8 +37,8 @@ def test_non_root_stages_declare_artifact_and_resource():
             assert stage.get("artifact"), (
                 f"{stage['name']!r} needs an `artifact` basename"
             )
-            assert stage.get("resource"), (
-                f"{stage['name']!r} needs a `resource` (module key + gate)"
+            assert stage.get("resource") or stage.get("resources"), (
+                f"{stage['name']!r} needs `resource`/`resources` (module key + gate)"
             )
 
 
