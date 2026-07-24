@@ -10,7 +10,7 @@ from dash import dcc
 from dash.exceptions import PreventUpdate
 from pydantic import ValidationError
 
-from apb_studio import settings, testdata, testdata_app
+from apb_studio import module_resources, settings, testdata, testdata_app
 from apb_studio.jobrunner import Job, JobStatus
 from apb_studio.testdata_app import (
     create_app,
@@ -235,11 +235,12 @@ def test_dash_app_registers_callbacks() -> None:
     app = create_app()
 
     assert app.layout is not None
-    assert len(app.callback_map) == 11
+    assert len(app.callback_map) == 12
     callback_outputs = "\n".join(app.callback_map)
     assert "config-section-editor.value" in callback_outputs
     assert "config-section-editor.readOnly" in callback_outputs
     assert "config-effective-editor.value" not in callback_outputs
+    assert "resource-preview.children" in callback_outputs
     assert app.title == "APB Studio — Fixture Manager"
 
 
@@ -337,6 +338,124 @@ def test_data_table_uses_continuous_mouse_wheel_scrolling() -> None:
     options = _props(table)["dashGridOptions"]
     assert options["pagination"] is False
     assert options["alwaysShowVerticalScroll"] is True
+
+
+def test_resource_table_marks_preview_cells_as_clickable() -> None:
+    app = create_app()
+    tables = {
+        _props(component)["id"]: component
+        for component in _components(app.layout)
+        if isinstance(component, testdata_app.dag.AgGrid)
+    }
+    columns = {column["field"]: column for column in _props(tables["resource-table"])["columnDefs"]}
+
+    assert columns["annotation_path"]["cellStyle"]["cursor"] == "pointer"
+    assert columns["fasta_status"]["cellStyle"]["textDecoration"] == "underline"
+    assert "cellStyle" not in columns["module"]
+
+
+def test_resource_preview_reads_authoritative_annotation_and_fasta_head(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    annotation = tmp_path / "annotation.toml"
+    annotation.write_text("[general]\nlevel = 'ion'\n", encoding="utf-8")
+    fasta = tmp_path / "reference.fasta"
+    fasta.write_text(
+        "".join(f">P{index}\nSEQUENCE{index}\n" for index in range(21)),
+        encoding="utf-8",
+    )
+    empty = tmp_path / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+    diagnosed = tmp_path / "diagnosed.toml"
+    diagnosed.write_text("bad", encoding="utf-8")
+    inventory = module_resources.ModuleResourceInventory(
+        resources=(
+            module_resources.ModuleResource(
+                module="dda",
+                annotation_path=annotation,
+                fasta_path=fasta,
+            ),
+            module_resources.ModuleResource(
+                module="empty",
+                annotation_path=empty,
+                fasta_path=empty,
+            ),
+            module_resources.ModuleResource(module="unassigned"),
+            module_resources.ModuleResource(
+                module="diagnosed",
+                annotation_path=diagnosed,
+                annotation_error="Invalid annotation resource",
+            ),
+            module_resources.ModuleResource(
+                module="unreadable",
+                annotation_path=tmp_path,
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        testdata_app.module_resources,
+        "load_module_resources",
+        lambda _root: inventory,
+    )
+
+    def cell(module: object, column: str) -> dict[str, Any]:
+        return {
+            "colId": column,
+            "data": {"module": module, "annotation_path": "/forged/path"},
+        }
+
+    prompt = testdata_app._RESOURCE_PREVIEW_PROMPT
+    assert testdata_app._resource_preview(None, str(tmp_path)) == prompt
+    assert testdata_app._resource_preview(cell("dda", "module"), str(tmp_path)) == prompt
+    assert (
+        testdata_app._resource_preview(
+            {"colId": "annotation_path", "data": "bad"},
+            str(tmp_path),
+        )
+        == prompt
+    )
+    assert testdata_app._resource_preview(cell("", "annotation_path"), str(tmp_path)) == prompt
+    assert "No resource assignment" in testdata_app._resource_preview(
+        cell("unknown", "annotation_path"),
+        str(tmp_path),
+    )
+    assert "No annotation resource" in testdata_app._resource_preview(
+        cell("unassigned", "annotation_status"),
+        str(tmp_path),
+    )
+    assert "Invalid annotation resource" in testdata_app._resource_preview(
+        cell("diagnosed", "annotation_path"),
+        str(tmp_path),
+    )
+    assert "Could not read annotation" in testdata_app._resource_preview(
+        cell("unreadable", "annotation_path"),
+        str(tmp_path),
+    )
+
+    annotation_preview = testdata_app._resource_preview(
+        cell("dda", "annotation_path"),
+        str(tmp_path),
+    )
+    assert str(annotation) in annotation_preview
+    assert "[general]" in annotation_preview
+    assert "/forged/path" not in annotation_preview
+
+    fasta_preview = testdata_app._resource_preview(
+        cell("dda", "fasta_status"),
+        str(tmp_path),
+    )
+    assert ">P19" in fasta_preview
+    assert ">P20" not in fasta_preview
+    assert "truncated after 40 lines" in fasta_preview
+    assert "(empty file)" in testdata_app._resource_preview(
+        cell("empty", "fasta_path"),
+        str(tmp_path),
+    )
+    assert "(empty file)" in testdata_app._resource_preview(
+        cell("empty", "annotation_path"),
+        str(tmp_path),
+    )
 
 
 def test_failed_job_marks_log_tab_red(tmp_path: Path) -> None:

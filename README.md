@@ -78,7 +78,8 @@ stages.
 
 Its Data workspace retains the fixture file, submission JSON, and parameter views. Its
 Configuration workspace catalogs and edits APB parsing-rule JSON documents. Conversion execution
-and converted-artifact inspection belong exclusively to Corpus Runner.
+and converted-artifact inspection belong exclusively to Corpus Runner. In Resources, clicking an
+annotation or FASTA status/path cell previews the annotation content or the first 40 FASTA lines.
 
 ## Quick start
 

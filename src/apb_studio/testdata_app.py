@@ -1,5 +1,6 @@
 """Plotly Dash browser for cataloging and downloading ProteoBench test data."""
 
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,19 @@ RESOURCE_COLUMNS = [
     "fasta_status",
     "fasta_path",
 ]
+_RESOURCE_PREVIEW_KIND = {
+    "annotation_status": "annotation",
+    "annotation_path": "annotation",
+    "fasta_status": "FASTA",
+    "fasta_path": "FASTA",
+}
+_RESOURCE_PREVIEW_PROMPT = "Click an annotation or FASTA status/path cell to preview its content."
+_FASTA_PREVIEW_LINES = 40
+_CLICKABLE_CELL_STYLE = {
+    "color": "#175cd3",
+    "cursor": "pointer",
+    "textDecoration": "underline",
+}
 BUTTON_STYLE = {
     "fontSize": "11px",
     "padding": "0.3rem 0.55rem",
@@ -105,6 +119,7 @@ def data_table(
                 "filter": True,
                 "headerName": TABLE_HEADERS.get(name, name.replace("_", " ").title()),
                 "width": TABLE_COLUMN_WIDTHS.get(name, 130),
+                **({"cellStyle": _CLICKABLE_CELL_STYLE} if name in _RESOURCE_PREVIEW_KIND else {}),
             }
             for name in columns
         ],
@@ -219,6 +234,50 @@ def workflow_controls() -> html.Div:
     )
 
 
+def _resource_selection(cell: dict[str, Any] | None) -> tuple[str, str] | None:
+    """Resolve a resource-grid event to a module and preview kind."""
+    if not cell or cell.get("colId") not in _RESOURCE_PREVIEW_KIND:
+        return None
+    row = cell.get("data")
+    module = row.get("module") if isinstance(row, dict) else None
+    if not isinstance(module, str) or not module:
+        return None
+    return module, _RESOURCE_PREVIEW_KIND[str(cell["colId"])]
+
+
+def _resource_preview(cell: dict[str, Any] | None, data_root: str) -> str:
+    """Read one server-resolved annotation or bounded FASTA preview."""
+    selection = _resource_selection(cell)
+    if selection is None:
+        return _RESOURCE_PREVIEW_PROMPT
+    module, kind = selection
+    resource = module_resources.load_module_resources(data_root).for_module(module)
+    if resource is None:
+        return f"No resource assignment found for module {module}."
+
+    path = resource.annotation_path if kind == "annotation" else resource.fasta_path
+    error = resource.annotation_error if kind == "annotation" else resource.fasta_error
+    if path is None:
+        return f"No {kind} resource is assigned for module {module}."
+    if error is not None:
+        return f"{kind} · {path}\n\n{error}"
+    try:
+        if kind == "annotation":
+            content = path.read_text(encoding="utf-8", errors="replace")
+            content = content or "(empty file)"
+        else:
+            with path.open(encoding="utf-8", errors="replace") as stream:
+                lines = list(islice(stream, _FASTA_PREVIEW_LINES + 1))
+            truncated = len(lines) > _FASTA_PREVIEW_LINES
+            content = "".join(lines[:_FASTA_PREVIEW_LINES]).rstrip()
+            content = content or "(empty file)"
+            if truncated:
+                content = f"{content}\n… preview truncated after {_FASTA_PREVIEW_LINES} lines"
+    except OSError as exc:
+        return f"Could not read {kind} resource {path}: {exc}"
+    return f"{kind} · {path}\n\n{content}"
+
+
 def data_panel() -> html.Div:
     """Build one fixture table with download workflows and source details."""
     return html.Div(
@@ -330,7 +389,21 @@ def resources_panel() -> html.Div:
                 },
             ),
             html.Div(id="resource-message", style={"fontSize": "11px"}),
-            data_table("resource-table", RESOURCE_COLUMNS, height="55vh"),
+            data_table("resource-table", RESOURCE_COLUMNS, height="36vh"),
+            html.H2(
+                "Resource preview",
+                style={"fontSize": "15px", "margin": "0.6rem 0 0.35rem"},
+            ),
+            html.Pre(
+                _RESOURCE_PREVIEW_PROMPT,
+                id="resource-preview",
+                style={
+                    **PRE_STYLE,
+                    "border": "1px solid #cfd3dc",
+                    "height": "28vh",
+                    "padding": "0.6rem",
+                },
+            ),
         ]
     )
 
@@ -646,6 +719,19 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
         except (OSError, ValueError, ValidationError) as error:
             return str(error), {"color": "#b00020", "fontSize": "11px"}
         return "Assignment saved.", {"color": "#16733c", "fontSize": "11px"}
+
+    @app.callback(
+        Output("resource-preview", "children"),
+        Input("resource-table", "cellClicked"),
+        Input("storage-root", "data"),
+    )
+    def _show_resource_preview(
+        cell: dict[str, Any] | None,
+        data_root: str,
+    ) -> str:
+        """Show the clicked server-side resource, resetting when storage changes."""
+        selected_cell = cell if ctx.triggered_id == "resource-table" else None
+        return _resource_preview(selected_cell, data_root)
 
     @app.callback(
         Output("workspace-tabs", "value"),

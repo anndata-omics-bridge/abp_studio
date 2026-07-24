@@ -42,6 +42,7 @@ def _app_callbacks(tmp_path: Path) -> tuple[Any, dict[str, Any]]:
         "refresh": _callback(app, "catalog-table.rowData"),
         "resource": _callback(app, "resource-fasta.value"),
         "save_resource": _callback(app, "resource-message.children"),
+        "preview": _callback(app, "resource-preview.children"),
         "completed": _callback(app, "workspace-tabs.value"),
         "details": _callback(app, "file-info.children"),
     }
@@ -188,6 +189,26 @@ def test_catalog_and_resource_callbacks(
         lambda *_args, **_kwargs: assigned,
     )
     assert save(1, "dda", str(fasta), str(tmp_path))[0] == "Assignment saved."
+
+
+def test_resource_preview_callback_resets_on_storage_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _app, callbacks = _app_callbacks(tmp_path)
+    preview = callbacks["preview"]
+    seen: list[dict[str, Any] | None] = []
+    monkeypatch.setattr(
+        testdata_app,
+        "_resource_preview",
+        lambda cell, _root: seen.append(cell) or "preview",
+    )
+    cell = {"colId": "annotation_path", "data": {"module": "dda"}}
+    monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="resource-table"))
+    assert preview(cell, str(tmp_path)) == "preview"
+    monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="storage-root"))
+    assert preview(cell, str(tmp_path)) == "preview"
+    assert seen == [cell, None]
 
 
 @pytest.mark.parametrize(

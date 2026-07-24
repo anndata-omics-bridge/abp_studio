@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-07-24: Add server-resolved resource previews to Fixture Manager:
+  annotation cells show the assigned file and FASTA cells show a bounded 40-line head.
 - 2026-07-24: Remove Fixture Manager conversion controls, status, converted
   container browser, and backend launch helpers now that Corpus Runner owns all
   conversion execution; retain fixture JSON/parameter details and configuration editing.
