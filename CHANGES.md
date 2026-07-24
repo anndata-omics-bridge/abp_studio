@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-07-24: Add a guarded Corpus Runner action to clear a selected completed
+  or failed stage and its downstream branch artifacts after confirmation.
 - 2026-07-23: Align local and GitHub quality gates with the FGCZ Python
   reference, package the registry/Snakefile for installed use, and add staged
   Ruff/Pyright/Deptry/coverage hooks, wheel inspection, strict docs, dependency

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from apb_studio import dashboard
+from apb_studio import dashboard, pipeline
 from apb_studio.registry import load_registry
 
 _ROW_ID = '["module-a","dataset-a","ion"]'
@@ -111,6 +111,42 @@ def test_failed_log_download_must_resolve_from_authoritative_row(
     assert dashboard._downloadable_log(rows, forged) is None
 
 
+def test_stage_clear_resolves_exact_branch_and_downstream_targets(tmp_path: Path) -> None:
+    targets = [
+        pipeline.Target(
+            module="module-a",
+            dataset="dataset-a",
+            branch=branch,
+            stage=stage,
+            output=tmp_path / branch / stage,
+            command=[],
+        )
+        for branch in ("mudata", "ion", "peptidoform")
+        for stage in ("convert", "annotate", "fasta", "proteobench")
+    ]
+
+    selected = dashboard._targets_for_stage_clear(targets, _selection(), load_registry())
+
+    assert {(target.branch, target.stage) for target in selected} == {
+        ("ion", "convert"),
+        ("ion", "annotate"),
+        ("ion", "fasta"),
+        ("ion", "proteobench"),
+    }
+    mudata_selection = {**_selection(), "level": "MuData", "stage": "annotate"}
+    selected = dashboard._targets_for_stage_clear(targets, mudata_selection, load_registry())
+    assert {(target.branch, target.stage) for target in selected} == {
+        ("mudata", "annotate"),
+    }
+
+
+def test_stage_clear_rejects_missing_or_unavailable_selection() -> None:
+    with pytest.raises(ValueError, match="Select a stage"):
+        dashboard._targets_for_stage_clear([], None, load_registry())
+    with pytest.raises(ValueError, match="not available"):
+        dashboard._targets_for_stage_clear([], _selection(), load_registry())
+
+
 def test_completed_cell_describes_exact_artifact(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -173,6 +209,20 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
         child for child in app.layout.children if getattr(child, "id", None) == "corpus-grid"
     )
     assert grid.getRowId == "params.data._row_id"
+    controls = next(
+        child
+        for child in app.layout.children
+        if isinstance(getattr(child, "children", None), list)
+        and any(
+            getattr(grandchild, "id", None) == "confirm-clear-stage"
+            for grandchild in child.children
+        )
+    )
+    confirm = next(
+        child for child in controls.children if getattr(child, "id", None) == "confirm-clear-stage"
+    )
+    assert confirm.children.id == "clear-stage"
+    assert confirm.children.disabled is True
 
 
 def test_documented_cell_event_renders_clicked_stage(
@@ -207,7 +257,7 @@ def test_documented_cell_event_renders_clicked_stage(
 
     result = detail_callback(event, 0, "job-id", None)
 
-    assert result == ("completed", _selection(), True)
+    assert result == ("completed", _selection(), True, False)
 
 
 def test_poll_refreshes_the_stored_stage_selection(
@@ -246,6 +296,8 @@ def test_poll_refreshes_the_stored_stage_selection(
     assert first[0] == "pending"
     assert second[0] == "completed"
     assert second[1] == _selection()
+    assert first[3] is True
+    assert second[3] is False
 
 
 def test_refresh_reconnects_browser_to_server_active_job(
@@ -280,7 +332,7 @@ def test_refresh_reconnects_browser_to_server_active_job(
         lambda _path: SimpleNamespace(test_data_root=Path("/fixtures")),
     )
 
-    result = refresh_callback(0, 0, 1, "/outputs", None, 4)
+    result = refresh_callback(0, 0, 1, 0, "/outputs", None, 4, None)
 
     assert seen == ["server-active", "server-active"]
     assert result[3] is True  # Run disabled
@@ -309,4 +361,4 @@ def test_grid_revision_clears_a_selection_missing_after_root_reload(
 
     result = detail_callback(None, 2, "job-id", _selection())
 
-    assert result == ("Click a completed stage or a status cell.", None, True)
+    assert result == ("Click a completed stage or a status cell.", None, True, True)

@@ -194,6 +194,137 @@ def test_live_log_labels(
     assert expected in dashboard._live_log("job")[2]
 
 
+def test_clear_selected_stage_uses_guarded_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = {
+        "module": "dda",
+        "dataset": "fixture",
+        "level": "ion",
+        "row_id": "row",
+        "stage": "convert",
+    }
+    target = pipeline.Target(
+        module="dda",
+        dataset="fixture",
+        branch="ion",
+        stage="convert",
+        output=tmp_path / "output" / "ion.h5ad",
+        command=[],
+    )
+    snapshot = SimpleNamespace(test_data_root=tmp_path / "fixtures")
+    cleaned: list[tuple[list[pipeline.Target], Path]] = []
+    monkeypatch.setattr(dashboard.execution, "corpus_job_running", lambda _job_id: False)
+    monkeypatch.setattr(
+        dashboard.execution,
+        "load_overview",
+        lambda *_args, **_kwargs: ([target], [], snapshot, None),
+    )
+    monkeypatch.setattr(
+        dashboard.execution,
+        "clean_targets",
+        lambda targets, *, input_root: cleaned.append((targets, input_root)) or [],
+    )
+
+    dashboard._clear_selected_stage(
+        selection,
+        _registry(),
+        job_id="job",
+        settings_path=tmp_path / "settings.json",
+    )
+
+    assert cleaned == [([target], snapshot.test_data_root)]
+
+    monkeypatch.setattr(dashboard.execution, "corpus_job_running", lambda _job_id: True)
+    with pytest.raises(RuntimeError, match="active corpus run"):
+        dashboard._clear_selected_stage(selection, _registry(), job_id="job", settings_path=None)
+
+    monkeypatch.setattr(dashboard.execution, "corpus_job_running", lambda _job_id: False)
+    monkeypatch.setattr(
+        dashboard.execution,
+        "load_overview",
+        lambda *_args, **_kwargs: ([], [], None, "inventory failed"),
+    )
+    with pytest.raises(RuntimeError, match="inventory failed"):
+        dashboard._clear_selected_stage(selection, _registry(), job_id=None, settings_path=None)
+
+    monkeypatch.setattr(
+        dashboard.execution,
+        "load_overview",
+        lambda *_args, **_kwargs: ([], [], None, None),
+    )
+    with pytest.raises(RuntimeError, match="resolve the fixture inventory"):
+        dashboard._clear_selected_stage(selection, _registry(), job_id=None, settings_path=None)
+
+
+def test_clear_callback_refreshes_status_and_reports_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = dashboard.create_app(settings_path=tmp_path / "settings.json")
+    refresh = _callback(app, "corpus-grid.rowData")
+    row = _row(tmp_path)
+    selection = _selection(row)
+    snapshot = SimpleNamespace(fixtures=(1,))
+    active = settings.StudioSettings(
+        test_data_root=tmp_path / "fixtures",
+        output_root=tmp_path / "output",
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "_load_dashboard_rows",
+        lambda *_args, **_kwargs: ([row], snapshot, None),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "_live_log",
+        lambda _job_id: ("log", False, "Corpus not running"),
+    )
+    monkeypatch.setattr(dashboard.settings, "load_settings", lambda _path=None: active)
+    monkeypatch.setattr(dashboard.execution, "active_corpus_job_id", lambda: None)
+    monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="confirm-clear-stage"))
+    cleared: list[dict[str, str] | None] = []
+    monkeypatch.setattr(
+        dashboard,
+        "_clear_selected_stage",
+        lambda selected, *_args, **_kwargs: cleared.append(selected),
+    )
+
+    result = refresh(None, None, 0, 1, str(active.output_root), None, 3, selection)
+
+    assert cleared == [selection]
+    assert result[5] == "Selected stage and downstream outputs cleared"
+
+    monkeypatch.setattr(
+        dashboard,
+        "_clear_selected_stage",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("stale selection")),
+    )
+    result = refresh(None, None, 0, 2, str(active.output_root), None, 4, selection)
+    assert "Could not clear selected stage: stale selection" in result[1]
+
+
+def test_clear_button_is_disabled_during_active_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = dashboard.create_app(settings_path=tmp_path / "settings.json")
+    show = _callback(app, "stage-detail.children")
+    row = _row(tmp_path)
+    monkeypatch.setattr(
+        dashboard,
+        "_load_dashboard_rows",
+        lambda *_args, **_kwargs: ([row], SimpleNamespace(), None),
+    )
+    monkeypatch.setattr(dashboard.execution, "corpus_job_running", lambda _job_id: True)
+    monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="corpus-grid"))
+
+    result = show({"colId": "convert", "rowId": row["_row_id"]}, 1, "job", None)
+
+    assert result[3] is True
+
+
 def test_dashboard_callbacks_and_main(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -222,16 +353,16 @@ def test_dashboard_callbacks_and_main(
     monkeypatch.setattr(dashboard.settings, "load_settings", lambda _path=None: active)
     monkeypatch.setattr(dashboard.execution, "active_corpus_job_id", lambda: None)
     monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id=None))
-    result = refresh(None, None, 0, str(active.output_root), "job", None)
+    result = refresh(None, None, 0, None, str(active.output_root), "job", None, None)
     assert result[0] == [row]
     assert result[-1] == 1
 
     monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="run-corpus"))
     monkeypatch.setattr(dashboard.settings, "update_settings", lambda **_kwargs: active)
     monkeypatch.setattr(dashboard.execution, "launch_corpus", lambda **_kwargs: "new-job")
-    assert refresh(None, 1, 0, str(active.output_root), None, 2)[6] == "new-job"
+    assert refresh(None, 1, 0, None, str(active.output_root), None, 2, None)[6] == "new-job"
     monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="reload"))
-    assert refresh(1, None, 0, str(active.output_root), None, 0)[1] == ""
+    assert refresh(1, None, 0, None, str(active.output_root), None, 0, None)[1] == ""
 
     monkeypatch.setattr(
         dashboard.settings,
@@ -245,9 +376,11 @@ def test_dashboard_callbacks_and_main(
             None,
             1,
             0,
+            None,
             str(active.output_root),
             None,
             0,
+            None,
         )[1]
     )
     monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="reload"))
@@ -257,9 +390,11 @@ def test_dashboard_callbacks_and_main(
             1,
             None,
             0,
+            None,
             str(active.output_root),
             None,
             0,
+            None,
         )[1]
     )
 
@@ -272,13 +407,14 @@ def test_dashboard_callbacks_and_main(
         None,
     )
     assert shown[1] == selection
+    assert shown[3] is False
 
     monkeypatch.setattr(
         dashboard,
         "_load_dashboard_rows",
         lambda *_args, **_kwargs: ([], None, "load failed"),
     )
-    assert show(None, 1, "job", selection) == ("load failed", selection, True)
+    assert show(None, 1, "job", selection) == ("load failed", selection, True, True)
     assert download(1, selection, "job") is no_update
 
     monkeypatch.setattr(
@@ -287,7 +423,7 @@ def test_dashboard_callbacks_and_main(
         lambda *_args, **_kwargs: ([row], snapshot, None),
     )
     monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="grid-revision"))
-    assert show(None, 2, "job", None) == (no_update, no_update, no_update)
+    assert show(None, 2, "job", None) == (no_update, no_update, no_update, no_update)
     missing = {**selection, "row_id": "gone"}
     assert show(None, 2, "job", missing)[1] is None
     assert download(1, missing, "job") is no_update

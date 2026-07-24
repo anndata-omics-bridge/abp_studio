@@ -304,6 +304,66 @@ def _downloadable_log(
     return path if path.is_file() else None
 
 
+def _targets_for_stage_clear(
+    targets: list[pipeline.Target],
+    selection: dict[str, str] | None,
+    registry: list[dict[str, Any]],
+) -> list[pipeline.Target]:
+    """Resolve one authoritative branch/stage selection and its downstream targets."""
+    if selection is None:
+        raise ValueError("Select a stage cell before clearing.")
+    module = selection.get("module")
+    dataset = selection.get("dataset")
+    level = selection.get("level")
+    stage = selection.get("stage")
+    branch = pipeline.MUDATA if level == "MuData" else level
+    exact = [
+        target
+        for target in targets
+        if (
+            target.module == module
+            and target.dataset == dataset
+            and target.branch == branch
+            and target.stage == stage
+        )
+    ]
+    if not exact:
+        raise ValueError("The selected stage is not available for this branch.")
+    stages = {cast(str, stage), *pipeline.descendants(registry, cast(str, stage))}
+    return [
+        target
+        for target in targets
+        if (
+            target.module == module
+            and target.dataset == dataset
+            and target.branch == branch
+            and target.stage in stages
+        )
+    ]
+
+
+def _clear_selected_stage(
+    selection: dict[str, str] | None,
+    registry: list[dict[str, Any]],
+    *,
+    job_id: str | None,
+    settings_path: Path | None,
+) -> None:
+    """Clear one selected stage and its descendants through the guarded execution primitive."""
+    if execution.corpus_job_running(job_id):
+        raise RuntimeError("wait for the active corpus run to finish before clearing outputs")
+    targets, _coverage, snapshot, error = execution.load_overview(
+        job_id,
+        settings_path=settings_path,
+    )
+    if error is not None:
+        raise RuntimeError(error)
+    if snapshot is None:
+        raise RuntimeError("Corpus Runner could not resolve the fixture inventory.")
+    selected = _targets_for_stage_clear(targets, selection, registry)
+    execution.clean_targets(selected, input_root=snapshot.test_data_root)
+
+
 def _live_log(job_id: str | None) -> tuple[str, bool, str]:
     """Return live log text, running state, and a compact job label."""
     status = execution.inspect_corpus_job(job_id)
@@ -367,6 +427,19 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                         "Run corpus",
                         id="run-corpus",
                         style={"height": "2rem", "fontWeight": "600"},
+                    ),
+                    dcc.ConfirmDialogProvider(
+                        html.Button(
+                            "Clear selected stage…",
+                            id="clear-stage",
+                            disabled=True,
+                            style={"height": "2rem"},
+                        ),
+                        id="confirm-clear-stage",
+                        message=(
+                            "Clear the selected stage and all downstream outputs for this branch? "
+                            "Fixture inputs and other branches are untouched."
+                        ),
                     ),
                     html.Span(
                         id="run-status",
@@ -473,17 +546,21 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         Input("reload", "n_clicks"),
         Input("run-corpus", "n_clicks"),
         Input("poll-corpus", "n_intervals"),
+        Input("confirm-clear-stage", "submit_n_clicks"),
         State("output-root", "value"),
         State("active-job-id", "data"),
         State("grid-revision", "data"),
+        State("selected-stage", "data"),
     )
     def _refresh_corpus(
         _reload_clicks: int | None,
         _run_clicks: int | None,
         _tick: int,
+        _clear_clicks: int | None,
         output_root: str,
         job_id: str | None,
         grid_revision: int | None,
+        selected_stage: dict[str, str] | None,
     ) -> tuple[
         list[dict[str, Any]],
         str,
@@ -497,6 +574,7 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
     ]:
         """Launch when requested, then refresh rows and the live global log."""
         launch_error = ""
+        action_status = ""
         job_id = execution.active_corpus_job_id() or job_id
         if ctx.triggered_id in {"reload", "run-corpus"}:
             try:
@@ -512,6 +590,17 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
             except (OSError, RuntimeError, ValueError) as exc:
                 action = "launch corpus" if ctx.triggered_id == "run-corpus" else "save settings"
                 launch_error = f"Could not {action}: {exc}"
+        elif ctx.triggered_id == "confirm-clear-stage":
+            try:
+                _clear_selected_stage(
+                    selected_stage,
+                    registry,
+                    job_id=job_id,
+                    settings_path=settings_path,
+                )
+                action_status = "Selected stage and downstream outputs cleared"
+            except (OSError, RuntimeError, ValueError, pipeline.CleanGuardError) as exc:
+                launch_error = f"Could not clear selected stage: {exc}"
 
         rows, snapshot, load_error = _load_dashboard_rows(
             job_id,
@@ -525,6 +614,8 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
             f" · {fixture_count} complete · {len(rows)} branches"
         )
         errors = "\n\n".join(error for error in (load_error, launch_error) if error)
+        if action_status and not running:
+            status_label = action_status
         run_disabled = running or load_error is not None
         return (
             rows,
@@ -542,6 +633,7 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         Output("stage-detail", "children"),
         Output("selected-stage", "data"),
         Output("download-log", "disabled"),
+        Output("clear-stage", "disabled"),
         Input("corpus-grid", "cellClicked"),
         Input("grid-revision", "data"),
         State("active-job-id", "data"),
@@ -553,33 +645,37 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         _grid_revision: int,
         job_id: str | None,
         selected_stage: dict[str, str] | None,
-    ) -> tuple[object, object, object]:
+    ) -> tuple[object, object, object, object]:
         """Show a clicked stage and refresh that same selection while the job runs."""
         rows, _snapshot, error = _load_dashboard_rows(
             job_id,
             settings_path=settings_path,
         )
         if error is not None:
-            return error, selected_stage or no_update, True
+            return error, selected_stage or no_update, True, True
         selection = (
             _selection_from_click(cell, registry, rows)
             if ctx.triggered_id == "corpus-grid"
             else selected_stage
         )
         if selection is None:
-            return no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update
         detail = _find_stage_detail(rows, selection)
         if detail is None:
             return (
                 "Click a completed stage or a status cell.",
                 None,
                 True,
+                True,
             )
         log_path = _downloadable_log(rows, selection)
+        clear_disabled = detail.get("state") not in {"completed", "failed"}
+        clear_disabled = clear_disabled or execution.corpus_job_running(job_id)
         return (
             _render_stage_detail(detail, selection, registry),
             selection,
             log_path is None,
+            clear_disabled,
         )
 
     @app.callback(

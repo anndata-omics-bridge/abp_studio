@@ -61,7 +61,10 @@ The stage states have precise meanings:
 
 Only `FAILED` is red and offers a downloadable rule log. A leftover log alone never means failure,
 and an artifact wins over an old failure marker. Clicking `DONE` shows APB's cumulative artifact
-summary; clicking another terminal state shows its diagnostic.
+summary; clicking another terminal state shows its diagnostic. `Clear selected stage…` removes a
+selected `DONE` or `FAILED` stage plus its downstream artifacts for that branch after confirmation;
+fixture inputs and sibling branches are never touched, and clearing is disabled while a corpus run
+is active.
 
 ## Fixture Manager
 
