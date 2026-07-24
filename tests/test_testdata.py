@@ -352,6 +352,7 @@ def test_resource_table_marks_preview_cells_as_clickable() -> None:
     assert columns["annotation_path"]["cellStyle"]["cursor"] == "pointer"
     assert columns["fasta_status"]["cellStyle"]["textDecoration"] == "underline"
     assert "cellStyle" not in columns["module"]
+    assert _props(tables["resource-table"])["getRowId"] == "params.data.module"
 
 
 def test_resource_preview_reads_authoritative_annotation_and_fasta_head(
@@ -402,7 +403,8 @@ def test_resource_preview_reads_authoritative_annotation_and_fasta_head(
     def cell(module: object, column: str) -> dict[str, Any]:
         return {
             "colId": column,
-            "data": {"module": module, "annotation_path": "/forged/path"},
+            "rowId": module,
+            "value": "/forged/path",
         }
 
     prompt = testdata_app._RESOURCE_PREVIEW_PROMPT
@@ -410,7 +412,7 @@ def test_resource_preview_reads_authoritative_annotation_and_fasta_head(
     assert testdata_app._resource_preview(cell("dda", "module"), str(tmp_path)) == prompt
     assert (
         testdata_app._resource_preview(
-            {"colId": "annotation_path", "data": "bad"},
+            {"colId": "annotation_path"},
             str(tmp_path),
         )
         == prompt

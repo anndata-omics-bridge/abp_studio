@@ -203,7 +203,7 @@ def test_resource_preview_callback_resets_on_storage_change(
         "_resource_preview",
         lambda cell, _root: seen.append(cell) or "preview",
     )
-    cell = {"colId": "annotation_path", "data": {"module": "dda"}}
+    cell = {"colId": "annotation_path", "rowId": "dda"}
     monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="resource-table"))
     assert preview(cell, str(tmp_path)) == "preview"
     monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="storage-root"))

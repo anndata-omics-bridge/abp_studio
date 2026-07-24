@@ -108,6 +108,7 @@ def data_table(
     columns: list[str] | None = None,
     *,
     height: str = "34vh",
+    row_id_field: str | None = None,
 ) -> dag.AgGrid:
     """Create a filterable single-row-select data table."""
     columns = columns or TABLE_COLUMNS
@@ -124,6 +125,7 @@ def data_table(
             for name in columns
         ],
         rowData=[],
+        getRowId=f"params.data.{row_id_field}" if row_id_field is not None else None,
         dashGridOptions={
             "pagination": False,
             "alwaysShowVerticalScroll": True,
@@ -238,8 +240,7 @@ def _resource_selection(cell: dict[str, Any] | None) -> tuple[str, str] | None:
     """Resolve a resource-grid event to a module and preview kind."""
     if not cell or cell.get("colId") not in _RESOURCE_PREVIEW_KIND:
         return None
-    row = cell.get("data")
-    module = row.get("module") if isinstance(row, dict) else None
+    module = cell.get("rowId")
     if not isinstance(module, str) or not module:
         return None
     return module, _RESOURCE_PREVIEW_KIND[str(cell["colId"])]
@@ -389,7 +390,12 @@ def resources_panel() -> html.Div:
                 },
             ),
             html.Div(id="resource-message", style={"fontSize": "11px"}),
-            data_table("resource-table", RESOURCE_COLUMNS, height="36vh"),
+            data_table(
+                "resource-table",
+                RESOURCE_COLUMNS,
+                height="36vh",
+                row_id_field="module",
+            ),
             html.H2(
                 "Resource preview",
                 style={"fontSize": "15px", "margin": "0.6rem 0 0.35rem"},
