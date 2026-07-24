@@ -7,7 +7,9 @@ shared by Snakemake and the dashboard.
 
 from __future__ import annotations
 
+import csv
 import json
+import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
@@ -755,6 +757,36 @@ def failure_marker_path(output: Path | str) -> Path:
     return Path(f"{output}.failed")
 
 
+def benchmark_path(output: Path | str) -> Path:
+    """Return the Snakemake benchmark file adjacent to a stage artifact."""
+    return Path(f"{output}.benchmark.tsv")
+
+
+def _benchmark_seconds(output: Path | str) -> float | None:
+    """Read one rule's elapsed seconds, tolerating old or partial metadata."""
+    try:
+        with benchmark_path(output).open(encoding="utf-8", newline="") as handle:
+            row = next(csv.DictReader(handle, delimiter="\t"), None)
+        seconds = float(row["s"]) if row is not None else math.nan
+    except (OSError, KeyError, TypeError, ValueError):
+        return None
+    return seconds if math.isfinite(seconds) and seconds >= 0 else None
+
+
+def _format_duration(seconds: float) -> str:
+    """Format elapsed seconds compactly for a stage cell."""
+    if seconds < 10:
+        return f"{seconds:.1f}s"
+    total_seconds = round(seconds)
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    minutes, remainder = divmod(total_seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {remainder:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m"
+
+
 def _failed_rule_error(output: Path | str) -> str | None:
     """Return a rule failure only when its authoritative failure marker exists.
 
@@ -892,7 +924,17 @@ def _stage_detail(
     log_path = str(Path(f"{target.output}.log"))
     base = {"artifact": artifact, "log": log_path}
     if target.output.exists():
-        return {**base, "state": "completed", "display": "DONE"}
+        duration_seconds = _benchmark_seconds(target.output)
+        timing = (
+            {}
+            if duration_seconds is None
+            else {
+                "duration": _format_duration(duration_seconds),
+                "duration_seconds": str(duration_seconds),
+            }
+        )
+        display = "DONE" if not timing else f"DONE · {timing['duration']}"
+        return {**base, **timing, "state": "completed", "display": display}
     error = _failed_rule_error(target.output)
     if error is not None:
         return {**base, "state": "failed", "display": "FAILED", "error": error}

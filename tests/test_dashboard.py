@@ -168,6 +168,16 @@ def test_completed_cell_describes_exact_artifact(
 
     assert described == [artifact]
     assert '"n_runs": 4' in children[-1].children
+    timed = dashboard._artifact_detail(
+        {
+            "state": "completed",
+            "artifact": str(artifact),
+            "duration": "2m 14s",
+        },
+        _selection(),
+        load_registry(),
+    )
+    assert "Runtime 2m 14s" in timed[1].children
 
 
 def test_unsupported_detail_has_no_rule_log() -> None:

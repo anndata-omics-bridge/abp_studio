@@ -46,7 +46,7 @@ _STAGE_CELL_STYLE = {
             },
         },
         {
-            "condition": "params.value === 'DONE'",
+            "condition": "params.value && params.value.startsWith('DONE')",
             "style": {
                 "color": "#175cd3",
                 "cursor": "pointer",
@@ -216,13 +216,16 @@ def _artifact_detail(
     """Render one completed artifact's APB-owned descriptive summary."""
     artifact = Path(detail["artifact"])
     heading = _stage_heading(selection, registry)
+    metadata = str(artifact)
+    if detail.get("duration"):
+        metadata = f"{metadata} · Runtime {detail['duration']}"
     try:
         summary = describe_path(artifact)
         rendered = json.dumps(summary, indent=2, sort_keys=True)
     except Exception as exc:  # noqa: BLE001 - a corrupt artifact must not crash Dash
         return [
             html.H2(heading, style={"fontSize": "1rem", "margin": "0"}),
-            html.Div(str(artifact), style={"color": "#667085", "fontSize": "0.78rem"}),
+            html.Div(metadata, style={"color": "#667085", "fontSize": "0.78rem"}),
             html.P(
                 f"Could not read this artifact summary: {type(exc).__name__}: {exc}",
                 style={"color": "#b42318"},
@@ -230,7 +233,7 @@ def _artifact_detail(
         ]
     return [
         html.H2(heading, style={"fontSize": "1rem", "margin": "0"}),
-        html.Div(str(artifact), style={"color": "#667085", "fontSize": "0.78rem"}),
+        html.Div(metadata, style={"color": "#667085", "fontSize": "0.78rem"}),
         html.Pre(rendered, style=_PRE_STYLE),
     ]
 

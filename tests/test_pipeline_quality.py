@@ -178,6 +178,48 @@ def test_log_failure_and_provenance_parsers(
     assert pipeline._provenance_warnings(sidecar) == ["artifact: degraded"]
 
 
+def test_stage_timing_parses_and_formats_snakemake_benchmarks(tmp_path: Path) -> None:
+    output = tmp_path / "artifact.h5ad"
+    assert pipeline._benchmark_seconds(output) is None
+
+    benchmark = pipeline.benchmark_path(output)
+    benchmark.write_text("s\th:m:s\n134.25\t0:02:14\n", encoding="utf-8")
+    assert pipeline._benchmark_seconds(output) == 134.25
+    assert pipeline._format_duration(0.25) == "0.2s"
+    assert pipeline._format_duration(12.4) == "12s"
+    assert pipeline._format_duration(134.25) == "2m 14s"
+    assert pipeline._format_duration(3_725) == "1h 02m"
+
+    benchmark.write_text("", encoding="utf-8")
+    assert pipeline._benchmark_seconds(output) is None
+    benchmark.write_text("wrong\n1\n", encoding="utf-8")
+    assert pipeline._benchmark_seconds(output) is None
+    benchmark.write_text("s\ninvalid\n", encoding="utf-8")
+    assert pipeline._benchmark_seconds(output) is None
+    benchmark.write_text("s\n-1\n", encoding="utf-8")
+    assert pipeline._benchmark_seconds(output) is None
+    benchmark.write_text("s\ninf\n", encoding="utf-8")
+    assert pipeline._benchmark_seconds(output) is None
+
+
+def test_stage_detail_includes_persisted_runtime(tmp_path: Path) -> None:
+    target = _target(tmp_path, "artifact.h5ad")
+    target.output.touch()
+    pipeline.benchmark_path(target.output).write_text(
+        "s\th:m:s\n61.2\t0:01:01\n",
+        encoding="utf-8",
+    )
+
+    completed = pipeline._stage_detail(target, targets=[target])
+
+    assert completed["display"] == "DONE · 1m 01s"
+    assert completed["duration"] == "1m 01s"
+    target.output.unlink()
+    pipeline.failure_marker_path(target.output).write_text("exit 1", encoding="utf-8")
+    failed = pipeline._stage_detail(target, targets=[target])
+    assert failed["display"] == "FAILED"
+
+
 def test_problem_aggregation_and_terminal_blockers(tmp_path: Path) -> None:
     target = _target(tmp_path, "artifact.h5ad")
     Path(f"{target.output}.failed").write_text("2", encoding="utf-8")

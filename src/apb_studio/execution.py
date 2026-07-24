@@ -34,6 +34,7 @@ from apb_studio.pipeline import (
     ResolvedFixture,
     RunSnapshot,
     Target,
+    benchmark_path,
     coverage,
     expand_resolved_targets,
     failure_marker_path,
@@ -569,6 +570,9 @@ def clean_targets(targets: list[Target], *, input_root: Path | str) -> list[Path
         failure_marker = failure_marker_path(target.output)
         if failure_marker.exists():
             failure_marker.unlink()
+        benchmark = benchmark_path(target.output)
+        if benchmark.exists():
+            benchmark.unlink()
         provenance.prune_for_target(target)
     return deleted
 

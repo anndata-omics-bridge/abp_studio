@@ -327,10 +327,12 @@ def test_clean_targets_removes_sidecar_log_and_failure_marker(tmp_path: Path) ->
     conv.output.touch()
     Path(f"{conv.output}.log").write_text("boom")
     Path(f"{conv.output}.failed").write_text("exit 1\n")
+    Path(f"{conv.output}.benchmark.tsv").write_text("s\n1.2\n")
     clean_targets([conv], input_root=str(tmp_path / "in"))
     assert not conv.output.exists()
     assert not Path(f"{conv.output}.log").exists()
     assert not Path(f"{conv.output}.failed").exists()
+    assert not Path(f"{conv.output}.benchmark.tsv").exists()
 
 
 def test_clean_cascade_removes_stray_downstream_artifact(tmp_path: Path) -> None:

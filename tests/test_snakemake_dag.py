@@ -1,6 +1,7 @@
 """Acceptance tests for JSON-supported branch fan-out in the real Snakefile."""
 
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,6 +18,7 @@ from apb_studio.pipeline import (
     ResolvedFixture,
     RunSnapshot,
     Target,
+    benchmark_path,
     expand_resolved_targets,
     failure_marker_path,
     write_run_snapshot,
@@ -347,6 +349,30 @@ def _run_real_target(
         cwd=_REPO_ROOT,
         env=_snakemake_env(tmp_path),
     )
+
+
+@pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
+def test_successful_rule_writes_elapsed_time_benchmark(tmp_path: Path) -> None:
+    output = tmp_path / "out/module/fixture/ion.h5ad"
+    command = [
+        "sh",
+        "-c",
+        (f"mkdir -p {shlex.quote(str(output.parent))} && touch {shlex.quote(str(output))}"),
+    ]
+    run_path, resolved_output = _single_command_run(
+        tmp_path,
+        command,
+        run_id="benchmark-test",
+    )
+
+    proc = _run_real_target(tmp_path, run_path, resolved_output)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    benchmark = benchmark_path(resolved_output)
+    assert benchmark.is_file()
+    header, values = benchmark.read_text(encoding="utf-8").splitlines()
+    elapsed = dict(zip(header.split("\t"), values.split("\t"), strict=True))["s"]
+    assert float(elapsed) >= 0
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")

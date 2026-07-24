@@ -64,7 +64,8 @@ and an artifact wins over an old failure marker. Clicking `DONE` shows APB's cum
 summary; clicking another terminal state shows its diagnostic. `Clear selected stage…` removes a
 selected `DONE` or `FAILED` stage plus its downstream artifacts for that branch after confirmation;
 fixture inputs and sibling branches are never touched, and clearing is disabled while a corpus run
-is active.
+is active. Newly executed stages include Snakemake's persisted elapsed time directly in their state,
+for example `DONE · 2m 14s`; existing artifacts remain plain `DONE` until Snakemake runs them again.
 
 ## Fixture Manager
 

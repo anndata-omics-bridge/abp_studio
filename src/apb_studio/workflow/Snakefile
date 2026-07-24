@@ -49,6 +49,7 @@ BY_OUTPUT = {str(t.output): t for t in TARGETS}
 # to abort DAG construction for otherwise independent branches. Existing artifacts stay in the goal
 # so Snakemake can assess input timestamps and rebuild stale work.
 DEFAULT_TARGETS = [str(t.output) for t in runnable_targets(TARGETS)]
+BENCHMARK_PATTERN = str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".benchmark.tsv"
 
 # For the per-rule provenance hook (decision 17): the run we were invoked with, this venv's
 # python, and the src dir so the subprocess can import apb_studio without an install.
@@ -112,6 +113,8 @@ rule convert:
         failure_marker=_failure_marker
     log:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
+    benchmark:
+        BENCHMARK_PATTERN
     shell:
         # The log streams live progress. Only a non-zero exit writes the adjacent failure marker;
         # pipeline state therefore never mistakes a currently running tee log for a failed rule.
@@ -133,6 +136,8 @@ rule annotate:
         failure_marker=_failure_marker
     log:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
+    benchmark:
+        BENCHMARK_PATTERN
     shell:
         # See convert: clear stale failure state, stream progress, then mark only a real failure.
         "rm -f {params.failure_marker:q}; "
@@ -153,6 +158,8 @@ rule fasta:
         failure_marker=_failure_marker
     log:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
+    benchmark:
+        BENCHMARK_PATTERN
     shell:
         # See convert: clear stale failure state, stream progress, then mark only a real failure.
         "rm -f {params.failure_marker:q}; "
@@ -173,6 +180,8 @@ rule proteobench:
         failure_marker=_failure_marker
     log:
         str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
+    benchmark:
+        BENCHMARK_PATTERN
     shell:
         "rm -f {params.failure_marker:q}; "
         "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
