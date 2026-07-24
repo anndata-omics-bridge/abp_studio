@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import dash_ag_grid as dag
 from anndata_proteomics.readers.summary import describe_path
@@ -86,7 +86,7 @@ def _stage_label(stage: dict[str, Any]) -> str:
     return label[:1].upper() + label[1:]
 
 
-def _column_definitions(registry: list[dict]) -> list[dict[str, Any]]:
+def _column_definitions(registry: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build the compact branch-grid columns from the stage registry."""
     identity_columns = [
         {"field": "module", "headerName": "Module", "minWidth": 180, "flex": 1.35},
@@ -113,7 +113,7 @@ def _load_dashboard_rows(
     job_id: str | None = None,
     *,
     settings_path: Path | None = None,
-) -> tuple[list[dict], pipeline.RunSnapshot | None, str | None]:
+) -> tuple[list[dict[str, Any]], pipeline.RunSnapshot | None, str | None]:
     """Load authoritative branch rows and keep all UI-facing errors readable."""
     targets, _coverage, snapshot, error = execution.load_overview(
         job_id,
@@ -145,15 +145,15 @@ def _row_id(row: dict[str, Any]) -> str:
 
 def _selection_from_click(
     cell: dict[str, Any] | None,
-    registry: list[dict],
-    rows: list[dict],
+    registry: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
 ) -> dict[str, str] | None:
     """Resolve AG Grid's documented row ID against authoritative server rows."""
     if not cell:
         return None
-    stage_names = {stage["name"] for stage in registry}
+    stage_names = {str(stage["name"]) for stage in registry}
     stage = cell.get("colId")
-    if stage not in stage_names:
+    if not isinstance(stage, str) or stage not in stage_names:
         return None
     clicked_row_id = cell.get("rowId")
     if not isinstance(clicked_row_id, (str, int)):
@@ -162,14 +162,22 @@ def _selection_from_click(
     row = next((item for item in rows if item.get("_row_id") == row_id), None)
     if row is None:
         return None
-    identity = {key: row.get(key) for key in ("module", "dataset", "level")}
-    if not all(isinstance(value, str) and value for value in identity.values()):
+    module = row.get("module")
+    dataset = row.get("dataset")
+    level = row.get("level")
+    if not all(isinstance(value, str) and value for value in (module, dataset, level)):
         return None
-    return {**identity, "row_id": row_id, "stage": stage}
+    return {
+        "module": cast(str, module),
+        "dataset": cast(str, dataset),
+        "level": cast(str, level),
+        "row_id": row_id,
+        "stage": stage,
+    }
 
 
 def _find_stage_detail(
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     selection: dict[str, str] | None,
 ) -> dict[str, str] | None:
     """Resolve a selected stage against freshly built, authoritative rows."""
@@ -180,17 +188,18 @@ def _find_stage_detail(
     if not stage or not row_id:
         return None
     for row in rows:
-        identity_matches = all(
-            row.get(key) == selection.get(key) for key in _ROW_ID_FIELDS
-        )
+        identity_matches = all(row.get(key) == selection.get(key) for key in _ROW_ID_FIELDS)
         if row.get("_row_id") == row_id and identity_matches:
             details = row.get("_stage_details", {})
             detail = details.get(stage)
-            return detail if isinstance(detail, dict) else None
+            return cast(dict[str, str], detail) if isinstance(detail, dict) else None
     return None
 
 
-def _stage_heading(selection: dict[str, str], registry: list[dict]) -> str:
+def _stage_heading(
+    selection: dict[str, str],
+    registry: list[dict[str, Any]],
+) -> str:
     """Return the branch/stage detail heading."""
     labels = {stage["name"]: _stage_label(stage) for stage in registry}
     return (
@@ -202,7 +211,7 @@ def _stage_heading(selection: dict[str, str], registry: list[dict]) -> str:
 def _artifact_detail(
     detail: dict[str, str],
     selection: dict[str, str],
-    registry: list[dict],
+    registry: list[dict[str, Any]],
 ) -> list[Any]:
     """Render one completed artifact's APB-owned descriptive summary."""
     artifact = Path(detail["artifact"])
@@ -229,7 +238,7 @@ def _artifact_detail(
 def _status_detail(
     detail: dict[str, str],
     selection: dict[str, str],
-    registry: list[dict],
+    registry: list[dict[str, Any]],
 ) -> list[Any]:
     """Render one failed, unsupported, or blocked stage diagnostic."""
     state = detail.get("state", "blocked")
@@ -256,9 +265,7 @@ def _status_detail(
     if not log_value:
         return children
     log_path = Path(log_value)
-    children.append(
-        html.Div(str(log_path), style={"color": "#667085", "fontSize": "0.78rem"})
-    )
+    children.append(html.Div(str(log_path), style={"color": "#667085", "fontSize": "0.78rem"}))
     log_text = jobrunner.read_text_tail(log_path)
     if log_text:
         children.append(html.Pre(log_text, style=_PRE_STYLE))
@@ -268,7 +275,7 @@ def _status_detail(
 def _render_stage_detail(
     detail: dict[str, str],
     selection: dict[str, str],
-    registry: list[dict],
+    registry: list[dict[str, Any]],
 ) -> list[Any]:
     """Render a completed summary, stage status, or quiet pending state."""
     state = detail.get("state")
@@ -286,7 +293,7 @@ def _render_stage_detail(
 
 
 def _downloadable_log(
-    rows: list[dict],
+    rows: list[dict[str, Any]],
     selection: dict[str, str] | None,
 ) -> Path | None:
     """Return a known selected failure log, if it currently exists."""
@@ -312,7 +319,10 @@ def _live_log(job_id: str | None) -> tuple[str, bool, str]:
     return "No corpus run log yet.", False, "Corpus not running"
 
 
-def create_app(*, settings_path: Path | None = None) -> Dash:
+def create_app(  # noqa: C901 - Dash layout and callback composition root
+    *,
+    settings_path: Path | None = None,
+) -> Dash:
     """Create the corpus-wide progress dashboard."""
     registry = load_registry()
     current_settings = settings.load_settings(settings_path)
@@ -467,14 +477,24 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         State("active-job-id", "data"),
         State("grid-revision", "data"),
     )
-    def refresh_corpus(
+    def _refresh_corpus(
         _reload_clicks: int | None,
         _run_clicks: int | None,
         _tick: int,
         output_root: str,
         job_id: str | None,
         grid_revision: int | None,
-    ) -> tuple[list[dict], str, str, bool, bool, str, str | None, str, int]:
+    ) -> tuple[
+        list[dict[str, Any]],
+        str,
+        str,
+        bool,
+        bool,
+        str,
+        str | None,
+        str,
+        int,
+    ]:
         """Launch when requested, then refresh rows and the live global log."""
         launch_error = ""
         job_id = execution.active_corpus_job_id() or job_id
@@ -490,11 +510,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
                         settings_path=settings_path,
                     )
             except (OSError, RuntimeError, ValueError) as exc:
-                action = (
-                    "launch corpus"
-                    if ctx.triggered_id == "run-corpus"
-                    else "save settings"
-                )
+                action = "launch corpus" if ctx.triggered_id == "run-corpus" else "save settings"
                 launch_error = f"Could not {action}: {exc}"
 
         rows, snapshot, load_error = _load_dashboard_rows(
@@ -532,7 +548,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         State("selected-stage", "data"),
         prevent_initial_call=True,
     )
-    def show_stage_detail(
+    def _show_stage_detail(
         cell: dict[str, Any] | None,
         _grid_revision: int,
         job_id: str | None,
@@ -573,7 +589,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         State("active-job-id", "data"),
         prevent_initial_call=True,
     )
-    def download_selected_log(
+    def _download_selected_log(
         _clicks: int,
         selection: dict[str, str] | None,
         job_id: str | None,

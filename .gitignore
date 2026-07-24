@@ -3,6 +3,10 @@
 __pycache__/
 *.egg-info/
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+public/
 
 # local corpus config & pipeline state
 config/corpus.yaml
@@ -10,5 +14,6 @@ config/corpus.yaml
 
 # outputs (filesystem-as-database lives outside the repo, but ignore stray local runs)
 /outputs/
+/apb_outputs/
 *.h5ad
 *.h5mu

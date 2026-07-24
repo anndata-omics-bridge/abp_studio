@@ -2,7 +2,6 @@
 
 from apb_studio.registry import REGISTRY_PATH, load_registry
 
-_REPO_ROOT = REGISTRY_PATH.parents[1]
 _REQUIRED_STAGE_KEYS = {"name", "scope", "output_pattern", "command", "depends_on"}
 _VALID_SCOPES = {"dataset", "module", "corpus"}
 
@@ -34,16 +33,14 @@ def test_non_root_stages_declare_artifact_and_resource():
     # expand_targets stays registry-driven (no hardcoded edges/filenames).
     for stage in load_registry():
         if stage["depends_on"]:
-            assert stage.get("artifact"), (
-                f"{stage['name']!r} needs an `artifact` basename"
-            )
+            assert stage.get("artifact"), f"{stage['name']!r} needs an `artifact` basename"
             assert stage.get("resource") or stage.get("resources"), (
                 f"{stage['name']!r} needs `resource`/`resources` (module key + gate)"
             )
 
 
 def test_registry_does_not_encode_fixture_levels() -> None:
-    source = (_REPO_ROOT / "config" / "registry.yaml").read_text()
+    source = REGISTRY_PATH.read_text()
 
     assert "level: ion" not in source
     assert "modules:" not in source

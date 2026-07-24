@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pandas as pd
 import pyarrow.parquet as pq
-
 from anndata_proteomics.converters import pipeline as conversion_pipeline
 from anndata_proteomics.params import registry as parameter_registry
 from anndata_proteomics.rules import registry as rule_registry
@@ -120,9 +119,7 @@ def _cached_capability_discovery(
             software_slug=slug,
             software_version=version,
         )
-    standalone = tuple(
-        target for target in targets if target != conversion_pipeline.MUDATA
-    )
+    standalone = tuple(target for target in targets if target != conversion_pipeline.MUDATA)
     return CapabilityDiscovery(
         branches=(conversion_pipeline.MUDATA, *standalone),
         software_slug=slug,
@@ -136,9 +133,7 @@ def _parsing_rule_fingerprint() -> tuple[tuple[str, int, int], ...]:
     for path in rule_registry.iter_packaged_documents():
         resolved = path.resolve()
         stat_result = resolved.stat()
-        fingerprint.append(
-            (str(resolved), stat_result.st_mtime_ns, stat_result.st_size)
-        )
+        fingerprint.append((str(resolved), stat_result.st_mtime_ns, stat_result.st_size))
     return tuple(fingerprint)
 
 
@@ -169,9 +164,7 @@ def _failed_discovery(
 ) -> CapabilityDiscovery:
     """Convert an exception into a stable UI-facing capability diagnostic."""
     detail = str(error).strip()
-    message = (
-        type(error).__name__ if not detail else f"{type(error).__name__}: {detail}"
-    )
+    message = type(error).__name__ if not detail else f"{type(error).__name__}: {detail}"
     return CapabilityDiscovery(
         branches=(),
         diagnostic=f"Capability discovery failed: {message}",

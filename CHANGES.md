@@ -1,5 +1,9 @@
 # Changes
 
+- 2026-07-23: Align local and GitHub quality gates with the FGCZ Python
+  reference, package the registry/Snakefile for installed use, and add staged
+  Ruff/Pyright/Deptry/coverage hooks, wheel inspection, strict docs, dependency
+  audit, typed-package marker, and CI/Pages/security workflows.
 - 2026-07-23: Resolve the APB executable from Snakemake's virtual environment so
   Corpus Runner jobs do not depend on the parent shell's `PATH`.
 - 2026-07-23: Add a `.pre-commit-config.yaml` (ruff lint+format, then pytest) mirroring apb; the

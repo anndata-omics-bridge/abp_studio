@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Mapping
+from typing import Any
 
 from platformdirs import user_cache_path
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -38,9 +39,7 @@ class FixtureStorePaths(BaseModel):
             raise ValueError("Test-data folder must be an absolute path.")
         resolved = path.resolve()
         if resolved in {Path(resolved.anchor), Path.home().resolve()}:
-            raise ValueError(
-                "Choose a dedicated folder, not the filesystem or home root."
-            )
+            raise ValueError("Choose a dedicated folder, not the filesystem or home root.")
         return resolved
 
     @property
@@ -153,9 +152,7 @@ class FixtureRecord(BaseModel):
                 "software_version": self.catalog_software_version,
                 "download_status": _download_status(self),
                 "fixture_status": self.local_state.value.replace("_", " "),
-                "local_file": (
-                    str(self.input_files[0]) if len(self.input_files) == 1 else ""
-                ),
+                "local_file": (str(self.input_files[0]) if len(self.input_files) == 1 else ""),
                 "fixture_diagnostic": self.diagnostic or "",
             }
         )
@@ -193,7 +190,7 @@ def load_fixture_inventory(
     paths = (
         test_data_root
         if isinstance(test_data_root, FixtureStorePaths)
-        else FixtureStorePaths(data_dir=test_data_root)
+        else FixtureStorePaths(data_dir=Path(test_data_root))
     )
     selected = {fixture_identity(row) for row in read_csv_rows(paths.selection_csv)}
     manifest = {fixture_identity(row): row for row in read_csv_rows(paths.manifest_csv)}
@@ -240,10 +237,14 @@ def read_csv_rows(path: Path) -> list[dict[str, str]]:
 
 def fixture_identity(row: Mapping[str, Any]) -> tuple[str, str, str]:
     """Extract and validate the canonical identity fields from one CSV row."""
-    fields = ("module", "repo_name", "intermediate_hash")
-    return tuple(
-        _safe_identity_component(row.get(field, ""), field=field) for field in fields
-    )  # type: ignore[return-value]
+    return (
+        _safe_identity_component(row.get("module", ""), field="module"),
+        _safe_identity_component(row.get("repo_name", ""), field="repo_name"),
+        _safe_identity_component(
+            row.get("intermediate_hash", ""),
+            field="intermediate_hash",
+        ),
+    )
 
 
 def fixture_directory(
@@ -280,9 +281,7 @@ def _safe_identity_component(value: object, *, field: str = "identity") -> str:
         or any(ord(character) < 32 for character in text)
     )
     if unsafe:
-        raise ValueError(
-            f"Fixture {field} must be a non-empty, safe path component; got {text!r}."
-        )
+        raise ValueError(f"Fixture {field} must be a non-empty, safe path component; got {text!r}.")
     return text
 
 
@@ -290,9 +289,7 @@ def _matching_files(directory: Path, pattern: str) -> tuple[Path, ...]:
     """Return sorted regular files matching one cache naming contract."""
     if not directory.is_dir():
         return ()
-    return tuple(
-        path.resolve() for path in sorted(directory.glob(pattern)) if path.is_file()
-    )
+    return tuple(path.resolve() for path in sorted(directory.glob(pattern)) if path.is_file())
 
 
 def _local_state(

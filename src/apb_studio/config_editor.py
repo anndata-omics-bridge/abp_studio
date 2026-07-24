@@ -10,8 +10,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import ValidationError
-
 from anndata_proteomics.rules.loader import (
     parse_rule_source,
     validate_rule_source,
@@ -20,6 +18,7 @@ from anndata_proteomics.rules.registry import (
     document_vendor,
     iter_packaged_documents,
 )
+from pydantic import ValidationError
 
 ConfigKind = Literal["rule"]
 
@@ -69,9 +68,7 @@ def load_document(path: Path | str, *, kind: ConfigKind = "rule") -> dict[str, A
 
     raw = parse_rule_source(source, path=resolved)
     sections = {"base": _pretty_json(raw["base"])}
-    sections.update(
-        (level, _pretty_json(fragment)) for level, fragment in raw["levels"].items()
-    )
+    sections.update((level, _pretty_json(fragment)) for level, fragment in raw["levels"].items())
     labels = {"base": "Base", **{level: level.title() for level in raw["levels"]}}
 
     return {
@@ -291,9 +288,7 @@ def _pretty_json(data: Any) -> str:
 
 def _atomic_write(path: Path, text: str) -> None:
     """Write text beside the target and atomically replace the target."""
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", dir=path.parent
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:

@@ -1,0 +1,22 @@
+site_name: APB Studio Documentation
+site_description: Fixture Manager and Corpus Runner for APB.
+docs_dir: docs
+site_dir: public
+
+exclude_docs: |
+  AGENTS.md
+  CLAUDE.md
+
+theme:
+  name: material
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Development: development.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.highlight
+  - pymdownx.superfences

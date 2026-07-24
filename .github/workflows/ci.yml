@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apb_studio
+    env:
+      DIFF_COVER_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || 'main' }}
+    steps:
+      - name: Checkout APB Studio
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          path: apb_studio
+
+      - name: Checkout pinned APB
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/anndata-proteomics-bridge
+          ref: ec6668257b3229ee704b350ddf98a71f4a4d1cdf
+          path: apb
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Sync locked environment
+        run: uv sync --frozen --extra dev --group docs
+
+      - name: Run pre-commit checks
+        run: uv run --no-sync pre-commit run --hook-stage pre-commit --all-files
+
+      - name: Run pre-push checks
+        run: uv run --no-sync pre-commit run --hook-stage pre-push --all-files

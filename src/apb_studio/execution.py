@@ -10,10 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import sys
 import uuid
-from collections.abc import Callable
-from datetime import datetime, timezone
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Protocol
 
 from anndata_proteomics.converters import pipeline as conversion_pipeline
 from anndata_proteomics.proteobench.config import (
@@ -35,8 +37,8 @@ from apb_studio.pipeline import (
     coverage,
     expand_resolved_targets,
     failure_marker_path,
-    load_run_snapshot,
     load_registry,
+    load_run_snapshot,
     reject_input_paths,
     runnable_targets,
     select_targets,
@@ -44,11 +46,22 @@ from apb_studio.pipeline import (
 )
 from apb_studio.settings import load_settings
 
-STUDIO_ROOT = Path(__file__).resolve().parents[2]
-SNAKEFILE = STUDIO_ROOT / "workflow" / "Snakefile"
+SNAKEFILE = Path(__file__).resolve().parent / "workflow" / "Snakefile"
+_VENV_SNAKEMAKE = Path(sys.executable).with_name("snakemake")
 _JOBS: dict[str, Job] = {}
 _RUNS: dict[str, Path] = {}
 _ALIAS_SCHEMA_VERSION = 1
+
+
+class _JobStarter(Protocol):
+    def __call__(
+        self,
+        command: Sequence[str],
+        log_file: Path | str,
+        /,
+        *,
+        cwd: Path | str | None = None,
+    ) -> Job: ...
 
 
 def load_overview(
@@ -58,7 +71,7 @@ def load_overview(
     discover: Callable[
         [Path, Path, str], capabilities.CapabilityDiscovery
     ] = capabilities.discover_capabilities,
-) -> tuple[list[Target], list[dict], RunSnapshot | None, str | None]:
+) -> tuple[list[Target], list[dict[str, Any]], RunSnapshot | None, str | None]:
     """Load the pinned active run or resolve the current Fixture Manager inventory.
 
     The function never raises across the dashboard boundary. A known job pins its snapshot only
@@ -99,8 +112,7 @@ def resolve_current_run(
     inventory = load_fixture_inventory(settings.test_data_root)
     resources = load_module_resources(settings.test_data_root)
     discoveries = [
-        (fixture, _discover_fixture(fixture, discover))
-        for fixture in inventory.complete_local
+        (fixture, _discover_fixture(fixture, discover)) for fixture in inventory.complete_local
     ]
     aliases = resolve_output_aliases(
         discoveries,
@@ -117,15 +129,11 @@ def resolve_current_run(
             )
         resource = resources.for_module(fixture.module)
         annotation_path = resource.annotation_path if resource is not None else None
-        module_settings_error = (
-            resource.annotation_error if resource is not None else None
-        )
+        module_settings_error = resource.annotation_error if resource is not None else None
         proteobench_level = None
         if annotation_path is not None and module_settings_error is None:
             try:
-                proteobench_level = load_module_settings(
-                    annotation_path
-                ).general.level
+                proteobench_level = load_module_settings(annotation_path).general.level
             except Exception as error:  # noqa: BLE001 - frozen as a BLOCKED diagnostic
                 module_settings_error = (
                     f"Invalid ProteoBench module settings {annotation_path}: "
@@ -166,9 +174,7 @@ def resolve_current_run(
                 diagnostic=discovery.diagnostic,
                 annotation_path=annotation_path,
                 fasta_path=resource.fasta_path if resource is not None else None,
-                annotation_error=(
-                    resource.annotation_error if resource is not None else None
-                ),
+                annotation_error=(resource.annotation_error if resource is not None else None),
                 fasta_error=resource.fasta_error if resource is not None else None,
                 tool_settings_path=tool_settings_path,
                 module_settings_error=module_settings_error,
@@ -181,15 +187,13 @@ def resolve_current_run(
     return RunSnapshot(
         schema_version=RUN_SNAPSHOT_SCHEMA_VERSION,
         run_id=run_id,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
         test_data_root=settings.test_data_root,
         output_root=settings.output_root,
         registry_digest=_registry_digest(registry),
         apb_version=provenance.apb_version(),
         fixtures=resolved,
-        targets=tuple(
-            expand_resolved_targets(registry, resolved, settings.output_root)
-        ),
+        targets=tuple(expand_resolved_targets(registry, resolved, settings.output_root)),
     )
 
 
@@ -209,7 +213,7 @@ def _discover_fixture(
     )
 
 
-def _registry_digest(registry: list[dict]) -> str:
+def _registry_digest(registry: list[dict[str, Any]]) -> str:
     """Return a stable digest of the stage registry used to render commands."""
     source = json.dumps(registry, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
@@ -269,9 +273,7 @@ def _existing_output_alias(
         return None
     suffix = f"-{fixture.intermediate_hash[:8]}"
     matches = sorted(
-        path.name
-        for path in module_root.iterdir()
-        if path.is_dir() and path.name.endswith(suffix)
+        path.name for path in module_root.iterdir() if path.is_dir() and path.name.endswith(suffix)
     )
     return matches[0] if len(matches) == 1 else None
 
@@ -315,10 +317,7 @@ def _load_output_aliases(
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    if (
-        not isinstance(data, dict)
-        or data.get("schema_version") != _ALIAS_SCHEMA_VERSION
-    ):
+    if not isinstance(data, dict) or data.get("schema_version") != _ALIAS_SCHEMA_VERSION:
         raise ValueError(f"Unsupported output alias map: {path}")
     aliases: dict[tuple[str, str, str], str] = {}
     owners: dict[tuple[str, str], tuple[str, str, str]] = {}
@@ -331,9 +330,7 @@ def _load_output_aliases(
         alias = str(item["output_alias"])
         _validate_alias(alias)
         if identity in aliases:
-            raise ValueError(
-                f"Duplicate fixture identity in output alias map: {identity!r}"
-            )
+            raise ValueError(f"Duplicate fixture identity in output alias map: {identity!r}")
         alias_key = (identity[1], alias)
         owner = owners.get(alias_key)
         if owner is not None and owner != identity:
@@ -376,9 +373,7 @@ def selected_outputs(
     """The output paths a (scope, stage) Run would (re)build."""
     return [
         t.output
-        for t in select_targets(
-            targets, scope=scope, module=module, dataset=dataset, stage=stage
-        )
+        for t in select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage)
     ]
 
 
@@ -392,10 +387,9 @@ def snakemake_argv(
     snakemake_exe: str | None = None,
 ) -> list[str]:
     """Build a Snakemake argv consuming one generated run JSON."""
-    local_executable = STUDIO_ROOT / ".venv" / "bin" / "snakemake"
     exe = (
         snakemake_exe
-        or (str(local_executable) if local_executable.exists() else None)
+        or (str(_VENV_SNAKEMAKE) if _VENV_SNAKEMAKE.exists() else None)
         or shutil.which("snakemake")
         or "snakemake"
     )
@@ -417,7 +411,7 @@ def snakemake_argv(
     return argv
 
 
-def run_pipeline(
+def run_pipeline(  # noqa: PLR0913 - stable subprocess injection API
     snakefile: Path | str,
     run_path: Path | str,
     log_file: Path | str,
@@ -426,7 +420,7 @@ def run_pipeline(
     cores: int = 1,
     snakemake_exe: str | None = None,
     cwd: Path | str | None = None,
-    start=start_job,
+    start: _JobStarter = start_job,
 ) -> Job:
     """Launch Snakemake over `targets` as a background job; returns the Job (poll via inspect_job).
 
@@ -510,7 +504,7 @@ def launch_corpus(
         corpus_log_path(snapshot),
         targets=[target.output for target in selected],
         cores=cores,
-        cwd=STUDIO_ROOT,
+        cwd=SNAKEFILE.parent,
     )
     _RUNS[job_id] = path
     return job_id
@@ -554,9 +548,9 @@ def clean_targets(targets: list[Target], *, input_root: Path | str) -> list[Path
     """Delete an explicit set of Targets' outputs (guarded); returns the deleted paths.
 
     The row-set primitive the kanban baskets use: a basket Clean passes the Targets for the selected
-    rows at that basket's defining stage (`pipeline.targets_for`). Guarded by `reject_input_paths`
-    (raises before anything is deleted). Prunes each cleaned stage from its sibling ``provenance.json``
-    so a sidecar never outlives its artifact.
+    rows at that basket's defining stage (`pipeline.targets_for`). Guarded by
+    `reject_input_paths` (raises before anything is deleted). Prunes each cleaned stage from its
+    sibling ``provenance.json`` so a sidecar never outlives its artifact.
     """
     reject_input_paths([t.output for t in targets], input_root)
     deleted = []
@@ -594,8 +588,6 @@ def clean_selection(
     through `reject_input_paths`, so neither can touch a path under `input_root`.
     """
     return clean_targets(
-        select_targets(
-            targets, scope=scope, module=module, dataset=dataset, stage=stage
-        ),
+        select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage),
         input_root=input_root,
     )

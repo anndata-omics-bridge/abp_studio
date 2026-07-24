@@ -1,5 +1,5 @@
-# Stage registry — the SINGLE SOURCE OF TRUTH for pipeline stages.
-# Read by BOTH workflow/Snakefile and src/apb_studio/dashboard.py.
+# Packaged stage registry — the single source of truth for pipeline stages.
+# Read by both the packaged workflow/Snakefile and apb_studio.dashboard.
 #
 # Adding a pipeline step = one entry here + one Snakemake rule + one `apb` CLI subcommand.
 # The dashboard re-derives its stage columns from this file.

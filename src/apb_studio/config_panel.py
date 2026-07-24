@@ -133,9 +133,7 @@ def configuration_panel() -> html.Div:
                                         disabled=True,
                                         style=_PRIMARY_BUTTON_STYLE,
                                     ),
-                                    html.Span(
-                                        id="config-status", style={"fontSize": "11px"}
-                                    ),
+                                    html.Span(id="config-status", style={"fontSize": "11px"}),
                                     html.Span(
                                         id="config-operation",
                                         style={"fontSize": "10px"},
@@ -249,7 +247,9 @@ def _section_tabs(
     ]
 
 
-def register_configuration_callbacks(app: Dash) -> None:
+def register_configuration_callbacks(  # noqa: C901 - Dash callback registration graph
+    app: Dash,
+) -> None:
     """Register load, section-navigation, edit, validation, and save callbacks."""
 
     @app.callback(
@@ -277,7 +277,7 @@ def register_configuration_callbacks(app: Dash) -> None:
         State("config-kind", "value"),
         prevent_initial_call=True,
     )
-    def operate_document(
+    def _operate_document(  # noqa: C901, PLR0911, PLR0912 - Dash event dispatcher
         document_clicks: list[int],
         _load: int | None,
         _edit: int | None,
@@ -410,7 +410,7 @@ def register_configuration_callbacks(app: Dash) -> None:
         Input("config-state", "data"),
         Input("config-section-tabs", "value"),
     )
-    def validate_editor(
+    def _validate_editor(
         editor_source: str,
         state: dict[str, Any] | None,
         active: str | None,
@@ -466,7 +466,7 @@ def _loaded_result(
     active: str | None = None,
 ) -> tuple[Any, ...]:
     """Return the callback outputs for a freshly loaded document."""
-    selected = active if active in loaded["sections"] else loaded["section_order"][0]
+    selected = str(active if active in loaded["sections"] else loaded["section_order"][0])
     state = {**loaded, "editing": False, "active": selected}
     return (
         loaded["sections"][selected],

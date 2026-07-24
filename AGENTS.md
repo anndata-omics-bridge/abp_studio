@@ -1,7 +1,13 @@
+<!-- Managed by agent: keep commands and file references verified -->
+<!-- Last updated: 2026-07-23 | Last verified: 2026-07-23 -->
+
 # APB Studio
 
 APB Studio is a consumer of `anndata_proteomics` (APB). Dependency direction is
 `apb_studio → APB`, never the reverse. It provides two applications:
+
+**Precedence:** the closest `AGENTS.md` to changed files wins. Explicit user
+instructions override repository files.
 
 - **Fixture Manager** owns the local ProteoBench fixture and resource inventory.
 - **Corpus Runner** derives APB-supported branches, launches Snakemake, and reports progress.
@@ -22,14 +28,15 @@ and versions into `<output_root>/.apb_studio/runs/<run-id>/run.json`. This is ve
 execution state and must never become accepted user configuration. While a run is active, keep its
 table pinned to that snapshot.
 
-The stage registry (`config/registry.yaml`) owns stage topology and command templates. Snakemake
-owns execution. Each discovered branch follows `convert → annotate → fasta`; a missing later-stage
-resource must not suppress an earlier runnable target.
+The packaged stage registry (`src/apb_studio/config/registry.yaml`) owns stage topology and command
+templates; the packaged `src/apb_studio/workflow/Snakefile` owns execution. Annotation, FASTA, and
+ProteoBench scoring are independent children of conversion, so a missing later-stage resource must
+not suppress another runnable target.
 
 ## Engineering rules
 
 - **Reuse before duplicate.** Call APB for conversion, annotation, FASTA handling, capability
-  resolution, and summaries. Use Snakemake for orchestration and Plotly Dash for the applications.
+  resolution, and summaries. Orchestrate with Snakemake; use Plotly Dash for the applications.
 - **Keep `__init__.py` empty** (a module docstring is acceptable), matching APB.
 - **Use stable fixture identity:** `(canonical module, repository name, full intermediate hash)`.
 - **Preserve existing output associations.** Resolve the app-owned fixture-to-output alias before
@@ -50,8 +57,8 @@ resource must not suppress an earlier runnable target.
 - `UNSUPPORTED`: APB has no registered capability for the software, or no parsing-rule JSON
   matches.
 - `BLOCKED`: a required input/resource is absent or invalid, or an upstream stage terminated.
-- `FAILED`: Snakemake attempted that concrete rule, it exited non-zero, and its failure marker
-  exists.
+- `FAILED`: the workflow engine attempted that concrete rule, it exited non-zero, and its
+  failure marker exists.
 
 Unreadable input or parameters are `BLOCKED`, not `UNSUPPORTED`. A log alone never means failure.
 An artifact wins over an old marker. If conversion fails, its unattempted descendants are
@@ -59,14 +66,17 @@ An artifact wins over an old marker. If conversion fails, its unattempted descen
 
 ## Development
 
-```bash
-uv venv && source .venv/bin/activate
-uv pip install -e .
-uv pip install -e ../apb
-make fixture-manager
-make corpus-runner
-make test
-```
+| Task | Command |
+| --- | --- |
+| Install | `uv sync --frozen --extra dev --group docs` |
+| Fast checks | `uv run pre-commit run --hook-stage pre-commit --all-files` |
+| Full gate | `uv run pre-commit run --hook-stage pre-push --all-files` |
+| Single test | `uv run pytest tests/test_pipeline.py -q` |
+| Security audit | `uv run pre-commit run dependency-audit --hook-stage manual --all-files` |
+
+The pre-commit configuration is the command source of truth for CI. Do not
+lower Ruff, strict Pyright, dependency, or coverage gates without explicit
+approval.
 
 Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
 `apb-studio-testdata`/`apb-studio` are compatibility aliases.
@@ -74,3 +84,7 @@ Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpu
 See [TODO/TODO_corpus_application.md](TODO/TODO_corpus_application.md) for the approved migration
 plan and [TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md)
 for the original dashboard design.
+
+## Scoped AGENTS.md
+
+- [GitHub workflows](./.github/workflows/AGENTS.md)

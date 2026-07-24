@@ -21,10 +21,12 @@ from apb_studio.provenance import (
 )
 
 
-def _t(out_dir, stage="convert", name="mudata.h5mu"):
-    return Target(
-        "m", "d", stage, Path(out_dir) / name, ["apb", stage, "x"], [Path("/in/x")]
-    )
+def _t(
+    out_dir: Path | str,
+    stage: str = "convert",
+    name: str = "mudata.h5mu",
+) -> Target:
+    return Target("m", "d", stage, Path(out_dir) / name, ["apb", stage, "x"], [Path("/in/x")])
 
 
 def _run(tmp_path: Path, *targets: Target) -> tuple[RunSnapshot, Path]:
@@ -68,7 +70,7 @@ def test_record_shape():
     }
 
 
-def test_write_for_target_keeps_same_stage_branches_separate(tmp_path):
+def test_write_for_target_keeps_same_stage_branches_separate(tmp_path: Path) -> None:
     mudata = _t(tmp_path, stage="convert", name="mudata.h5mu")
     ion = _t(tmp_path, stage="convert", name="ion.h5ad")
 
@@ -84,7 +86,7 @@ def test_write_for_target_keeps_same_stage_branches_separate(tmp_path):
     assert ion_data["timestamp"] == "t2"
 
 
-def test_prune_for_target_removes_only_its_artifact_sidecar(tmp_path):
+def test_prune_for_target_removes_only_its_artifact_sidecar(tmp_path: Path) -> None:
     mudata = _t(tmp_path, stage="convert", name="mudata.h5mu")
     ion = _t(tmp_path, stage="convert", name="ion.h5ad")
     mudata_path = write_for_target(mudata, timestamp="t1")
@@ -96,7 +98,7 @@ def test_prune_for_target_removes_only_its_artifact_sidecar(tmp_path):
     assert ion_path.exists()
 
 
-def test_corrupt_sidecar_is_backed_up_not_lost(tmp_path):
+def test_corrupt_sidecar_is_backed_up_not_lost(tmp_path: Path) -> None:
     target = _t(tmp_path, stage="convert")
     path = sidecar_path(target.output)
     path.write_text("}{ not json")
@@ -105,7 +107,7 @@ def test_corrupt_sidecar_is_backed_up_not_lost(tmp_path):
     assert json.loads(path.read_text())["stage"] == "convert"  # fresh, valid
 
 
-def test_main_writes_sidecar_for_an_output(tmp_path):
+def test_main_writes_sidecar_for_an_output(tmp_path: Path) -> None:
     convert = Target(
         module="m",
         dataset="d",
@@ -125,12 +127,12 @@ def test_main_writes_sidecar_for_an_output(tmp_path):
     assert data["fixture_identity"] == ["dda", "m", "abcdef123456"]
 
 
-def test_main_rejects_unknown_output(tmp_path):
+def test_main_rejects_unknown_output(tmp_path: Path) -> None:
     _snapshot, run_path = _run(tmp_path)
     assert main(["--run", str(run_path), "--output", "/out/nope/mudata.h5mu"]) == 2
 
 
-def test_main_rejects_a_known_output_that_was_not_created(tmp_path):
+def test_main_rejects_a_known_output_that_was_not_created(tmp_path: Path) -> None:
     convert = Target(
         module="m",
         dataset="d",
@@ -158,15 +160,13 @@ def test_record_includes_warning_only_when_present():
     assert rec["warning"] == "ParamsError: not a DIA-NN file"
 
 
-def test_read_params_warning_from_artifact(tmp_path):
+def test_read_params_warning_from_artifact(tmp_path: Path) -> None:
     import anndata as ad
     import numpy as np
 
     art = tmp_path / "mudata.h5mu"  # a plain AnnData written under any name (root uns)
     adata = ad.AnnData(np.zeros((2, 2), dtype="float32"))
-    adata.uns["anndata_proteomics"] = {
-        "search_parameters_error": "ParamsError: not a DIA-NN file"
-    }
+    adata.uns["anndata_proteomics"] = {"search_parameters_error": "ParamsError: not a DIA-NN file"}
     adata.write_h5ad(art)
     assert read_params_warning(art) == "ParamsError: not a DIA-NN file"
 

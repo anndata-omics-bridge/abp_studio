@@ -2,6 +2,7 @@
 name = "apb-studio"
 version = "0.0.0"
 description = "Fixture Manager and Corpus Runner driving the anndata_proteomics (APB) CLI."
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "anndata-proteomics",
@@ -13,8 +14,7 @@ dependencies = [
     "platformdirs>=4",
     "pydantic>=2",
     "pyyaml",
-    "mudata",
-    "anndata",
+    "h5py",
     "monaco-dash-editor>=0.0.2",
 ]
 
@@ -22,7 +22,25 @@ dependencies = [
 anndata-proteomics = { path = "../apb", editable = true }
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = [
+    "anndata",
+    "deptry>=0.25.1,<0.26",
+    "diff-cover>=10.4,<11",
+    "mudata",
+    "numpy",
+    "pandas-stubs",
+    "pip-audit>=2.10,<3",
+    "pre-commit>=4.5,<5",
+    "pyright>=1.1.408,<2",
+    "pytest>=9,<10",
+    "pytest-cov>=7,<8",
+    "ruff==0.15.12",
+]
+
+[dependency-groups]
+docs = [
+    "mkdocs-material>=9.7,<10",
+]
 
 [project.scripts]
 apb-studio-corpus-runner = "apb_studio.dashboard:main"
@@ -32,8 +50,93 @@ apb-studio = "apb_studio.dashboard:main"
 apb-studio-testdata = "apb_studio.testdata_app:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.28,<2"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/apb_studio"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "A",
+    "B",
+    "C4",
+    "C901",
+    "E",
+    "F",
+    "I",
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "UP",
+    "W",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 7
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+executionEnvironments = [
+    { root = "tests", reportPrivateUsage = "none" },
+    { root = "scripts", reportPrivateUsage = "none" },
+    { root = "src" },
+]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+reportImportCycles = "error"
+reportMissingTypeStubs = "none"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportImplicitOverride = "error"
+enableTypeIgnoreComments = false
+# Dash, PyArrow, h5py, and scientific-library stubs propagate Unknown through
+# otherwise fully annotated first-party code. Match APB's strict configuration:
+# retain all concrete type errors while suppressing Unknown-only diagnostics.
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownParameterType = "none"
+reportUnknownLambdaType = "none"
+# Dash registers nested callbacks through decorators, which Pyright otherwise
+# reports as unused even though Dash retains and invokes them.
+reportUnusedFunction = "none"
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+source = ["apb_studio"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+exclude_also = ["if __name__ == .__main__.:"]
+
+[tool.deptry]
+known_first_party = ["apb_studio"]
+optional_dependencies_dev_groups = ["dev"]
+
+[tool.deptry.per_rule_ignores]
+# Snakemake is invoked through its executable and never imported by Studio.
+DEP002 = ["snakemake"]
+
+[tool.deptry.package_module_name_map]
+dash-ag-grid = "dash_ag_grid"
+monaco-dash-editor = "monaco_dash_editor"
+pyyaml = "yaml"

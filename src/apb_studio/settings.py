@@ -6,15 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Self
 
-from platformdirs import user_config_path
+from platformdirs import user_config_path, user_data_path
 from pydantic import BaseModel, ConfigDict, field_validator
 
-import apb_studio
 from apb_studio.disk import atomic_write_text, interprocess_file_lock
 
-STUDIO_ROOT = Path(apb_studio.__file__).resolve().parents[2]
-DEFAULT_TEST_DATA_ROOT = (STUDIO_ROOT.parent / "apb" / "test_data_download").resolve()
-DEFAULT_OUTPUT_ROOT = (STUDIO_ROOT / "apb_outputs").resolve()
+_DEFAULT_DATA_ROOT = user_data_path("apb-studio").resolve()
+DEFAULT_TEST_DATA_ROOT = _DEFAULT_DATA_ROOT / "test_data_download"
+DEFAULT_OUTPUT_ROOT = _DEFAULT_DATA_ROOT / "outputs"
 DEFAULT_SETTINGS_PATH = user_config_path("apb-studio") / "settings.json"
 
 
@@ -48,9 +47,7 @@ class StudioSettings(BaseModel):
             raise ValueError("Studio roots must be absolute paths.")
         resolved = path.resolve()
         if resolved in {Path(resolved.anchor), Path.home().resolve()}:
-            raise ValueError(
-                "Choose a dedicated folder, not the filesystem or home root."
-            )
+            raise ValueError("Choose a dedicated folder, not the filesystem or home root.")
         return resolved
 
     @classmethod

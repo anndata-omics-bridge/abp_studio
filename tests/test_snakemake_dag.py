@@ -23,12 +23,10 @@ from apb_studio.pipeline import (
 )
 from apb_studio.registry import REGISTRY_PATH, load_registry
 
-_REPO_ROOT = REGISTRY_PATH.parents[1]
-_SNAKEFILE = _REPO_ROOT / "workflow" / "Snakefile"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SNAKEFILE = REGISTRY_PATH.parent.parent / "workflow" / "Snakefile"
 _LOCAL_SNAKEMAKE = _REPO_ROOT / ".venv" / "bin" / "snakemake"
-_SNAKEMAKE = (
-    str(_LOCAL_SNAKEMAKE) if _LOCAL_SNAKEMAKE.exists() else shutil.which("snakemake")
-)
+_SNAKEMAKE = str(_LOCAL_SNAKEMAKE) if _LOCAL_SNAKEMAKE.exists() else shutil.which("snakemake")
 _APB_PARAMS = _REPO_ROOT.parent / "apb" / "tests" / "params"
 
 
@@ -54,17 +52,17 @@ def _fragpipe_headers(parameter_path: Path) -> tuple[str, ...]:
     return (*sorted(rule.columns.var.select.values()), "run1 Intensity")
 
 
-def _snakemake_env(tmp_path):
+def _snakemake_env(tmp_path: Path) -> dict[str, str]:
     return {**os.environ, "XDG_CACHE_HOME": str(tmp_path / "cache")}
 
 
-def _runtime_cache(tmp_path):
+def _runtime_cache(tmp_path: Path) -> str:
     path = tmp_path / "runtime-source-cache"
     path.mkdir()
     return str(path)
 
 
-def _fixture_run(tmp_path):
+def _fixture_run(tmp_path: Path) -> Path:
     in_root, out_root = tmp_path / "in", tmp_path / "out"
     files = (
         "diann_annotation.toml",
@@ -85,9 +83,7 @@ def _fixture_run(tmp_path):
     diann_dir = in_root / "quant_lfq_ion_DIA_AIF" / "run1"
     diann_dir.mkdir(parents=True)
     diann_params = _APB_PARAMS / "Version1_9_Predicted_Library_report.log.txt"
-    (diann_dir / "report.tsv").write_text(
-        "\t".join(_long_headers("diann", diann_params)) + "\n"
-    )
+    (diann_dir / "report.tsv").write_text("\t".join(_long_headers("diann", diann_params)) + "\n")
     shutil.copyfile(
         diann_params,
         diann_dir / "report.log.txt",
@@ -96,8 +92,7 @@ def _fixture_run(tmp_path):
     spectronaut_dir = in_root / "quant_lfq_ion_DIA_Spectronaut" / "runS"
     spectronaut_dir.mkdir(parents=True)
     spectronaut_params = (
-        _APB_PARAMS
-        / "spectronaut_Experiment1_ExperimentSetupOverview_BGS_Factory_Settings.txt"
+        _APB_PARAMS / "spectronaut_Experiment1_ExperimentSetupOverview_BGS_Factory_Settings.txt"
     )
     (spectronaut_dir / "report.tsv").write_text(
         "\t".join(_long_headers("spectronaut", spectronaut_params)) + "\n"
@@ -207,7 +202,8 @@ def _fixture_run(tmp_path):
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
-def test_dry_run_resolves_default_dag(tmp_path):
+def test_dry_run_resolves_default_dag(tmp_path: Path) -> None:
+    assert _SNAKEMAKE is not None
     config = _fixture_run(tmp_path)
     proc = subprocess.run(
         [
@@ -243,13 +239,12 @@ def test_dry_run_resolves_default_dag(tmp_path):
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
-def test_dry_run_routes_single_and_multi_level_artifacts(tmp_path):
+def test_dry_run_routes_single_and_multi_level_artifacts(tmp_path: Path) -> None:
+    assert _SNAKEMAKE is not None
     config = _fixture_run(tmp_path)
     out_root = tmp_path / "out"
     targets = [
-        str(
-            out_root / "quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu"
-        ),  # multi-level → MuData
+        str(out_root / "quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu"),  # multi-level → MuData
         str(
             out_root / "quant_lfq_ion_DDA_QExactive/fragpipe-runA/ion.h5ad"
         ),  # single-level → <level>.h5ad
@@ -328,9 +323,12 @@ def _single_command_run(
 
 
 def _run_real_target(
-    tmp_path: Path, run_path: Path, output: Path
-) -> subprocess.CompletedProcess:
+    tmp_path: Path,
+    run_path: Path,
+    output: Path,
+) -> subprocess.CompletedProcess[str]:
     """Run one concrete target through the real Snakefile."""
+    assert _SNAKEMAKE is not None
     return subprocess.run(
         [
             _SNAKEMAKE,

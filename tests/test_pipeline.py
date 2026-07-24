@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -23,8 +24,8 @@ from apb_studio.pipeline import (
     convert_artifact,
     coverage,
     descendants,
-    expand_targets,
     expand_resolved_targets,
+    expand_targets,
     load_run_snapshot,
     problems,
     reject_input_paths,
@@ -38,7 +39,7 @@ from apb_studio.pipeline import (
 )
 from apb_studio.registry import REGISTRY_PATH, load_registry
 
-_REPO_ROOT = REGISTRY_PATH.parents[1]
+_SNAKEFILE = REGISTRY_PATH.parent.parent / "workflow" / "Snakefile"
 _REGISTRY = load_registry()
 
 
@@ -63,12 +64,12 @@ def _corpus(
     fasta: bool = True,
     touch_resources: bool = True,
     level: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     input_root = tmp_path / "in"
     input_root.mkdir()
     (input_root / "report.tsv").write_text("x\n")
     (input_root / "params.txt").write_text("params\n")
-    module: dict = {
+    module: dict[str, Any] = {
         "datasets": [
             {
                 "name": "diann-d",
@@ -98,9 +99,9 @@ def _corpus(
 
 
 def _expand(
-    corpus: dict,
+    corpus: dict[str, Any],
     *branches: str,
-    registry: list[dict] | None = None,
+    registry: list[dict[str, Any]] | None = None,
 ) -> list[Target]:
     return expand_targets(
         registry or _REGISTRY,
@@ -114,7 +115,7 @@ def _touch(target: Target) -> None:
     target.output.touch()
 
 
-def _resolved_fixture(
+def _resolved_fixture(  # noqa: PLR0913 - explicit fixture factory fields
     tmp_path: Path,
     *,
     branches: tuple[str, ...] = ("mudata",),
@@ -231,15 +232,9 @@ def test_expand_fans_out_every_json_supported_branch_through_all_stages(
     } <= names
 
     mudata = next(
-        target
-        for target in targets
-        if target.branch == "mudata" and target.stage == "convert"
+        target for target in targets if target.branch == "mudata" and target.stage == "convert"
     )
-    ion = next(
-        target
-        for target in targets
-        if target.branch == "ion" and target.stage == "convert"
-    )
+    ion = next(target for target in targets if target.branch == "ion" and target.stage == "convert")
     assert "--level" not in mudata.command
     assert ion.command[-2:] == ["--level", "ion"]
     assert mudata.command[mudata.command.index("--output") + 1].endswith("/mudata")
@@ -256,19 +251,13 @@ def test_stage_edges_and_branch_suffixes_are_isolated(tmp_path: Path) -> None:
     targets = _expand(_corpus(tmp_path), "mudata", "ion")
     for branch in ("mudata", "ion"):
         converted = next(
-            target
-            for target in targets
-            if target.branch == branch and target.stage == "convert"
+            target for target in targets if target.branch == branch and target.stage == "convert"
         )
         annotated = next(
-            target
-            for target in targets
-            if target.branch == branch and target.stage == "annotate"
+            target for target in targets if target.branch == branch and target.stage == "annotate"
         )
         fasta = next(
-            target
-            for target in targets
-            if target.branch == branch and target.stage == "fasta"
+            target for target in targets if target.branch == branch and target.stage == "fasta"
         )
         assert annotated.inputs[0] == converted.output
         assert fasta.inputs[0] == converted.output
@@ -422,9 +411,7 @@ def test_rows_update_from_pending_to_completed_and_failed(tmp_path: Path) -> Non
     annotated = next(target for target in targets if target.stage == "annotate")
     _touch(converted)
     annotated.output.parent.mkdir(parents=True, exist_ok=True)
-    Path(f"{annotated.output}.log").write_text(
-        "Traceback\nValueError: annotation group mismatch\n"
-    )
+    Path(f"{annotated.output}.log").write_text("Traceback\nValueError: annotation group mismatch\n")
     Path(f"{annotated.output}.failed").write_text("exit 1\n")
 
     row = branch_rows(
@@ -458,9 +445,7 @@ def test_proteobench_uses_convert_and_only_module_level_branches(tmp_path: Path)
     assert {target.branch for target in scoring} == {"mudata", "ion"}
     for target in scoring:
         converted = next(
-            item
-            for item in targets
-            if item.branch == target.branch and item.stage == "convert"
+            item for item in targets if item.branch == target.branch and item.stage == "convert"
         )
         assert target.inputs == [converted.output, annotation, tool]
         assert target.command[:3] == ["apb", "proteobench", str(converted.output)]
@@ -574,20 +559,16 @@ def test_clean_guard_survives_python_optimized_mode() -> None:
         "except CleanGuardError:\n"
         "    print('RAISED')\n"
     )
-    result = subprocess.run(
-        [sys.executable, "-O", "-c", code], capture_output=True, text=True
-    )
+    result = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)
     assert result.stdout.strip() == "RAISED", result.stdout + result.stderr
 
 
 def test_reject_input_paths_accepts_outputs_elsewhere() -> None:
-    assert reject_input_paths([Path("/out/result.h5ad")], "/in") == [
-        Path("/out/result.h5ad")
-    ]
+    assert reject_input_paths([Path("/out/result.h5ad")], "/in") == [Path("/out/result.h5ad")]
 
 
 def test_snakefile_lets_snakemake_assess_expanded_runnable_targets() -> None:
-    snakefile = (_REPO_ROOT / "workflow" / "Snakefile").read_text()
+    snakefile = _SNAKEFILE.read_text()
     assert "load_run_snapshot" in snakefile
     assert "runnable_targets" in snakefile
     assert "corpus.yaml" not in snakefile

@@ -14,6 +14,62 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, Protocol, TextIO
+
+
+class Process(Protocol):
+    """Subprocess surface used by Studio and its deterministic test doubles."""
+
+    pid: int
+
+    def poll(self) -> int | None: ...
+
+    def terminate(self) -> None: ...
+
+    def kill(self) -> None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+
+class PopenFactory(Protocol):
+    """Typed constructor surface injected by process-runner tests."""
+
+    def __call__(  # noqa: PLR0913 - mirrors subprocess construction
+        self,
+        command: list[str],
+        *,
+        stdout: TextIO,
+        stderr: int,
+        text: Literal[True],
+        cwd: str | None,
+        env: Mapping[str, str],
+        creationflags: int = 0,
+        start_new_session: bool = False,
+    ) -> Process: ...
+
+
+def _popen(  # noqa: PLR0913 - mirrors subprocess construction
+    command: list[str],
+    *,
+    stdout: TextIO,
+    stderr: int,
+    text: Literal[True],
+    cwd: str | None,
+    env: Mapping[str, str],
+    creationflags: int = 0,
+    start_new_session: bool = False,
+) -> Process:
+    """Call the standard-library subprocess constructor through the typed surface."""
+    return subprocess.Popen(
+        command,
+        stdout=stdout,
+        stderr=stderr,
+        text=text,
+        cwd=cwd,
+        env=env,
+        creationflags=creationflags,
+        start_new_session=start_new_session,
+    )
 
 
 @dataclass
@@ -21,7 +77,7 @@ class Job:
     """A running (or finished) background subprocess job."""
 
     command: tuple[str, ...]
-    process: subprocess.Popen
+    process: Process
     log_file: Path
 
 
@@ -55,36 +111,40 @@ def start_job(
     *,
     cwd: Path | str | None = None,
     env: Mapping[str, str] | None = None,
-    popen=subprocess.Popen,
+    popen: PopenFactory = _popen,
 ) -> Job:
     """Launch `command` in the background, streaming stdout+stderr to `log_file`."""
     log_path = Path(log_file).expanduser().resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # Own process group/session so terminate_job can kill the whole tree (wrapper + children).
-    group_kwargs: dict[str, object] = (
-        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-        if os.name == "nt"
-        else {"start_new_session": True}
-    )
     command = tuple(str(part) for part in command)
     process_env = dict(env) if env is not None else os.environ.copy()
     # Python fully buffers stdout when it targets a file. Studio tails that file,
     # so force child Python CLIs to publish each line as it is produced.
     process_env.setdefault("PYTHONUNBUFFERED", "1")
     with log_path.open("w", encoding="utf-8") as handle:
-        handle.write(
-            "$ " + shlex.join(command) + "\n\n"
-        )  # faithful, copy-pasteable header
+        handle.write("$ " + shlex.join(command) + "\n\n")  # faithful, copy-pasteable header
         handle.flush()
-        process = popen(
-            list(command),
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=str(cwd) if cwd is not None else None,
-            env=process_env,
-            **group_kwargs,
-        )
+        if os.name == "nt":
+            process = popen(
+                list(command),
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(cwd) if cwd is not None else None,
+                env=process_env,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
+        else:
+            process = popen(
+                list(command),
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(cwd) if cwd is not None else None,
+                env=process_env,
+                start_new_session=True,
+            )
     return Job(command=command, process=process, log_file=log_path)
 
 
@@ -111,7 +171,11 @@ def inspect_job(job: Job, *, max_log_chars: int = 40000) -> JobStatus:
     )
 
 
-def _signal_group(process: subprocess.Popen, *, force: bool) -> bool:
+def _signal_group(  # noqa: PLR0911 - platform-specific signal fallbacks
+    process: Process,
+    *,
+    force: bool,
+) -> bool:
     pid = getattr(process, "pid", None)
     if not isinstance(pid, int):
         return False

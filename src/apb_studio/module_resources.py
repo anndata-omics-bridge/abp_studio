@@ -9,11 +9,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 from anndata_proteomics.annotation.loader import ANNOTATION_SUFFIXES, load_annotation
 from anndata_proteomics.fasta.parser import iter_fasta
 from anndata_proteomics.test_data import find_annotation, find_fasta
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from apb_studio.disk import atomic_write_text
 from apb_studio.fixture_inventory import (
@@ -62,9 +61,7 @@ class ModuleResource(BaseModel):
     def fasta_available(self) -> bool:
         """Return whether the assigned FASTA still exists as a file."""
         return (
-            self.fasta_path is not None
-            and self.fasta_error is None
-            and self.fasta_path.is_file()
+            self.fasta_path is not None and self.fasta_error is None and self.fasta_path.is_file()
         )
 
 
@@ -92,16 +89,12 @@ def load_module_resources(
     if paths.resource_csv.exists():
         with paths.resource_csv.open(encoding="utf-8", newline="") as stream:
             rows = list(csv.DictReader(stream))
-    resources = tuple(
-        _assess_resource(ModuleResource.model_validate(row)) for row in rows
-    )
+    resources = tuple(_assess_resource(ModuleResource.model_validate(row)) for row in rows)
     modules = [resource.module for resource in resources]
     if len(set(modules)) != len(modules):
         raise ValueError("module_resources.csv contains duplicate module rows.")
     by_module = {resource.module: resource for resource in resources}
-    catalog_modules = {
-        fixture_identity(row)[0] for row in read_csv_rows(paths.catalog_csv)
-    }
+    catalog_modules = {fixture_identity(row)[0] for row in read_csv_rows(paths.catalog_csv)}
     for module in sorted(catalog_modules):
         existing = by_module.get(module)
         managed_annotation = find_annotation(
@@ -126,8 +119,7 @@ def load_module_resources(
                 fasta_path=fasta_path,
                 annotation_managed=managed_annotation is not None,
                 fasta_managed=(
-                    managed_fasta is not None
-                    and (existing is None or existing.fasta_path is None)
+                    managed_fasta is not None and (existing is None or existing.fasta_path is None)
                 ),
             )
         )
@@ -150,9 +142,7 @@ def save_module_resources(
     writer = csv.DictWriter(stream, fieldnames=RESOURCE_COLUMNS)
     writer.writeheader()
     for resource in sorted(validated.resources, key=lambda item: item.module):
-        persisted_annotation = (
-            None if resource.annotation_managed else resource.annotation_path
-        )
+        persisted_annotation = None if resource.annotation_managed else resource.annotation_path
         persisted_fasta = None if resource.fasta_managed else resource.fasta_path
         if persisted_annotation is None and persisted_fasta is None:
             continue
@@ -214,9 +204,7 @@ def sync_fasta_resources(
                 module=module,
                 annotation_path=annotation,
                 fasta_path=assigned_fasta,
-                annotation_managed=(
-                    existing.annotation_managed if existing is not None else False
-                ),
+                annotation_managed=(existing.annotation_managed if existing is not None else False),
                 fasta_managed=False,
             )
     return save_module_resources(
@@ -245,9 +233,7 @@ def resource_rows(
                     resource.annotation_path if resource else None,
                     resource.annotation_error if resource else None,
                 ),
-                "fasta_path": str(resource.fasta_path)
-                if resource and resource.fasta_path
-                else "",
+                "fasta_path": str(resource.fasta_path) if resource and resource.fasta_path else "",
                 "fasta_status": "available"
                 if resource and resource.fasta_available
                 else _unavailable_status(
@@ -263,9 +249,7 @@ def _paths(
     value: str | Path | FixtureStorePaths,
 ) -> FixtureStorePaths:
     return (
-        value
-        if isinstance(value, FixtureStorePaths)
-        else FixtureStorePaths(data_dir=value)
+        value if isinstance(value, FixtureStorePaths) else FixtureStorePaths(data_dir=Path(value))
     )
 
 
@@ -278,15 +262,12 @@ def _validate_annotation(value: str | Path | None) -> Path | None:
     path = path.resolve()
     if path.suffix.lower() not in ANNOTATION_SUFFIXES or not path.is_file():
         formats = ", ".join(sorted(ANNOTATION_SUFFIXES))
-        raise ValueError(
-            f"Annotation must be an existing supported table ({formats}): {path}"
-        )
+        raise ValueError(f"Annotation must be an existing supported table ({formats}): {path}")
     try:
         _cached_load_annotation(*_file_signature(path))
     except Exception as error:
         raise ValueError(
-            f"Annotation must be a readable sample table: {path}: "
-            f"{type(error).__name__}: {error}"
+            f"Annotation must be a readable sample table: {path}: {type(error).__name__}: {error}"
         ) from error
     return path
 

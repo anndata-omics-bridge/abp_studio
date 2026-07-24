@@ -16,10 +16,12 @@ import os
 import shutil
 from pathlib import Path
 
-# Make both workspace packages importable from a plain checkout (no install required). An installed
-# APB remains the fallback when the sibling source tree is absent.
-_STUDIO_ROOT = Path(workflow.basedir).parent
-_SRC_PATHS = [_STUDIO_ROOT / "src", _STUDIO_ROOT.parent / "apb" / "src"]
+# Make both workspace packages importable from a plain checkout. Installed packages are already on
+# sys.path; the sibling APB source path is only used when this workflow runs from the workspace.
+_PACKAGE_ROOT = Path(workflow.basedir).parent
+_SRC_ROOT = _PACKAGE_ROOT.parent
+_WORKSPACE_ROOT = _SRC_ROOT.parent.parent
+_SRC_PATHS = [_SRC_ROOT, _WORKSPACE_ROOT / "apb" / "src"]
 for source_path in _SRC_PATHS:
     if source_path.exists():
         sys.path.insert(0, str(source_path))

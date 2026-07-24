@@ -17,8 +17,9 @@ import json
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 from apb_studio.pipeline import RunSnapshot, Target, load_run_snapshot
 
@@ -37,9 +38,7 @@ def apb_version(apb_exe: str | None = None) -> str | None:
     exe = apb_exe or shutil.which("apb")
     if exe:
         try:
-            out = subprocess.run(
-                [exe, "--version"], capture_output=True, text=True, check=True
-            )
+            out = subprocess.run([exe, "--version"], capture_output=True, text=True, check=True)
             return out.stdout.strip() or None
         except (OSError, subprocess.CalledProcessError):
             return None
@@ -53,7 +52,7 @@ def record(
     version: str | None = None,
     warning: str | None = None,
     run: RunSnapshot | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """The provenance record for one Target (pure). The rendered command carries vendor/params.
 
     ``warning`` carries a problem apb reported while still producing the artifact — e.g.
@@ -61,7 +60,7 @@ def record(
     crashing). apb_studio surfaces it per dataset (``pipeline.problems`` → the basket ``problem``
     column) so a converted-but-degraded dataset is not shown as cleanly done.
     """
-    rec = {
+    rec: dict[str, Any] = {
         "stage": target.stage,
         "artifact": target.output.name,
         "command": list(target.command),
@@ -88,9 +87,11 @@ def record(
 
 
 def read_params_warning(output: Path) -> str | None:
-    """Best-effort: read apb's ``uns['anndata_proteomics']['search_parameters_error']`` from the
-    artifact (AnnData root uns *or* any MuData modality). Returns a joined message, or None if absent
-    / unreadable / h5py missing. Runs once per rule (build time), never on a dashboard refresh."""
+    """Read APB's search-parameter warning from AnnData or any MuData modality.
+
+    Returns a joined message, or None if absent, unreadable, or h5py is missing. Runs once per rule
+    at build time, never on a dashboard refresh.
+    """
     try:
         import h5py
     except Exception:  # noqa: BLE001 - h5py optional; degrade to "no warning"
@@ -108,7 +109,8 @@ def read_params_warning(output: Path) -> str | None:
             )
             msgs = []
             for n in names:
-                v = f[n][()]
+                node = cast(h5py.Dataset, f[n])
+                v = node[()]
                 msgs.append(v.decode() if isinstance(v, (bytes, bytearray)) else str(v))
         uniq = list(dict.fromkeys(m for m in msgs if m))
         return "; ".join(uniq) or None
@@ -117,7 +119,7 @@ def read_params_warning(output: Path) -> str | None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def sidecar_path(output: Path) -> Path:
@@ -171,12 +173,10 @@ def prune_for_target(target: Target) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI used by the Snakefile post-rule: write provenance for the target that produced --output."""
+    """Write provenance for the target produced by the Snakefile rule."""
     parser = argparse.ArgumentParser(prog="apb_studio.provenance")
     parser.add_argument("--run", required=True, help="generated Corpus Runner JSON")
-    parser.add_argument(
-        "--output", required=True, help="the artifact path that was just produced"
-    )
+    parser.add_argument("--output", required=True, help="the artifact path that was just produced")
     args = parser.parse_args(argv)
 
     run = load_run_snapshot(args.run)

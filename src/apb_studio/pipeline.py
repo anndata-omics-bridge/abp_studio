@@ -138,13 +138,9 @@ def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
                 "capability_status": fixture.capability_status,
                 "diagnostic": fixture.diagnostic,
                 "annotation_path": (
-                    str(fixture.annotation_path)
-                    if fixture.annotation_path is not None
-                    else None
+                    str(fixture.annotation_path) if fixture.annotation_path is not None else None
                 ),
-                "fasta_path": (
-                    str(fixture.fasta_path) if fixture.fasta_path is not None else None
-                ),
+                "fasta_path": (str(fixture.fasta_path) if fixture.fasta_path is not None else None),
                 "annotation_error": fixture.annotation_error,
                 "fasta_error": fixture.fasta_error,
                 "tool_settings_path": (
@@ -196,27 +192,15 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
             parameter_path=Path(item["parameter_path"]),
             branches=tuple(str(branch) for branch in item.get("branches", [])),
             capability_status=str(item["capability_status"]),
-            diagnostic=(
-                str(item["diagnostic"]) if item.get("diagnostic") is not None else None
-            ),
+            diagnostic=(str(item["diagnostic"]) if item.get("diagnostic") is not None else None),
             annotation_path=(
-                Path(item["annotation_path"])
-                if item.get("annotation_path") is not None
-                else None
+                Path(item["annotation_path"]) if item.get("annotation_path") is not None else None
             ),
-            fasta_path=(
-                Path(item["fasta_path"]) if item.get("fasta_path") is not None else None
-            ),
+            fasta_path=(Path(item["fasta_path"]) if item.get("fasta_path") is not None else None),
             annotation_error=(
-                str(item["annotation_error"])
-                if item.get("annotation_error") is not None
-                else None
+                str(item["annotation_error"]) if item.get("annotation_error") is not None else None
             ),
-            fasta_error=(
-                str(item["fasta_error"])
-                if item.get("fasta_error") is not None
-                else None
-            ),
+            fasta_error=(str(item["fasta_error"]) if item.get("fasta_error") is not None else None),
             tool_settings_path=(
                 Path(item["tool_settings_path"])
                 if item.get("tool_settings_path") is not None
@@ -252,9 +236,7 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
             level=str(item["level"]) if item.get("level") is not None else None,
             branch=str(item.get("branch", MUDATA)),
             blocked_reason=(
-                str(item["blocked_reason"])
-                if item.get("blocked_reason") is not None
-                else None
+                str(item["blocked_reason"]) if item.get("blocked_reason") is not None else None
             ),
         )
         for item in data.get("targets", [])
@@ -266,9 +248,7 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
         test_data_root=Path(data["test_data_root"]),
         output_root=Path(data["output_root"]),
         registry_digest=str(data["registry_digest"]),
-        apb_version=(
-            str(data["apb_version"]) if data.get("apb_version") is not None else None
-        ),
+        apb_version=(str(data["apb_version"]) if data.get("apb_version") is not None else None),
         fixtures=fixtures,
         targets=targets,
     )
@@ -308,9 +288,7 @@ def load_run_snapshot(path: Path | str) -> RunSnapshot:
 def convert_artifact(branch: str) -> str:
     """Return the converted artifact name for a discovered branch."""
     if branch not in BRANCHES:
-        raise ValueError(
-            f"unknown conversion branch {branch!r}; expected one of {BRANCHES}"
-        )
+        raise ValueError(f"unknown conversion branch {branch!r}; expected one of {BRANCHES}")
     return f"{branch}{convert_suffix(branch)}"
 
 
@@ -319,14 +297,14 @@ def convert_suffix(branch: str) -> str:
     return ".h5mu" if branch == MUDATA else ".h5ad"
 
 
-def stage_artifact(stage: dict, branch: str) -> str:
+def stage_artifact(stage: dict[str, Any], branch: str) -> str:
     """Return the branch-qualified artifact name produced by one stage."""
     if not stage.get("depends_on"):
         return convert_artifact(branch)
     return f"{branch}.{stage['artifact']}{convert_suffix(branch)}"
 
 
-def validate_dataset(module: str, dataset_cfg: dict) -> None:
+def validate_dataset(module: str, dataset_cfg: dict[str, Any]) -> None:
     """Validate the corpus-manifest fields needed for capability discovery."""
     name = dataset_cfg.get("name", "?")
     for field_name in ("name", "vendor", "input", "params"):
@@ -334,7 +312,7 @@ def validate_dataset(module: str, dataset_cfg: dict) -> None:
             raise ValueError(f"{module}/{name}: missing required {field_name!r}")
 
 
-def render_command(template: str, ctx: dict) -> list[str]:
+def render_command(template: str, ctx: dict[str, Any]) -> list[str]:
     """Substitute `{placeholder}`s in a registry command template → an argv list.
 
     Plain per-token substitution (so a value with spaces stays one argv element); raises on any
@@ -343,20 +321,15 @@ def render_command(template: str, ctx: dict) -> list[str]:
     """
     missing = sorted({m.group(1) for m in _PLACEHOLDER.finditer(template)} - set(ctx))
     if missing:
-        raise KeyError(
-            f"unfilled placeholder(s) {missing} in command template {template!r}"
-        )
-    return [
-        _PLACEHOLDER.sub(lambda m: str(ctx[m.group(1)]), token)
-        for token in template.split()
-    ]
+        raise KeyError(f"unfilled placeholder(s) {missing} in command template {template!r}")
+    return [_PLACEHOLDER.sub(lambda m: str(ctx[m.group(1)]), token) for token in template.split()]
 
 
 # --- stage-graph helpers (topology is data — decision 5 / §13) --------------------------------
 
 
-def stage_order(registry: list[dict]) -> list[str]:
-    """Stage names in a topological order derived from `depends_on` (never a hardcoded list, §13.3)."""
+def stage_order(registry: list[dict[str, Any]]) -> list[str]:
+    """Derive topological stage order from `depends_on`, never a hardcoded list (§13.3)."""
     deps = {s["name"]: list(s.get("depends_on") or []) for s in registry}
     order: list[str] = []
     seen: set[str] = set()
@@ -374,31 +347,29 @@ def stage_order(registry: list[dict]) -> list[str]:
     return order
 
 
-def basket_label(stage: dict) -> str:
+def basket_label(stage: dict[str, Any]) -> str:
     """The kanban basket a dataset reaches after this stage (the registry `basket` field)."""
     return stage.get("basket", stage["name"])
 
 
-def basket_names(registry: list[dict]) -> list[str]:
-    """Ordered basket labels for the flow strip / stacked tables: inputs, then one per stage (§8.3)."""
+def basket_names(registry: list[dict[str, Any]]) -> list[str]:
+    """Order flow-strip basket labels as inputs, then one per stage (§8.3)."""
     by_name = {s["name"]: s for s in registry}
-    return [INPUTS_BASKET] + [
-        basket_label(by_name[name]) for name in stage_order(registry)
-    ]
+    return [INPUTS_BASKET] + [basket_label(by_name[name]) for name in stage_order(registry)]
 
 
-def stage_by_basket(registry: list[dict]) -> dict[str, str]:
+def stage_by_basket(registry: list[dict[str, Any]]) -> dict[str, str]:
     """Map each non-`inputs` basket label back to the stage that defines it (for Clean, §8.3)."""
     return {basket_label(s): s["name"] for s in registry}
 
 
-def descendants(registry: list[dict], stage: str) -> set[str]:
+def descendants(registry: list[dict[str, Any]], stage: str) -> set[str]:
     """Stages that transitively DEPEND ON `stage` (its downstream in the DAG).
 
-    Basket Clean deletes `stage` AND its descendants for the selected datasets (cascade, §8.3): a
-    convert artifact can't be removed while a downstream annotate/fasta derives from it, and cascading
-    also sweeps a *stray* downstream artifact left by a partial run or manual copy — so a Clean always
-    leaves a contiguous prefix, never an orphan, regardless of the prior on-disk state.
+    Basket Clean deletes `stage` and its descendants for the selected datasets (cascade, §8.3):
+    a convert artifact can't be removed while a downstream annotate/fasta derives from it.
+    Cascading also sweeps a *stray* downstream artifact left by a partial run or manual copy, so a
+    Clean always leaves a contiguous prefix, never an orphan, regardless of prior on-disk state.
     """
     children: dict[str, set[str]] = defaultdict(set)
     for s in registry:
@@ -420,7 +391,7 @@ def _resolve(value: str, base: Path) -> Path:
     return p if p.is_absolute() else base / p
 
 
-def _resource_names(stage: dict) -> tuple[str, ...]:
+def _resource_names(stage: dict[str, Any]) -> tuple[str, ...]:
     """Return a stage's one-or-many resource placeholders."""
     resources = stage.get("resources")
     if resources is not None:
@@ -430,7 +401,7 @@ def _resource_names(stage: dict) -> tuple[str, ...]:
 
 
 def _stage_applies_to_branch(
-    stage: dict,
+    stage: dict[str, Any],
     branch: str,
     *,
     proteobench_level: str | None,
@@ -459,7 +430,9 @@ def _resolved_resource(
 
 
 def _nearest_upstream(
-    deps: list[str], emitted: dict[str, Path], reg: dict[str, dict]
+    deps: list[str],
+    emitted: dict[str, Path],
+    reg: dict[str, dict[str, Any]],
 ) -> Path | None:
     """Nearest already-emitted upstream artifact for a stage's `depends_on` (§13.1 reconnection).
 
@@ -471,16 +444,14 @@ def _nearest_upstream(
         if dep in emitted:
             return emitted[dep]
     for dep in deps:
-        up = _nearest_upstream(
-            list(reg.get(dep, {}).get("depends_on") or []), emitted, reg
-        )
+        up = _nearest_upstream(list(reg.get(dep, {}).get("depends_on") or []), emitted, reg)
         if up is not None:
             return up
     return None
 
 
 def discover_dataset_branches(
-    dataset_cfg: dict,
+    dataset_cfg: dict[str, Any],
     input_root: Path,
     *,
     discover: CapabilityResolver = capabilities.discover_capabilities,
@@ -493,9 +464,9 @@ def discover_dataset_branches(
     )
 
 
-def expand_targets(
-    registry: list[dict],
-    corpus: dict,
+def expand_targets(  # noqa: C901, PLR0912 - registry-driven target graph expansion
+    registry: list[dict[str, Any]],
+    corpus: dict[str, Any],
     output_root: Path | str | None = None,
     input_root: Path | str | None = None,
     *,
@@ -593,8 +564,8 @@ def expand_targets(
     return targets
 
 
-def expand_resolved_targets(
-    registry: list[dict],
+def expand_resolved_targets(  # noqa: C901, PLR0912 - registry-driven target graph expansion
+    registry: list[dict[str, Any]],
     fixtures: tuple[ResolvedFixture, ...] | list[ResolvedFixture],
     output_root: Path | str,
 ) -> list[Target]:
@@ -645,9 +616,7 @@ def expand_resolved_targets(
                     inputs = [] if upstream is None else [upstream]
                     context: dict[str, Path] = {}
                     if upstream is None:
-                        blocked_reason = "Blocked by unavailable stage: " + ", ".join(
-                            dependencies
-                        )
+                        blocked_reason = "Blocked by unavailable stage: " + ", ".join(dependencies)
                     else:
                         context = {"input": upstream, "output": output}
 
@@ -665,9 +634,7 @@ def expand_resolved_targets(
                             inputs.append(resource_path)
 
                     command = (
-                        render_command(stage["command"], context)
-                        if blocked_reason is None
-                        else []
+                        render_command(stage["command"], context) if blocked_reason is None else []
                     )
 
                 emitted[name] = output
@@ -688,7 +655,7 @@ def expand_resolved_targets(
     return targets
 
 
-def coverage(targets: list[Target]) -> list[dict]:
+def coverage(targets: list[Target]) -> list[dict[str, Any]]:
     """One row per Target with `done = output.exists()` — filesystem-as-DB (decision 4)."""
     return [
         {
@@ -771,9 +738,7 @@ def _log_error(logpath: Path) -> str | None:
     """
     try:
         lines = [
-            ln.strip()
-            for ln in logpath.read_text(errors="replace").splitlines()
-            if ln.strip()
+            ln.strip() for ln in logpath.read_text(errors="replace").splitlines() if ln.strip()
         ]
     except OSError:
         return None
@@ -825,7 +790,10 @@ def _provenance_warnings(sidecar: Path) -> list[str]:
     return []
 
 
-def problems(corpus: dict, targets: list[Target]) -> dict[tuple[str, str], list[str]]:
+def problems(  # noqa: C901 - diagnostic aggregation across target states
+    corpus: dict[str, Any],
+    targets: list[Target],
+) -> dict[tuple[str, str], list[str]]:
     """Per-dataset problems to surface in the baskets (§8, review round 2).
 
     Two sources: **static** — declared files that don't exist (a dataset's `input`/`params`, or a
@@ -862,31 +830,15 @@ def problems(corpus: dict, targets: list[Target]) -> dict[tuple[str, str], list[
     return {k: v for k, v in out.items() if v}
 
 
-def _missing_stage_reason(
-    stage: dict,
-    module_config: dict,
-    emitted_stages: set[str],
-) -> str:
-    """Explain why a stage has no concrete Target for a discovered branch."""
-    resource = stage.get("resource")
-    if resource and not module_config.get(resource):
-        return f"Missing module resource: {resource}"
-    missing_dependencies = [
-        dependency
-        for dependency in stage.get("depends_on") or []
-        if dependency not in emitted_stages
-    ]
-    if missing_dependencies:
-        return f"Blocked by unavailable stage: {', '.join(missing_dependencies)}"
-    return "Stage target could not be created"
-
-
-def _terminal_blocker(target: Target, targets: list[Target]) -> str | None:
+def _terminal_blocker(  # noqa: C901 - recursive target-state evaluation
+    target: Target,
+    targets: list[Target],
+) -> str | None:
     """Return a static or terminal upstream blocker, but never a pending dependency."""
     by_output = {item.output: item for item in targets}
     memo: dict[Path, str | None] = {}
 
-    def visit(item: Target) -> str | None:
+    def visit(item: Target) -> str | None:  # noqa: PLR0911 - target-state decision table
         if item.output in memo:
             return memo[item.output]
         if item.output.exists():
@@ -909,17 +861,12 @@ def _terminal_blocker(target: Target, targets: list[Target]) -> str | None:
                 continue
             upstream_error = _failed_rule_error(upstream.output)
             if upstream_error is not None:
-                reason = (
-                    f"Blocked by failed upstream stage {upstream.stage}: "
-                    f"{upstream_error}"
-                )
+                reason = f"Blocked by failed upstream stage {upstream.stage}: {upstream_error}"
                 memo[item.output] = reason
                 return reason
             upstream_blocker = visit(upstream)
             if upstream_blocker is not None:
-                reason = (
-                    f"Blocked by upstream stage {upstream.stage}: {upstream_blocker}"
-                )
+                reason = f"Blocked by upstream stage {upstream.stage}: {upstream_blocker}"
                 memo[item.output] = reason
                 return reason
         return None
@@ -956,12 +903,12 @@ def _stage_detail(
 
 
 def branch_rows(
-    run: RunSnapshot | dict,
+    run: RunSnapshot | dict[str, Any],
     targets: list[Target],
     *,
-    registry: list[dict] | None = None,
+    registry: list[dict[str, Any]] | None = None,
     discover: CapabilityResolver = capabilities.discover_capabilities,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Return one compact progress row per JSON-supported dataset branch."""
     registry = registry or load_registry()
     if isinstance(run, dict):
@@ -969,10 +916,9 @@ def branch_rows(
 
     order = stage_order(registry)
     by_key = {
-        (target.module, target.dataset, target.branch, target.stage): target
-        for target in targets
+        (target.module, target.dataset, target.branch, target.stage): target for target in targets
     }
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
 
     for fixture in run.fixtures:
         if not fixture.branches:
@@ -988,12 +934,9 @@ def branch_rows(
                 }
             }
             details.update(
-                {
-                    stage_name: {"state": "pending", "display": ""}
-                    for stage_name in order[1:]
-                }
+                {stage_name: {"state": "pending", "display": ""} for stage_name in order[1:]}
             )
-            row = {
+            row: dict[str, Any] = {
                 "module": fixture.repo_name,
                 "dataset": fixture.dataset,
                 "software": fixture.vendor,
@@ -1001,7 +944,7 @@ def branch_rows(
                 root_stage: display,
                 "_stage_details": details,
             }
-            row.update({name: "" for name in order[1:]})
+            row.update(dict.fromkeys(order[1:], ""))
             rows.append(row)
             continue
 
@@ -1014,9 +957,7 @@ def branch_rows(
                 "level": "MuData" if branch == MUDATA else branch,
             }
             for stage_name in order:
-                target = by_key.get(
-                    (fixture.repo_name, fixture.dataset, branch, stage_name)
-                )
+                target = by_key.get((fixture.repo_name, fixture.dataset, branch, stage_name))
                 detail = _stage_detail(
                     target,
                     targets=targets,
@@ -1039,8 +980,8 @@ def _capability_status(discovery: capabilities.CapabilityDiscovery) -> str:
 
 
 def _legacy_run_snapshot(
-    registry: list[dict],
-    corpus: dict,
+    registry: list[dict[str, Any]],
+    corpus: dict[str, Any],
     targets: list[Target],
     *,
     discover: CapabilityResolver,
@@ -1072,13 +1013,9 @@ def _legacy_run_snapshot(
                     capability_status=_capability_status(discovery),
                     diagnostic=discovery.diagnostic,
                     annotation_path=(
-                        _resolve(annotation, input_root)
-                        if annotation is not None
-                        else None
+                        _resolve(annotation, input_root) if annotation is not None else None
                     ),
-                    fasta_path=(
-                        _resolve(fasta, input_root) if fasta is not None else None
-                    ),
+                    fasta_path=(_resolve(fasta, input_root) if fasta is not None else None),
                 )
             )
     return RunSnapshot(
@@ -1096,23 +1033,23 @@ def _legacy_run_snapshot(
 
 def baskets(
     targets: list[Target],
-    registry: list[dict],
+    registry: list[dict[str, Any]],
     problems: dict[tuple[str, str], list[str]] | None = None,
-) -> dict[str, list[dict]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Group DATASETS into kanban baskets (decision 10, §8).
 
     A dataset's basket is the furthest stage whose whole prefix (over the dataset's *applicable*
     stages) is done — a CONTIGUOUS prefix, not the bare max-done stage — so a non-contiguous on-disk
-    state (a later artifact present while an earlier one is missing) reports the LOWER basket, never a
-    basket whose defining artifact is absent. `next_stage`/`runnable` are per-dataset from the
-    dataset's own Target set: `next_stage` is the first not-yet-done applicable stage (or None →
-    terminal). Returns an ordered dict keyed by basket label (empty baskets included, for the flow
+    state (a later artifact present while an earlier one is missing) reports the lower basket,
+    never a basket whose defining artifact is absent. `next_stage`/`runnable` are per-dataset from
+    the dataset's own Target set: `next_stage` is the first not-yet-done applicable stage (or None
+    → terminal). Returns an ordered dict keyed by basket label (empty baskets included, for the flow
     strip). Membership is computed only from per-Target output paths, never a filename glob.
     """
     order = stage_order(registry)
     labels = {s["name"]: basket_label(s) for s in registry}
     problems = problems or {}
-    result: dict[str, list[dict]] = {b: [] for b in basket_names(registry)}
+    result: dict[str, list[dict[str, Any]]] = {b: [] for b in basket_names(registry)}
 
     by_ds: dict[tuple[str, str, str], list[Target]] = defaultdict(list)
     for t in targets:
@@ -1120,9 +1057,7 @@ def baskets(
 
     for (module, dataset, branch), ts in by_ds.items():
         stages_here = {t.stage for t in ts}
-        applicable = [
-            s for s in order if s in stages_here
-        ]  # this dataset's stages, in topo order
+        applicable = [s for s in order if s in stages_here]  # this dataset's stages, in topo order
         done = {t.stage: t.output.exists() for t in ts}
 
         basket_stage: str | None = None
@@ -1168,9 +1103,7 @@ def select_targets(
     return selected
 
 
-def targets_for(
-    targets: list[Target], keys: set[tuple[str, str]], *, stage: str
-) -> list[Target]:
+def targets_for(targets: list[Target], keys: set[tuple[str, str]], *, stage: str) -> list[Target]:
     """The Targets at `stage` for the selected (module, dataset) rows — the multi-row basket
     selection scope×stage cannot express (§8.2). Run feeds the outputs to run_pipeline; Clean feeds
     them to clean_targets."""
@@ -1179,20 +1112,18 @@ def targets_for(
 
 
 def reject_input_paths(paths: list[Path], input_root: Path | str) -> list[Path]:
-    """Return `paths` iff none is under `input_root` (the Clean guard); raise `CleanGuardError` else.
+    """Return paths outside `input_root`; raise `CleanGuardError` for an input path.
 
     Resolves both sides, so it also catches relative paths and symlink escapes. Shared by
-    `clean_paths` (scope×stage) and `execution.clean_targets` (row-set) so the guard is single-source.
-    This is a **real exception**, NOT an `assert`: `assert` is stripped by `python -O`, and a guard on
-    a destructive action must never be optimized away.
+    `clean_paths` (scope×stage) and `execution.clean_targets` (row-set), keeping the guard
+    single-source. This is a **real exception**, not an `assert`: `assert` is stripped by
+    `python -O`, and a destructive-action guard must never be optimized away.
     """
     in_root = Path(input_root).resolve()
     for p in paths:
         resolved = Path(p).resolve()
         if in_root == resolved or in_root in resolved.parents:
-            raise CleanGuardError(
-                f"refusing to clean {p}: it is under input_root {in_root}"
-            )
+            raise CleanGuardError(f"refusing to clean {p}: it is under input_root {in_root}")
     return paths
 
 
@@ -1212,8 +1143,6 @@ def clean_paths(
     """
     paths = [
         t.output
-        for t in select_targets(
-            targets, scope=scope, module=module, dataset=dataset, stage=stage
-        )
+        for t in select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage)
     ]
     return reject_input_paths(paths, input_root)

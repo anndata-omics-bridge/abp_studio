@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import stat
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
-
 from anndata_proteomics.rules.registry import find_rule
+
 from apb_studio import config_editor
 from apb_studio.config_panel import configuration_panel
 
@@ -136,24 +138,23 @@ def test_save_rejects_stale_browser_copy(tmp_path: Path) -> None:
         )
 
 
-def test_configuration_panel_has_one_read_only_json_editor_and_no_effective_view() -> (
-    None
-):
+def test_configuration_panel_has_one_read_only_json_editor_and_no_effective_view() -> None:
     panel = configuration_panel()
     components = _components(panel)
     by_id = {
-        component.id: component
+        component.to_plotly_json()["props"]["id"]: component
         for component in components
-        if isinstance(getattr(component, "id", None), str)
+        if isinstance(component.to_plotly_json()["props"].get("id"), str)
     }
-    assert by_id["config-section-editor"].language == "json"
-    assert by_id["config-section-editor"].readOnly is True
+    editor_props = by_id["config-section-editor"].to_plotly_json()["props"]
+    assert editor_props["language"] == "json"
+    assert editor_props["readOnly"] is True
     assert "config-effective-editor" not in by_id
-    assert by_id["config-edit"].disabled is True
-    assert by_id["config-save"].disabled is True
+    assert by_id["config-edit"].to_plotly_json()["props"]["disabled"] is True
+    assert by_id["config-save"].to_plotly_json()["props"]["disabled"] is True
 
 
-def _components(component):
+def _components(component: Any) -> Iterator[Any]:
     """Yield a Dash component tree depth-first."""
     yield component
     children = getattr(component, "children", None)

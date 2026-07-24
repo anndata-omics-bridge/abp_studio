@@ -244,9 +244,7 @@ def test_discovery_returns_diagnostic_instead_of_raising(
 
     assert result.branches == ()
     assert result.status is capabilities.CapabilityStatus.BLOCKED
-    assert result.diagnostic == (
-        "Capability discovery failed: ValueError: invalid parameter file"
-    )
+    assert result.diagnostic == ("Capability discovery failed: ValueError: invalid parameter file")
 
 
 def test_discovery_reports_a_missing_input(tmp_path: Path) -> None:
@@ -301,8 +299,7 @@ def test_discovery_explains_when_no_rule_matches(
     assert result.software_slug == "unknowntool"
     assert result.software_version == "3"
     assert result.diagnostic == (
-        "No APB parsing rule matches software 'unknowntool', version '3', "
-        "and the input headers."
+        "No APB parsing rule matches software 'unknowntool', version '3', and the input headers."
     )
 
 
@@ -320,9 +317,7 @@ def test_discovery_treats_unregistered_software_as_unsupported(
         nonlocal parse_called
         parse_called = True
 
-    monkeypatch.setattr(
-        capabilities.parameter_registry, "parse_params", unexpected_parse
-    )
+    monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
 
     result = capabilities.discover_capabilities(
         input_path,

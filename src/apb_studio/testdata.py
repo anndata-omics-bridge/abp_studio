@@ -9,12 +9,12 @@ import uuid
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+from anndata_proteomics.readers.summary import describe_path
 
-import apb_studio
-from apb_studio import capabilities
-from apb_studio import fixture_inventory
+from apb_studio import capabilities, fixture_inventory
 from apb_studio.jobrunner import (
     Job,
     JobStatus,
@@ -23,10 +23,7 @@ from apb_studio.jobrunner import (
     terminate_job,
 )
 from apb_studio.settings import DEFAULT_TEST_DATA_ROOT
-from anndata_proteomics.readers.summary import describe_path
 
-STUDIO_ROOT = Path(apb_studio.__file__).resolve().parents[2]
-APB_ROOT = STUDIO_ROOT.parent / "apb"
 DEFAULT_TEST_DATA_DIR = DEFAULT_TEST_DATA_ROOT
 
 _JOBS: dict[str, Job | tuple[Job, ...]] = {}
@@ -61,14 +58,15 @@ def storage_summary(paths: TestDataPaths) -> str:
     )
 
 
-def read_rows(path: Path) -> list[dict]:
+def read_rows(path: Path) -> list[dict[str, Any]]:
     """Read a generated CSV as JSON-compatible records."""
     if not path.exists():
         return []
-    return pd.read_csv(path).fillna("").to_dict(orient="records")
+    records = pd.read_csv(path).fillna("").to_dict(orient="records")
+    return [{str(key): value for key, value in record.items()} for record in records]
 
 
-def catalog_rows(paths: TestDataPaths) -> list[dict]:
+def catalog_rows(paths: TestDataPaths) -> list[dict[str, Any]]:
     """Return all fixtures with live download and conversion status."""
     rows = []
     inventory = fixture_inventory.load_fixture_inventory(paths)
@@ -84,7 +82,7 @@ def catalog_rows(paths: TestDataPaths) -> list[dict]:
     return rows
 
 
-def selection_rows(paths: TestDataPaths) -> list[dict]:
+def selection_rows(paths: TestDataPaths) -> list[dict[str, Any]]:
     """Return selected rows augmented with live local download status."""
     selected_identities = {
         fixture_inventory.fixture_identity(row)
@@ -97,7 +95,10 @@ def selection_rows(paths: TestDataPaths) -> list[dict]:
     ]
 
 
-def conversion_targets(paths: TestDataPaths, row: dict) -> tuple[str, ...]:
+def conversion_targets(
+    paths: TestDataPaths,
+    row: dict[str, Any],
+) -> tuple[str, ...]:
     """Return conversion choices supported by one downloaded fixture."""
     return _fixture_conversion_targets(_fixture_for_row(paths, row))
 
@@ -126,9 +127,7 @@ def _conversion_status(
 ) -> str:
     """Render compact conversion availability for the unified table."""
     if targets:
-        return ", ".join(
-            "all levels" if target == ALL_LEVELS else target for target in targets
-        )
+        return ", ".join("all levels" if target == ALL_LEVELS else target for target in targets)
     if fixture.complete:
         assert fixture.input_path is not None
         assert fixture.parameter_path is not None
@@ -143,25 +142,28 @@ def _conversion_status(
     return "download first"
 
 
-def dataset_dir(paths: TestDataPaths, row: dict) -> Path:
+def dataset_dir(paths: TestDataPaths, row: dict[str, Any]) -> Path:
     """Return the local cache directory for a catalog row."""
     identity = fixture_inventory.fixture_identity(row)
     return fixture_inventory.fixture_directory(paths, identity[1], identity[2])
 
 
-def converted_dir(paths: TestDataPaths, row: dict) -> Path:
+def converted_dir(paths: TestDataPaths, row: dict[str, Any]) -> Path:
     """Return the directory in which converted artifacts live for one fixture."""
     return dataset_dir(paths, row)
 
 
-def metadata_path(paths: TestDataPaths, row: dict) -> Path:
+def metadata_path(paths: TestDataPaths, row: dict[str, Any]) -> Path:
     """Return the downloaded ProteoBench submission JSON path."""
     _, repo, fixture_hash = fixture_inventory.fixture_identity(row)
     repository_root = fixture_inventory.fixture_directory(paths, repo, f"{repo}-main")
     return repository_root / f"{fixture_hash}.json"
 
 
-def row_details(paths: TestDataPaths, row: dict | None) -> tuple[str, str, str]:
+def row_details(
+    paths: TestDataPaths,
+    row: dict[str, Any] | None,
+) -> tuple[str, str, str]:
     """Return file information, formatted submission JSON, and parameter content."""
     if not row:
         return "Select a row.", "", ""
@@ -177,16 +179,14 @@ def row_details(paths: TestDataPaths, row: dict | None) -> tuple[str, str, str]:
     if parameters:
         parameter_text = parameters[0].read_text(encoding="utf-8", errors="replace")
         if parameters[0].suffix.lower() == ".json":
-            parameter_text = json.dumps(
-                json.loads(parameter_text), indent=2, sort_keys=True
-            )
+            parameter_text = json.dumps(json.loads(parameter_text), indent=2, sort_keys=True)
     info = "\n".join(f"{key}: {value}" for key, value in canonical_row.items())
     return info, json_text, parameter_text
 
 
 def _fixture_for_row(
     paths: TestDataPaths,
-    row: dict,
+    row: dict[str, Any],
 ) -> fixture_inventory.FixtureRecord:
     """Resolve an untrusted client row against the authoritative catalog."""
     identity = fixture_inventory.fixture_identity(row)
@@ -258,7 +258,11 @@ def testdata_command(
     raise ValueError(f"Unknown test-data action: {action}")
 
 
-def convert_command(paths: TestDataPaths, row: dict, level: str) -> list[str]:
+def convert_command(
+    paths: TestDataPaths,
+    row: dict[str, Any],
+    level: str,
+) -> list[str]:
     """Build an ``apb convert`` command for one downloaded fixture."""
     fixture = _fixture_for_row(paths, row)
     directory = fixture.dataset_dir
@@ -266,7 +270,8 @@ def convert_command(paths: TestDataPaths, row: dict, level: str) -> list[str]:
     parameters = fixture.parameter_files
     if len(inputs) != 1:
         raise ValueError(
-            f"Expected exactly one downloaded input_file.* for the selected fixture, got {len(inputs)}"
+            "Expected exactly one downloaded input_file.* for the selected fixture, "
+            f"got {len(inputs)}"
         )
     if len(parameters) != 1:
         raise ValueError(
@@ -306,12 +311,15 @@ def launch(
         _JOBS[job_id] = start_job(
             testdata_command(action, paths, strategy=strategy, module=module),
             paths.log_dir / f"{action}.log",
-            cwd=APB_ROOT,
         )
     return job_id
 
 
-def launch_convert(paths: TestDataPaths, row: dict, levels: Sequence[str]) -> str:
+def launch_convert(
+    paths: TestDataPaths,
+    row: dict[str, Any],
+    levels: Sequence[str],
+) -> str:
     """Launch the selected APB conversions and return one group identifier."""
     paths.create()
     job_id = uuid.uuid4().hex
@@ -329,7 +337,7 @@ def launch_convert(paths: TestDataPaths, row: dict, levels: Sequence[str]) -> st
         started: list[Job] = []
         try:
             for command, log_file in commands:
-                started.append(start_job(command, log_file, cwd=APB_ROOT))
+                started.append(start_job(command, log_file))
         except Exception:
             for job in started:
                 terminate_job(job)
@@ -341,17 +349,11 @@ def launch_convert(paths: TestDataPaths, row: dict, levels: Sequence[str]) -> st
 def _reject_overlapping_job() -> None:
     """Reject a new mutation while any registered Fixture Manager job runs."""
     active = next(
-        (
-            job_id
-            for job_id, job in _JOBS.items()
-            if _status_for_registered_job(job).running
-        ),
+        (job_id for job_id, job in _JOBS.items() if _status_for_registered_job(job).running),
         None,
     )
     if active is not None:
-        raise JobAlreadyRunningError(
-            f"Fixture Manager job {active} is already running."
-        )
+        raise JobAlreadyRunningError(f"Fixture Manager job {active} is already running.")
 
 
 def _selected_conversion_targets(levels: Sequence[str]) -> tuple[str, ...]:
@@ -368,7 +370,7 @@ def _selected_conversion_targets(levels: Sequence[str]) -> tuple[str, ...]:
     return targets
 
 
-def container_rows(paths: TestDataPaths) -> dict[str, list[dict]]:
+def container_rows(paths: TestDataPaths) -> dict[str, list[dict[str, Any]]]:
     """Route MuData containers and standalone AnnData files to separate tables."""
     tables = {"mudata": [], **{level: [] for level in LEVELS}}
     for catalog_row in catalog_rows(paths):
@@ -394,7 +396,7 @@ def container_summary(path: Path | str, modality: str | None = None) -> str:
     return json.dumps(description, indent=2, sort_keys=True)
 
 
-def _description_for(path: Path, modality: str | None = None) -> dict:
+def _description_for(path: Path, modality: str | None = None) -> dict[str, Any]:
     resolved = path.expanduser().resolve()
     return _cached_description(str(resolved), resolved.stat().st_mtime_ns, modality)
 
@@ -404,11 +406,14 @@ def _cached_description(
     path: str,
     _mtime_ns: int,
     modality: str | None,
-) -> dict:
+) -> dict[str, Any]:
     return describe_path(path, modality=modality)
 
 
-def _base_container_row(catalog_row: dict, path: Path) -> dict:
+def _base_container_row(
+    catalog_row: dict[str, Any],
+    path: Path,
+) -> dict[str, Any]:
     return {
         "dataset": catalog_row.get("intermediate_hash", path.parent.name),
         "module": catalog_row.get("module", ""),
@@ -416,17 +421,17 @@ def _base_container_row(catalog_row: dict, path: Path) -> dict:
     }
 
 
-def _mudata_row(catalog_row: dict, path: Path, description: dict) -> dict:
+def _mudata_row(
+    catalog_row: dict[str, Any],
+    path: Path,
+    description: dict[str, Any],
+) -> dict[str, Any]:
     quantification = description["quantification"]
     modality_quantification = [
         value["quantification"] for value in description["modalities"].values()
     ]
     software_names = sorted(
-        {
-            value["software_name"]
-            for value in modality_quantification
-            if value.get("software_name")
-        }
+        {value["software_name"] for value in modality_quantification if value.get("software_name")}
     )
     software_versions = sorted(
         {
@@ -447,10 +452,10 @@ def _mudata_row(catalog_row: dict, path: Path, description: dict) -> dict:
 
 
 def _level_row(
-    catalog_row: dict,
+    catalog_row: dict[str, Any],
     path: Path,
-    description: dict,
-) -> dict:
+    description: dict[str, Any],
+) -> dict[str, Any]:
     quantification = description["quantification"]
     return {
         **_base_container_row(catalog_row, path),

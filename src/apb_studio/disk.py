@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import stat
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -33,7 +33,7 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 
 @contextmanager
-def interprocess_file_lock(path: Path) -> Iterator[None]:
+def interprocess_file_lock(path: Path) -> Generator[None]:
     """Hold an advisory, process-wide exclusive lock on a stable lock file."""
     lock_path = path.expanduser().resolve()
     lock_path.parent.mkdir(parents=True, exist_ok=True)

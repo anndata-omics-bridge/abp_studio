@@ -1,8 +1,10 @@
 """Tests for execution.py (scope×stage → Snakemake job / Clean) and the jobrunner."""
 
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, Literal, TextIO
 
 import pytest
 
@@ -18,7 +20,7 @@ from apb_studio.execution import (
     snakemake_argv,
 )
 from apb_studio.fixture_inventory import load_fixture_inventory
-from apb_studio.jobrunner import inspect_job, make_run_key, start_job, terminate_job
+from apb_studio.jobrunner import Job, Process, inspect_job, make_run_key, start_job, terminate_job
 from apb_studio.pipeline import (
     CleanGuardError,
     Target,
@@ -29,7 +31,47 @@ from apb_studio.pipeline import (
 )
 
 
-def _targets(out="/out"):
+class _FakeProcess:
+    pid = 1
+
+    def poll(self) -> int | None:
+        return 0
+
+    def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
+        return None
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+
+def _fake_job(command: Sequence[str] = ()) -> Job:
+    return Job(tuple(command), _FakeProcess(), Path("/tmp/test.log"))
+
+
+class _CapturingPopen:
+    def __init__(self) -> None:
+        self.environment: Mapping[str, str] = {}
+
+    def __call__(  # noqa: PLR0913 - mirrors the injected subprocess factory
+        self,
+        command: list[str],
+        *,
+        stdout: TextIO,
+        stderr: int,
+        text: Literal[True],
+        cwd: str | None,
+        env: Mapping[str, str],
+        creationflags: int = 0,
+        start_new_session: bool = False,
+    ) -> Process:
+        self.environment = env
+        return _FakeProcess()
+
+
+def _targets(out: str = "/out") -> list[Target]:
     return [
         Target(
             "m1",
@@ -47,9 +89,7 @@ def _targets(out="/out"):
             ["apb", "annotate"],
             [],
         ),
-        Target(
-            "m2", "d", "convert", Path(f"{out}/m2/d/ion.h5ad"), ["apb", "convert"], []
-        ),
+        Target("m2", "d", "convert", Path(f"{out}/m2/d/ion.h5ad"), ["apb", "convert"], []),
     ]
 
 
@@ -108,9 +148,7 @@ def test_snakemake_argv_default_goal():
 
 def test_snakemake_argv_is_resilient_keep_going():
     # A corpus is many independent datasets; one failure must not abort the rest.
-    assert "--keep-going" in snakemake_argv(
-        "Snakefile", "run.json", snakemake_exe="snakemake"
-    )
+    assert "--keep-going" in snakemake_argv("Snakefile", "run.json", snakemake_exe="snakemake")
 
 
 def test_snakemake_argv_with_targets_and_dry_run():
@@ -128,21 +166,25 @@ def test_selected_outputs_filters_by_scope_and_stage():
     targets = _targets()
     assert len(selected_outputs(targets)) == 3
     assert len(selected_outputs(targets, stage="convert")) == 2
-    assert selected_outputs(targets, scope="module", module="m2") == [
-        Path("/out/m2/d/ion.h5ad")
-    ]
+    assert selected_outputs(targets, scope="module", module="m2") == [Path("/out/m2/d/ion.h5ad")]
 
 
 # --- run_pipeline uses an injectable launcher (no real process) -------------------------------
 
 
 def test_run_pipeline_builds_job_via_injected_start():
-    calls = {}
+    calls: dict[str, Any] = {}
+    expected = _fake_job()
 
-    def fake_start(argv, log_file, *, cwd=None):
+    def fake_start(
+        argv: Sequence[str],
+        log_file: Path | str,
+        *,
+        cwd: Path | str | None = None,
+    ) -> Job:
         calls["argv"] = argv
         calls["log_file"] = log_file
-        return "JOB"
+        return expected
 
     job = run_pipeline(
         "Snakefile",
@@ -152,7 +194,7 @@ def test_run_pipeline_builds_job_via_injected_start():
         snakemake_exe="snakemake",
         start=fake_start,
     )
-    assert job == "JOB"
+    assert job is expected
     assert calls["argv"][0] == "snakemake" and "/out/x.h5mu" in calls["argv"]
     assert calls["log_file"] == "/tmp/log"
 
@@ -165,19 +207,29 @@ def test_run_pipeline_refuses_empty_targets():
             "run.json",
             "/tmp/log",
             targets=[],
-            start=lambda *a, **k: "JOB",
+            start=lambda _command, _log_file, *, cwd=None: _fake_job(),
         )
 
 
 def test_run_pipeline_none_targets_means_default_goal():
-    calls = {}
+    calls: dict[str, Any] = {}
+
+    def fake_start(
+        command: Sequence[str],
+        _log_file: Path | str,
+        *,
+        cwd: Path | str | None = None,
+    ) -> Job:
+        calls["argv"] = list(command)
+        return _fake_job(command)
+
     run_pipeline(
         "Snakefile",
         "run.json",
         "/tmp/log",
         targets=None,
         snakemake_exe="snakemake",
-        start=lambda argv, log, **k: calls.setdefault("argv", argv),
+        start=fake_start,
     )
     # No target paths appended → Snakemake builds its default goal (argv ends at the flags).
     assert calls["argv"][-1] == "--keep-going"  # no trailing target paths
@@ -200,29 +252,31 @@ def test_launch_corpus_keeps_existing_targets_for_snakemake_staleness(
 
     monkeypatch.setattr(execution, "_JOBS", {})
     monkeypatch.setattr(execution, "_RUNS", {})
-    monkeypatch.setattr(
-        execution, "prepare_run", lambda **_kwargs: (snapshot, run_path, selected)
-    )
+    monkeypatch.setattr(execution, "prepare_run", lambda **_kwargs: (snapshot, run_path, selected))
 
-    def fake_run_pipeline(*args, **kwargs):
+    def fake_run_pipeline(*args: object, **kwargs: object) -> Job:
         captured["args"] = args
         captured.update(kwargs)
-        return object()
+        return _fake_job()
 
     monkeypatch.setattr(execution, "run_pipeline", fake_run_pipeline)
 
     job_id = execution.launch_corpus(settings_path=settings_path)
 
     assert job_id
-    assert target.output in captured["targets"]
-    assert captured["args"][1] == run_path
+    captured_targets = captured["targets"]
+    captured_args = captured["args"]
+    assert isinstance(captured_targets, list)
+    assert isinstance(captured_args, tuple)
+    assert target.output in captured_targets
+    assert captured_args[1] == run_path
     assert execution._RUNS[job_id] == run_path
 
 
 # --- clean_selection deletes outputs, never inputs --------------------------------------------
 
 
-def test_clean_selection_deletes_selected_outputs(tmp_path):
+def test_clean_selection_deletes_selected_outputs(tmp_path: Path) -> None:
     out = tmp_path / "out"
     targets = _targets(out=str(out))
     for t in targets:
@@ -243,16 +297,14 @@ def test_clean_selection_refuses_input_root():
 # --- clean_targets: the row-set primitive the kanban baskets use ------------------------------
 
 
-def test_clean_targets_deletes_only_the_given_rows(tmp_path):
+def test_clean_targets_deletes_only_the_given_rows(tmp_path: Path) -> None:
     # Basket Clean = clean the selected rows' artifact at that basket's stage (via targets_for).
     out = tmp_path / "out"
     targets = _targets(out=str(out))
     for t in targets:
         t.output.parent.mkdir(parents=True, exist_ok=True)
         t.output.touch()
-    selected = targets_for(
-        targets, {("m1", "d")}, stage="convert"
-    )  # one row, one stage
+    selected = targets_for(targets, {("m1", "d")}, stage="convert")  # one row, one stage
     deleted = clean_targets(selected, input_root=str(tmp_path / "in"))
     assert deleted == [out / "m1/d/mudata.h5mu"]
     assert not (out / "m1/d/mudata.h5mu").exists()
@@ -266,7 +318,7 @@ def test_clean_targets_refuses_input_root():
         clean_targets(bad, input_root="/in")
 
 
-def test_clean_targets_removes_sidecar_log_and_failure_marker(tmp_path):
+def test_clean_targets_removes_sidecar_log_and_failure_marker(tmp_path: Path) -> None:
     # Rule diagnostics must go with a cleaned artifact so its next state is pending.
     out = tmp_path / "out"
     targets = _targets(out=str(out))
@@ -281,7 +333,7 @@ def test_clean_targets_removes_sidecar_log_and_failure_marker(tmp_path):
     assert not Path(f"{conv.output}.failed").exists()
 
 
-def test_clean_cascade_removes_stray_downstream_artifact(tmp_path):
+def test_clean_cascade_removes_stray_downstream_artifact(tmp_path: Path) -> None:
     # Holey on-disk state: convert + fasta present, annotate MISSING (partial run / manual copy).
     # The dataset shows in `converted`; a basket Clean must cascade (convert + its descendants) so
     # the stray annotated_fasta.* is swept too — no orphan left behind (§8.3, review Medium #1).
@@ -329,7 +381,7 @@ def test_clean_cascade_removes_stray_downstream_artifact(tmp_path):
     assert not any(t.output.exists() for t in targets)  # nothing orphaned
 
 
-def test_clean_selection_prunes_provenance(tmp_path):
+def test_clean_selection_prunes_provenance(tmp_path: Path) -> None:
     out = tmp_path / "out"
     targets = _targets(out=str(out))
     for t in targets:
@@ -339,16 +391,14 @@ def test_clean_selection_prunes_provenance(tmp_path):
     provenance.write_for_target(conv, timestamp="t")
     sidecar = provenance.sidecar_path(conv.output)
     assert sidecar.exists()
-    clean_selection(
-        targets, input_root=str(tmp_path / "in"), scope="module", module="m1"
-    )
+    clean_selection(targets, input_root=str(tmp_path / "in"), scope="module", module="m1")
     assert not sidecar.exists()
 
 
 # --- jobrunner end-to-end on a tiny real subprocess -------------------------------------------
 
 
-def test_jobrunner_runs_and_captures_output(tmp_path):
+def test_jobrunner_runs_and_captures_output(tmp_path: Path) -> None:
     log = tmp_path / "console.log"
     job = start_job(["sh", "-c", "echo hello-jobrunner"], log)
     job.process.wait(timeout=10)
@@ -358,39 +408,25 @@ def test_jobrunner_runs_and_captures_output(tmp_path):
     assert terminate_job(job) is False  # already finished
 
 
-def test_jobrunner_unbuffers_python_output(tmp_path):
-    captured = {}
+def test_jobrunner_unbuffers_python_output(tmp_path: Path) -> None:
+    popen = _CapturingPopen()
 
-    class FakeProcess:
-        pass
+    start_job(["python", "script.py"], tmp_path / "console.log", popen=popen)
 
-    def fake_popen(command, **kwargs):
-        captured.update(kwargs)
-        return FakeProcess()
-
-    start_job(["python", "script.py"], tmp_path / "console.log", popen=fake_popen)
-
-    assert captured["env"]["PYTHONUNBUFFERED"] == "1"
+    assert popen.environment["PYTHONUNBUFFERED"] == "1"
 
 
-def test_jobrunner_preserves_explicit_unbuffered_setting(tmp_path):
-    captured = {}
-
-    class FakeProcess:
-        pass
-
-    def fake_popen(command, **kwargs):
-        captured.update(kwargs)
-        return FakeProcess()
+def test_jobrunner_preserves_explicit_unbuffered_setting(tmp_path: Path) -> None:
+    popen = _CapturingPopen()
 
     start_job(
         ["python", "script.py"],
         tmp_path / "console.log",
         env={"PYTHONUNBUFFERED": "0"},
-        popen=fake_popen,
+        popen=popen,
     )
 
-    assert captured["env"]["PYTHONUNBUFFERED"] == "0"
+    assert popen.environment["PYTHONUNBUFFERED"] == "0"
 
 
 def test_make_run_key_changes_with_inputs():

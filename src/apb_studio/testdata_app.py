@@ -1,15 +1,14 @@
 """Plotly Dash browser for cataloging and downloading ProteoBench test data."""
 
 from pathlib import Path
+from typing import Any
 
 import dash_ag_grid as dag
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
 from pydantic import ValidationError
 
-from apb_studio import module_resources
-from apb_studio import settings
-from apb_studio import testdata
+from apb_studio import module_resources, settings, testdata
 from apb_studio.config_panel import (
     configuration_panel,
     register_configuration_callbacks,
@@ -173,9 +172,9 @@ def data_table(
 
 def _selected_container_row(
     active_tab: str,
-    selections: dict[str, list[dict] | None],
+    selections: dict[str, list[dict[str, Any]] | None],
     triggered_id: str | None,
-) -> dict | None:
+) -> dict[str, Any] | None:
     """Return only the selected row belonging to the active container view."""
     table_id = CONTAINER_TABLE_IDS.get(active_tab)
     if triggered_id in CONTAINER_TABLE_IDS.values():
@@ -521,7 +520,10 @@ def detail_tabs() -> dcc.Tabs:
     )
 
 
-def create_app(*, settings_path: Path | None = None) -> Dash:
+def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition root
+    *,
+    settings_path: Path | None = None,
+) -> Dash:
     """Create the ProteoBench test-data application."""
     active_settings = settings.load_settings(settings_path)
     active_paths = testdata.TestDataPaths(data_dir=active_settings.test_data_root)
@@ -619,7 +621,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         State("job-id", "data"),
         prevent_initial_call=True,
     )
-    def run_action(
+    def _run_action(
         _catalog: int | None,
         _select: int | None,
         _download: int | None,
@@ -629,7 +631,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         _convert: int | None,
         strategy: str,
         module: str | None,
-        selected_fixture: dict | None,
+        selected_fixture: dict[str, Any] | None,
         convert_levels: list[str] | None,
         data_root: str,
         active_job_id: str | None,
@@ -637,8 +639,11 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         active_status = testdata.job_status(active_job_id)
         if active_status is not None and active_status.running:
             raise PreventUpdate
-        action = ctx.triggered_id.removesuffix("-button")
-        paths = testdata.TestDataPaths(data_dir=data_root)
+        triggered_id = ctx.triggered_id
+        if not isinstance(triggered_id, str):
+            raise PreventUpdate
+        action = triggered_id.removesuffix("-button")
+        paths = testdata.TestDataPaths(data_dir=Path(data_root))
         try:
             if action == "convert":
                 if not selected_fixture or not convert_levels:
@@ -653,7 +658,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Input("job-id", "data"),
         prevent_initial_call=True,
     )
-    def open_log_for_new_job(job_id: str | None) -> bool:
+    def _open_log_for_new_job(job_id: str | None) -> bool:
         """Reveal command output whenever a new background job starts."""
         return bool(job_id)
 
@@ -666,7 +671,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         State("job-id", "data"),
         prevent_initial_call=True,
     )
-    def apply_storage_folder(
+    def _apply_storage_folder(
         _clicks: int,
         folder: str | None,
         job_id: str | None,
@@ -680,7 +685,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
                 {"color": "#b00020", "fontSize": "11px"},
             )
         try:
-            paths = testdata.TestDataPaths(data_dir=folder or "")
+            paths = testdata.TestDataPaths(data_dir=Path(folder or ""))
             paths.create()
             settings.update_settings(
                 test_data_root=paths.data_dir,
@@ -710,9 +715,9 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Output("storage-summary", "children"),
         Input("storage-root", "data"),
     )
-    def show_storage_paths(data_root: str) -> tuple[str, str]:
+    def _show_storage_paths(data_root: str) -> tuple[str, str]:
         """Show the active root and every path derived from it."""
-        paths = testdata.TestDataPaths(data_dir=data_root)
+        paths = testdata.TestDataPaths(data_dir=Path(data_root))
         return str(paths.data_dir), testdata.storage_summary(paths)
 
     @app.callback(
@@ -728,21 +733,21 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Input("storage-root", "data"),
         State("job-id", "data"),
     )
-    def refresh(
+    def _refresh(
         _tick: int,
         data_root: str,
         job_id: str | None,
     ) -> tuple[
-        list[dict],
-        list[dict],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
         str,
         str,
         str,
         dict[str, str],
-        list[dict],
-        list[dict],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
     ]:
-        paths = testdata.TestDataPaths(data_dir=data_root)
+        paths = testdata.TestDataPaths(data_dir=Path(data_root))
         catalog = testdata.catalog_rows(paths)
         modules = sorted({row["module"] for row in catalog})
         selection_count = len(testdata.read_rows(paths.selection_csv))
@@ -770,7 +775,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Input("resource-module", "value"),
         Input("storage-root", "data"),
     )
-    def show_module_resource(
+    def _show_module_resource(
         module: str | None,
         data_root: str,
     ) -> str:
@@ -791,7 +796,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         State("storage-root", "data"),
         prevent_initial_call=True,
     )
-    def save_module_resource(
+    def _save_module_resource(
         _clicks: int,
         module: str | None,
         fasta_path: str | None,
@@ -817,16 +822,14 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Output("convert-hint", "children"),
         Input("selected-fixture", "data"),
     )
-    def select_conversion_targets(
-        row: dict | None,
-    ) -> tuple[list[dict], list[str], str]:
+    def _select_conversion_targets(
+        row: dict[str, Any] | None,
+    ) -> tuple[list[dict[str, Any]], list[str], str]:
         """Offer only conversion targets supported by the selected fixture."""
         if not row:
             return [], [], "Select a fixture."
         targets = row.get("conversion_targets", [])
-        options = [
-            option for option in CONVERSION_TARGETS if option["value"] in targets
-        ]
+        options = [option for option in CONVERSION_TARGETS if option["value"] in targets]
         if not options:
             return [], [], row.get("conversion_status", "Not convertible.")
         return options, [options[0]["value"]], row["conversion_status"]
@@ -836,7 +839,10 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Input("selected-fixture", "data"),
         Input("convert-level", "value"),
     )
-    def toggle_convert_button(row: dict | None, levels: list[str] | None) -> bool:
+    def _toggle_convert_button(
+        row: dict[str, Any] | None,
+        levels: list[str] | None,
+    ) -> bool:
         """Disable conversion until a fixture and at least one level are selected."""
         return not row or not levels
 
@@ -851,7 +857,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Input("storage-root", "data"),
         State("job-id", "data"),
     )
-    def refresh_containers(
+    def _refresh_containers(
         _tick: int,
         data_root: str,
         job_id: str | None,
@@ -859,8 +865,15 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         """Refresh converted rows without reading a container being written."""
         status = testdata.job_status(job_id)
         if status is not None and status.running:
-            return (no_update,) * 6
-        paths = testdata.TestDataPaths(data_dir=data_root)
+            return (
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+                no_update,
+            )
+        paths = testdata.TestDataPaths(data_dir=Path(data_root))
         tables = testdata.container_rows(paths)
         return (
             tables["mudata"],
@@ -882,14 +895,14 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Input(CONTAINER_TABLE_IDS["protein"], "selectedRows"),
         Input("storage-root", "data"),
     )
-    def show_container_summary(
+    def _show_container_summary(
         active_tab: str,
-        mudata_selected: list[dict] | None,
-        ion_selected: list[dict] | None,
-        fragment_selected: list[dict] | None,
-        peptidoform_selected: list[dict] | None,
-        peptide_selected: list[dict] | None,
-        protein_selected: list[dict] | None,
+        mudata_selected: list[dict[str, Any]] | None,
+        ion_selected: list[dict[str, Any]] | None,
+        fragment_selected: list[dict[str, Any]] | None,
+        peptidoform_selected: list[dict[str, Any]] | None,
+        peptide_selected: list[dict[str, Any]] | None,
+        protein_selected: list[dict[str, Any]] | None,
         _data_root: str,
     ) -> str:
         """Show the exact standalone, MuData, or MuData-modality target selected."""
@@ -917,7 +930,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         State("storage-root", "data"),
         prevent_initial_call=True,
     )
-    def show_completed_job(
+    def _show_completed_job(
         _tick: int,
         job_id: str | None,
         finished_job_id: str | None,
@@ -941,9 +954,7 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
                 )
             return "resources", job_id
         destination = (
-            "anndata"
-            if len(status.command) > 1 and status.command[1] == "convert"
-            else "data"
+            "anndata" if len(status.command) > 1 and status.command[1] == "convert" else "data"
         )
         return destination, job_id
 
@@ -955,14 +966,14 @@ def create_app(*, settings_path: Path | None = None) -> Dash:
         Input("catalog-table", "selectedRows"),
         Input("storage-root", "data"),
     )
-    def show_details(
-        catalog_selected: list[dict] | None,
+    def _show_details(
+        catalog_selected: list[dict[str, Any]] | None,
         data_root: str,
-    ) -> tuple[str, str, str, dict | None]:
+    ) -> tuple[str, str, str, dict[str, Any] | None]:
         if ctx.triggered_id == "storage-root":
             return "Select a row.", "", "", None
         row = catalog_selected[0] if catalog_selected else None
-        paths = testdata.TestDataPaths(data_dir=data_root)
+        paths = testdata.TestDataPaths(data_dir=Path(data_root))
         return (*testdata.row_details(paths, row), row)
 
     register_configuration_callbacks(app)

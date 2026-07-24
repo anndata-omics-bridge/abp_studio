@@ -1,21 +1,22 @@
 import json
 import os
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import anndata as ad
 import mudata
 import numpy as np
 import pandas as pd
 import pytest
+from anndata_proteomics.readers.summary import store_quantification_summary
 from dash import dcc
 from dash.exceptions import PreventUpdate
 from mudata import MuData
 from pydantic import ValidationError
 
-from apb_studio import settings
-from apb_studio import testdata
-from apb_studio import testdata_app
+from apb_studio import settings, testdata, testdata_app
 from apb_studio.jobrunner import Job, JobStatus
 from apb_studio.testdata_app import (
     CONTAINER_TABLE_IDS,
@@ -24,14 +25,29 @@ from apb_studio.testdata_app import (
     data_panel,
     data_table,
 )
-from anndata_proteomics.readers.summary import store_quantification_summary
 
 
 def _paths(root: Path) -> testdata.TestDataPaths:
     return testdata.TestDataPaths(data_dir=root)
 
 
-def _row() -> dict:
+class _RunningProcess:
+    pid = 1
+
+    def poll(self) -> int | None:
+        return None
+
+    def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
+        return None
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+
+def _row() -> dict[str, Any]:
     return {
         "module": "dia_aif",
         "repo_name": "Results_quant_ion_DIA_AIF",
@@ -51,9 +67,7 @@ def _adata(level: str, prefix: str = "", n_features: int = 2) -> ad.AnnData:
     obj = ad.AnnData(
         X=values.copy(),
         obs=pd.DataFrame(index=["run1", "run2"]),
-        var=pd.DataFrame(
-            index=[f"{prefix}feature{index}" for index in range(n_features)]
-        ),
+        var=pd.DataFrame(index=[f"{prefix}feature{index}" for index in range(n_features)]),
         layers={"intensity": values.copy()},
     )
     obj.uns["anndata_proteomics"] = {
@@ -132,9 +146,7 @@ def test_row_details_reads_submission_json_and_parameters(
 def test_testdata_command_uses_explicit_artifact_paths(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
 
-    command = testdata.testdata_command(
-        "select", paths, strategy="all", module="dia_aif"
-    )
+    command = testdata.testdata_command("select", paths, strategy="all", module="dia_aif")
 
     assert command[1] == "select"
     assert command[-4:] == ["--strategy", "all", "--module", "dia_aif"]
@@ -196,18 +208,24 @@ def test_launch_convert_starts_each_checked_level(
     directory.mkdir(parents=True)
     (directory / "input_file.tsv").write_text("x\n")
     (directory / "param_0.txt").write_text("params\n")
-    commands = []
+    commands: list[tuple[list[str], Path | str | None]] = []
 
-    def fake_start(command, _log_file, *, cwd):
-        commands.append((command, cwd))
-        return object()
+    def fake_start(
+        command: Sequence[str],
+        log_file: Path | str,
+        *,
+        cwd: Path | str | None = None,
+    ) -> Job:
+        rendered = [str(part) for part in command]
+        commands.append((rendered, cwd))
+        return Job(tuple(rendered), _RunningProcess(), Path(log_file))
 
     monkeypatch.setattr(testdata, "start_job", fake_start)
     job_id = testdata.launch_convert(paths, _row(), ["protein", "ion"])
     testdata._JOBS.pop(job_id)
 
     assert [command[0][3] for command in commands] == ["ion", "protein"]
-    assert all(cwd == testdata.APB_ROOT for _, cwd in commands)
+    assert all(cwd is None for _, cwd in commands)
 
 
 def test_reads_and_conversion_reject_a_client_row_absent_from_catalog(
@@ -243,10 +261,14 @@ def test_launch_rejects_overlapping_mutating_jobs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = _paths(tmp_path)
-    process = SimpleNamespace(poll=lambda: None)
 
-    def fake_start(command, log_file, *, cwd):
-        return Job(tuple(command), process, Path(log_file))
+    def fake_start(
+        command: Sequence[str],
+        log_file: Path | str,
+        *,
+        cwd: Path | str | None = None,
+    ) -> Job:
+        return Job(tuple(command), _RunningProcess(), Path(log_file))
 
     monkeypatch.setattr(testdata, "_JOBS", {})
     monkeypatch.setattr(testdata, "start_job", fake_start)
@@ -318,7 +340,7 @@ def test_storage_summary_displays_all_derived_paths(tmp_path: Path) -> None:
 
 def test_test_data_paths_require_absolute_dedicated_root() -> None:
     with pytest.raises(ValidationError, match="absolute path"):
-        testdata.TestDataPaths(data_dir="relative/folder")
+        testdata.TestDataPaths.model_validate({"data_dir": "relative/folder"})
 
 
 def test_dash_app_registers_callbacks() -> None:
@@ -346,13 +368,11 @@ def test_run_action_preserves_tracked_job_while_it_is_running(
         log_file=tmp_path / "catalog.log",
         log_text="",
     )
-    monkeypatch.setattr(
-        testdata_app, "ctx", SimpleNamespace(triggered_id="clean-button")
-    )
+    monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="clean-button"))
     monkeypatch.setattr(testdata, "job_status", lambda _job_id: running)
     launched = False
 
-    def unexpected_launch(*_args, **_kwargs):
+    def unexpected_launch(*_args: object, **_kwargs: object) -> None:
         nonlocal launched
         launched = True
 
@@ -395,21 +415,21 @@ def test_dash_app_starts_from_shared_disk_setting(tmp_path: Path) -> None:
 
     app = create_app(settings_path=settings_file)
     stores = {
-        component.id: component
+        _props(component)["id"]: component
         for component in _components(app.layout)
         if isinstance(component, dcc.Store)
     }
 
-    assert stores["storage-root"].data == str(fixture_root.resolve())
-    assert "storage_type" not in stores["storage-root"].to_plotly_json()["props"]
+    assert _props(stores["storage-root"])["data"] == str(fixture_root.resolve())
+    assert "storage_type" not in _props(stores["storage-root"])
 
 
 def test_data_panel_uses_one_fixture_table_and_download_convert_subtabs() -> None:
     components = list(_components(data_panel()))
     by_id = {
-        component.id: component
+        _props(component)["id"]: component
         for component in components
-        if isinstance(getattr(component, "id", None), str)
+        if isinstance(_props(component).get("id"), str)
     }
 
     assert "catalog-table" in by_id
@@ -419,21 +439,22 @@ def test_data_panel_uses_one_fixture_table_and_download_convert_subtabs() -> Non
     assert "annotations-button" in by_id
     assert "job-log-details" in by_id
     assert isinstance(by_id["convert-level"], dcc.Checklist)
-    fields = [column["field"] for column in by_id["catalog-table"].columnDefs]
+    fields = [column["field"] for column in _props(by_id["catalog-table"])["columnDefs"]]
     assert fields[-2:] == ["download_status", "conversion_status"]
 
 
 def test_data_table_uses_continuous_mouse_wheel_scrolling() -> None:
     table = data_table("test-table")
 
-    assert table.dashGridOptions["pagination"] is False
-    assert table.dashGridOptions["alwaysShowVerticalScroll"] is True
+    options = _props(table)["dashGridOptions"]
+    assert options["pagination"] is False
+    assert options["alwaysShowVerticalScroll"] is True
 
 
 def test_active_anndata_tab_does_not_reuse_another_tabs_selection() -> None:
     mudata_row = {"path": "result.h5mu", "modality": None}
     ion_row = {"path": "result.h5mu", "modality": "ion"}
-    selections = {
+    selections: dict[str, list[dict[str, Any]] | None] = {
         CONTAINER_TABLE_IDS["mudata"]: [mudata_row],
         CONTAINER_TABLE_IDS["ion"]: [ion_row],
     }
@@ -511,7 +532,7 @@ def test_container_rows_cache_invalidates_on_mtime_change(tmp_path: Path) -> Non
     assert second["ion"][0]["n_var"] == 3
 
 
-def _components(component):
+def _components(component: Any) -> Iterator[Any]:
     """Yield a Dash component tree depth-first."""
     yield component
     children = getattr(component, "children", None)
@@ -521,3 +542,8 @@ def _components(component):
     for child in items:
         if hasattr(child, "to_plotly_json"):
             yield from _components(child)
+
+
+def _props(component: Any) -> dict[str, Any]:
+    """Return one Dash component's JSON props with their runtime mapping type."""
+    return cast(dict[str, Any], component.to_plotly_json()["props"])

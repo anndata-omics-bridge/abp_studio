@@ -78,19 +78,26 @@ workspace keeps MuData and standalone `.h5ad` outputs distinct and displays APB'
 ## Quick start
 
 ```bash
-uv venv && source .venv/bin/activate
-uv pip install -e .
-uv pip install -e ../apb
+uv sync --frozen
 
 make fixture-manager   # Fixture Manager, default Dash port 8050
 make corpus-runner     # Corpus Runner, default Dash port 8051
 ```
 
 Use `make corpus-runner APP_PORT=8052` if port 8051 is occupied. The preferred console commands
-are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`. `make testdata-app`, `make app`,
-`apb-studio-testdata`, and `apb-studio` remain compatibility aliases.
+are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
+`apb-studio-testdata` and `apb-studio` remain compatibility aliases.
 
-Run the test suite with `make test`.
+For development, install all locked checks and run the local CI stages:
+
+```bash
+uv sync --frozen --extra dev --group docs
+uv run pre-commit run --hook-stage pre-commit --all-files
+uv run pre-commit run --hook-stage pre-push --all-files
+```
+
+See [docs/development.md](docs/development.md) for the security audit and
+individual checks.
 
 ## Historical design
 

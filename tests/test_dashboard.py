@@ -2,6 +2,9 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
+
+import pytest
 
 from apb_studio import dashboard
 from apb_studio.registry import load_registry
@@ -19,7 +22,7 @@ def _selection() -> dict[str, str]:
     }
 
 
-def _row(state: str = "failed") -> dict:
+def _row(state: str = "failed") -> dict[str, Any]:
     return {
         "module": "module-a",
         "dataset": "dataset-a",
@@ -57,8 +60,7 @@ def test_columns_are_one_compact_branch_table() -> None:
     assert "FAILED" in failed_style["condition"]
     assert failed_style["style"]["color"] == "#b42318"
     styled_states = {
-        condition["condition"]
-        for condition in columns[-1]["cellStyle"]["styleConditions"]
+        condition["condition"] for condition in columns[-1]["cellStyle"]["styleConditions"]
     }
     assert any("UNSUPPORTED" in condition for condition in styled_states)
     assert any("BLOCKED" in condition for condition in styled_states)
@@ -79,10 +81,7 @@ def test_cell_click_keeps_identity_but_discards_client_paths() -> None:
 
     assert dashboard._selection_from_click(cell, load_registry(), rows) == _selection()
     assert (
-        dashboard._selection_from_click(
-            {**cell, "colId": "dataset"}, load_registry(), rows
-        )
-        is None
+        dashboard._selection_from_click({**cell, "colId": "dataset"}, load_registry(), rows) is None
     )
 
 
@@ -112,12 +111,15 @@ def test_failed_log_download_must_resolve_from_authoritative_row(
     assert dashboard._downloadable_log(rows, forged) is None
 
 
-def test_completed_cell_describes_exact_artifact(monkeypatch, tmp_path: Path) -> None:
+def test_completed_cell_describes_exact_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     artifact = tmp_path / "ion.h5ad"
     artifact.touch()
     described: list[Path] = []
 
-    def fake_describe(path: Path) -> dict:
+    def fake_describe(path: Path) -> dict[str, Any]:
         described.append(path)
         return {"quantification": {"n_runs": 4, "n_features": 12}}
 
@@ -168,14 +170,14 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
     assert layout_ids.index("corpus-grid") < layout_ids.index("stage-detail-panel")
     assert layout_ids.index("stage-detail-panel") < layout_ids.index("global-log-panel")
     grid = next(
-        child
-        for child in app.layout.children
-        if getattr(child, "id", None) == "corpus-grid"
+        child for child in app.layout.children if getattr(child, "id", None) == "corpus-grid"
     )
     assert grid.getRowId == "params.data._row_id"
 
 
-def test_documented_cell_event_renders_clicked_stage(monkeypatch) -> None:
+def test_documented_cell_event_renders_clicked_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app = dashboard.create_app()
     detail_callback = next(
         callback
@@ -208,7 +210,9 @@ def test_documented_cell_event_renders_clicked_stage(monkeypatch) -> None:
     assert result == ("completed", _selection(), True)
 
 
-def test_poll_refreshes_the_stored_stage_selection(monkeypatch) -> None:
+def test_poll_refreshes_the_stored_stage_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app = dashboard.create_app()
     detail_callback = next(
         callback
@@ -217,7 +221,10 @@ def test_poll_refreshes_the_stored_stage_selection(monkeypatch) -> None:
     )["callback"].__wrapped__
     state = {"value": "pending"}
 
-    def fake_rows(_job_id, **_kwargs):
+    def fake_rows(
+        _job_id: object,
+        **_kwargs: object,
+    ) -> tuple[list[dict[str, Any]], object, None]:
         return (
             [_row(state["value"])],
             object(),
@@ -241,12 +248,12 @@ def test_poll_refreshes_the_stored_stage_selection(monkeypatch) -> None:
     assert second[1] == _selection()
 
 
-def test_refresh_reconnects_browser_to_server_active_job(monkeypatch) -> None:
+def test_refresh_reconnects_browser_to_server_active_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app = dashboard.create_app()
     refresh_callback = next(
-        callback
-        for output, callback in app.callback_map.items()
-        if "corpus-grid.rowData" in output
+        callback for output, callback in app.callback_map.items() if "corpus-grid.rowData" in output
     )["callback"].__wrapped__
     seen: list[str | None] = []
     snapshot = SimpleNamespace(fixtures=(object(), object()))
@@ -284,7 +291,7 @@ def test_refresh_reconnects_browser_to_server_active_job(monkeypatch) -> None:
 
 
 def test_grid_revision_clears_a_selection_missing_after_root_reload(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app = dashboard.create_app()
     detail_callback = next(

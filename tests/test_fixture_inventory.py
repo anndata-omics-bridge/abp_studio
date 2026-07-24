@@ -11,9 +11,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from apb_studio import fixture_inventory
-from apb_studio import module_resources
-from apb_studio import settings
+from apb_studio import fixture_inventory, module_resources, settings
 
 
 def _update_setting(path: str, field: str, value: str) -> None:
@@ -51,12 +49,7 @@ def test_inventory_retains_every_catalog_fixture_and_raw_software(
     ]
     _write_catalog(tmp_path, rows)
     for row in rows:
-        directory = (
-            tmp_path
-            / "json_dir"
-            / str(row["repo_name"])
-            / str(row["intermediate_hash"])
-        )
+        directory = tmp_path / "json_dir" / str(row["repo_name"]) / str(row["intermediate_hash"])
         directory.mkdir(parents=True)
         (directory / "input_file.tsv").write_text("Run\n")
         (directory / "param_0.txt").write_text("params\n")
@@ -109,9 +102,7 @@ def test_inventory_rejects_unsafe_identity_before_filesystem_lookup(
 def test_inventory_requires_exactly_one_input_and_parameter(tmp_path: Path) -> None:
     row = _catalog_row()
     _write_catalog(tmp_path, [row])
-    directory = (
-        tmp_path / "json_dir" / str(row["repo_name"]) / str(row["intermediate_hash"])
-    )
+    directory = tmp_path / "json_dir" / str(row["repo_name"]) / str(row["intermediate_hash"])
     directory.mkdir(parents=True)
     (directory / "input_file.tsv").write_text("Run\n")
     (directory / "input_file.csv").write_text("Run\n")
