@@ -6,30 +6,24 @@ import json
 import shutil
 import threading
 import uuid
-from collections.abc import Sequence
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from anndata_proteomics.readers.summary import describe_path
 
-from apb_studio import capabilities, fixture_inventory
+from apb_studio import fixture_inventory
 from apb_studio.jobrunner import (
     Job,
     JobStatus,
     inspect_job,
     start_job,
-    terminate_job,
 )
 from apb_studio.settings import DEFAULT_TEST_DATA_ROOT
 
 DEFAULT_TEST_DATA_DIR = DEFAULT_TEST_DATA_ROOT
 
-_JOBS: dict[str, Job | tuple[Job, ...]] = {}
+_JOBS: dict[str, Job] = {}
 _JOBS_LOCK = threading.RLock()
-LEVELS = ("ion", "fragment", "peptidoform", "peptide", "protein")
-ALL_LEVELS = "all"
 
 
 class JobAlreadyRunningError(RuntimeError):
@@ -67,19 +61,9 @@ def read_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def catalog_rows(paths: TestDataPaths) -> list[dict[str, Any]]:
-    """Return all fixtures with live download and conversion status."""
-    rows = []
+    """Return all fixtures with live local download status."""
     inventory = fixture_inventory.load_fixture_inventory(paths)
-    for fixture in inventory.fixtures:
-        row = fixture.as_catalog_row()
-        targets = _fixture_conversion_targets(fixture)
-        row["conversion_targets"] = list(targets)
-        row["conversion_status"] = _conversion_status(
-            targets,
-            fixture=fixture,
-        )
-        rows.append(row)
-    return rows
+    return [fixture.as_catalog_row() for fixture in inventory.fixtures]
 
 
 def selection_rows(paths: TestDataPaths) -> list[dict[str, Any]]:
@@ -95,62 +79,10 @@ def selection_rows(paths: TestDataPaths) -> list[dict[str, Any]]:
     ]
 
 
-def conversion_targets(
-    paths: TestDataPaths,
-    row: dict[str, Any],
-) -> tuple[str, ...]:
-    """Return conversion choices supported by one downloaded fixture."""
-    return _fixture_conversion_targets(_fixture_for_row(paths, row))
-
-
-def _fixture_conversion_targets(
-    fixture: fixture_inventory.FixtureRecord,
-) -> tuple[str, ...]:
-    """Resolve UI conversion choices from one complete local fixture."""
-    if not fixture.complete:
-        return ()
-    assert fixture.input_path is not None
-    assert fixture.parameter_path is not None
-    discovery = capabilities.discover_capabilities(
-        fixture.input_path,
-        fixture.parameter_path,
-        fixture.catalog_software_name,
-    )
-    levels = tuple(level for level in LEVELS if level in discovery.branches)
-    return (ALL_LEVELS, *levels) if levels else ()
-
-
-def _conversion_status(
-    targets: tuple[str, ...],
-    *,
-    fixture: fixture_inventory.FixtureRecord,
-) -> str:
-    """Render compact conversion availability for the unified table."""
-    if targets:
-        return ", ".join("all levels" if target == ALL_LEVELS else target for target in targets)
-    if fixture.complete:
-        assert fixture.input_path is not None
-        assert fixture.parameter_path is not None
-        discovery = capabilities.discover_capabilities(
-            fixture.input_path,
-            fixture.parameter_path,
-            fixture.catalog_software_name,
-        )
-        return discovery.diagnostic or discovery.status.value
-    if fixture.local_state is fixture_inventory.LocalFixtureState.INCOMPLETE:
-        return fixture.diagnostic or "incomplete fixture"
-    return "download first"
-
-
 def dataset_dir(paths: TestDataPaths, row: dict[str, Any]) -> Path:
     """Return the local cache directory for a catalog row."""
     identity = fixture_inventory.fixture_identity(row)
     return fixture_inventory.fixture_directory(paths, identity[1], identity[2])
-
-
-def converted_dir(paths: TestDataPaths, row: dict[str, Any]) -> Path:
-    """Return the directory in which converted artifacts live for one fixture."""
-    return dataset_dir(paths, row)
 
 
 def metadata_path(paths: TestDataPaths, row: dict[str, Any]) -> Path:
@@ -258,44 +190,6 @@ def testdata_command(
     raise ValueError(f"Unknown test-data action: {action}")
 
 
-def convert_command(
-    paths: TestDataPaths,
-    row: dict[str, Any],
-    level: str,
-) -> list[str]:
-    """Build an ``apb convert`` command for one downloaded fixture."""
-    fixture = _fixture_for_row(paths, row)
-    directory = fixture.dataset_dir
-    inputs = fixture.input_files
-    parameters = fixture.parameter_files
-    if len(inputs) != 1:
-        raise ValueError(
-            "Expected exactly one downloaded input_file.* for the selected fixture, "
-            f"got {len(inputs)}"
-        )
-    if len(parameters) != 1:
-        raise ValueError(
-            f"Expected exactly one param_0.* for the selected fixture, got {len(parameters)}"
-        )
-    if level not in {ALL_LEVELS, *LEVELS}:
-        raise ValueError(f"Unknown conversion target: {level}")
-
-    executable = shutil.which("apb") or "apb"
-    command = [executable, "convert", str(inputs[0])]
-    output_name = "mudata" if level == ALL_LEVELS else level
-    if level != ALL_LEVELS:
-        command.append(level)
-    command.extend(
-        [
-            "--params",
-            str(parameters[0]),
-            "--output",
-            str(directory / output_name),
-        ]
-    )
-    return command
-
-
 def launch(
     action: str,
     paths: TestDataPaths,
@@ -315,158 +209,14 @@ def launch(
     return job_id
 
 
-def launch_convert(
-    paths: TestDataPaths,
-    row: dict[str, Any],
-    levels: Sequence[str],
-) -> str:
-    """Launch the selected APB conversions and return one group identifier."""
-    paths.create()
-    job_id = uuid.uuid4().hex
-    fixture = str(row.get("intermediate_hash", "fixture"))[:12]
-    targets = _selected_conversion_targets(levels)
-    commands = tuple(
-        (
-            convert_command(paths, row, level),
-            paths.log_dir / f"convert-{fixture}-{level}.log",
-        )
-        for level in targets
-    )
-    with _JOBS_LOCK:
-        _reject_overlapping_job()
-        started: list[Job] = []
-        try:
-            for command, log_file in commands:
-                started.append(start_job(command, log_file))
-        except Exception:
-            for job in started:
-                terminate_job(job)
-            raise
-        _JOBS[job_id] = tuple(started)
-    return job_id
-
-
 def _reject_overlapping_job() -> None:
     """Reject a new mutation while any registered Fixture Manager job runs."""
     active = next(
-        (job_id for job_id, job in _JOBS.items() if _status_for_registered_job(job).running),
+        (job_id for job_id, job in _JOBS.items() if inspect_job(job).running),
         None,
     )
     if active is not None:
         raise JobAlreadyRunningError(f"Fixture Manager job {active} is already running.")
-
-
-def _selected_conversion_targets(levels: Sequence[str]) -> tuple[str, ...]:
-    """Normalize checkbox values into stable, non-redundant conversion targets."""
-    selected = set(levels)
-    unknown = selected - {ALL_LEVELS, *LEVELS}
-    if unknown:
-        raise ValueError(f"Unknown conversion targets: {sorted(unknown)}")
-    if ALL_LEVELS in selected:
-        return (ALL_LEVELS,)
-    targets = tuple(level for level in LEVELS if level in selected)
-    if not targets:
-        raise ValueError("Select at least one conversion target.")
-    return targets
-
-
-def container_rows(paths: TestDataPaths) -> dict[str, list[dict[str, Any]]]:
-    """Route MuData containers and standalone AnnData files to separate tables."""
-    tables = {"mudata": [], **{level: [] for level in LEVELS}}
-    for catalog_row in catalog_rows(paths):
-        directory = converted_dir(paths, catalog_row)
-        if not directory.exists():
-            continue
-        containers = sorted(directory.glob("*.h5ad")) + sorted(directory.glob("*.h5mu"))
-        for path in containers:
-            description = _description_for(path)
-            if description["container_type"] == "mudata":
-                tables["mudata"].append(_mudata_row(catalog_row, path, description))
-                continue
-            level = description["quantification"].get("level")
-            if level in tables:
-                tables[level].append(_level_row(catalog_row, path, description))
-    return tables
-
-
-def container_summary(path: Path | str, modality: str | None = None) -> str:
-    """Format one cached APB descriptive summary for the detail pane."""
-    container = Path(path)
-    description = _description_for(container, modality=modality)
-    return json.dumps(description, indent=2, sort_keys=True)
-
-
-def _description_for(path: Path, modality: str | None = None) -> dict[str, Any]:
-    resolved = path.expanduser().resolve()
-    return _cached_description(str(resolved), resolved.stat().st_mtime_ns, modality)
-
-
-@lru_cache(maxsize=512)
-def _cached_description(
-    path: str,
-    _mtime_ns: int,
-    modality: str | None,
-) -> dict[str, Any]:
-    return describe_path(path, modality=modality)
-
-
-def _base_container_row(
-    catalog_row: dict[str, Any],
-    path: Path,
-) -> dict[str, Any]:
-    return {
-        "dataset": catalog_row.get("intermediate_hash", path.parent.name),
-        "module": catalog_row.get("module", ""),
-        "path": str(path),
-    }
-
-
-def _mudata_row(
-    catalog_row: dict[str, Any],
-    path: Path,
-    description: dict[str, Any],
-) -> dict[str, Any]:
-    quantification = description["quantification"]
-    modality_quantification = [
-        value["quantification"] for value in description["modalities"].values()
-    ]
-    software_names = sorted(
-        {value["software_name"] for value in modality_quantification if value.get("software_name")}
-    )
-    software_versions = sorted(
-        {
-            value["software_version"]
-            for value in modality_quantification
-            if value.get("software_version")
-        }
-    )
-    return {
-        **_base_container_row(catalog_row, path),
-        "software_name": ", ".join(software_names),
-        "software_version": ", ".join(software_versions),
-        "n_obs": quantification["n_runs"],
-        "n_var": quantification["n_features"],
-        "modalities": ", ".join(quantification["modalities"]),
-        "modality": None,
-    }
-
-
-def _level_row(
-    catalog_row: dict[str, Any],
-    path: Path,
-    description: dict[str, Any],
-) -> dict[str, Any]:
-    quantification = description["quantification"]
-    return {
-        **_base_container_row(catalog_row, path),
-        "software_name": quantification.get("software_name") or "",
-        "software_version": quantification.get("software_version") or "",
-        "n_obs": quantification["n_runs"],
-        "n_var": quantification["n_features"],
-        "layers": ", ".join(quantification["layers"]),
-        "mudata": False,
-        "modality": None,
-    }
 
 
 def job_status(job_id: str | None) -> JobStatus | None:
@@ -475,29 +225,7 @@ def job_status(job_id: str | None) -> JobStatus | None:
         job = _JOBS.get(job_id or "")
     if not job:
         return None
-    return _status_for_registered_job(job)
-
-
-def _status_for_registered_job(job: Job | tuple[Job, ...]) -> JobStatus:
-    """Combine one registered job or conversion group into one status."""
-    if isinstance(job, Job):
-        return inspect_job(job)
-    statuses = [inspect_job(part) for part in job]
-    running = any(status.running for status in statuses)
-    return JobStatus(
-        command=statuses[0].command,
-        returncode=(
-            None
-            if running
-            else next(
-                (status.returncode for status in statuses if not status.success),
-                0,
-            )
-        ),
-        running=running,
-        log_file=statuses[0].log_file,
-        log_text="\n\n".join(status.log_text for status in statuses),
-    )
+    return inspect_job(job)
 
 
 def job_presentation(

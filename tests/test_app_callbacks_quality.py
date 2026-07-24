@@ -42,10 +42,6 @@ def _app_callbacks(tmp_path: Path) -> tuple[Any, dict[str, Any]]:
         "refresh": _callback(app, "catalog-table.rowData"),
         "resource": _callback(app, "resource-fasta.value"),
         "save_resource": _callback(app, "resource-message.children"),
-        "targets": _callback(app, "convert-level.options"),
-        "toggle": _callback(app, "convert-button.disabled"),
-        "containers": _callback(app, "anndata-mudata-table.rowData"),
-        "summary": _callback(app, "anndata-summary.children"),
         "completed": _callback(app, "workspace-tabs.value"),
         "details": _callback(app, "file-info.children"),
     }
@@ -60,10 +56,7 @@ def _run_args(tmp_path: Path) -> list[Any]:
         None,
         None,
         None,
-        None,
         "all",
-        None,
-        None,
         None,
         str(tmp_path),
         None,
@@ -88,22 +81,6 @@ def test_action_callback_dispatch_and_concurrency(
     monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id=None))
     with pytest.raises(PreventUpdate):
         run(*_run_args(tmp_path))
-
-    monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="convert-button"))
-    with pytest.raises(PreventUpdate):
-        run(*_run_args(tmp_path))
-
-    converted: list[tuple[dict[str, Any], list[str]]] = []
-    monkeypatch.setattr(
-        testdata_app.testdata,
-        "launch_convert",
-        lambda _paths, row, levels: converted.append((row, levels)) or "convert-job",
-    )
-    args = _run_args(tmp_path)
-    args[9] = {"module": "dda"}
-    args[10] = ["ion"]
-    assert run(*args) == "convert-job"
-    assert converted == [({"module": "dda"}, ["ion"])]
 
     monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="catalog-button"))
     monkeypatch.setattr(
@@ -158,13 +135,7 @@ def test_catalog_and_resource_callbacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _app, callbacks = _app_callbacks(tmp_path)
-    catalog = [
-        {
-            "module": "dda",
-            "conversion_targets": ["ion"],
-            "conversion_status": "Ready",
-        }
-    ]
+    catalog = [{"module": "dda"}]
     monkeypatch.setattr(testdata_app.testdata, "catalog_rows", lambda _paths: catalog)
     monkeypatch.setattr(testdata_app.testdata, "read_rows", lambda _path: [{}, {}])
     monkeypatch.setattr(testdata_app.testdata, "job_status", lambda _job_id: None)
@@ -219,74 +190,6 @@ def test_catalog_and_resource_callbacks(
     assert save(1, "dda", str(fasta), str(tmp_path))[0] == "Assignment saved."
 
 
-def test_conversion_and_container_callbacks(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _app, callbacks = _app_callbacks(tmp_path)
-    targets = callbacks["targets"]
-    assert targets(None) == ([], [], "Select a fixture.")
-    assert targets({"conversion_targets": [], "conversion_status": "Unavailable"}) == (
-        [],
-        [],
-        "Unavailable",
-    )
-    options, selected, hint = targets({"conversion_targets": ["ion"], "conversion_status": "Ready"})
-    assert selected == ["ion"]
-    assert options[0]["value"] == "ion"
-    assert hint == "Ready"
-    assert callbacks["toggle"](None, ["ion"]) is True
-    assert callbacks["toggle"]({"module": "dda"}, []) is True
-    assert callbacks["toggle"]({"module": "dda"}, ["ion"]) is False
-
-    monkeypatch.setattr(
-        testdata_app.testdata,
-        "job_status",
-        lambda _job_id: _status(tmp_path, ("apb", "convert"), None),
-    )
-    blocked = callbacks["containers"](0, str(tmp_path), "job")
-    assert all(value is no_update for value in blocked)
-    monkeypatch.setattr(testdata_app.testdata, "job_status", lambda _job_id: None)
-    tables = {
-        "mudata": [{"path": "m"}],
-        "ion": [],
-        "fragment": [],
-        "peptidoform": [],
-        "peptide": [],
-        "protein": [],
-    }
-    monkeypatch.setattr(testdata_app.testdata, "container_rows", lambda _paths: tables)
-    assert callbacks["containers"](0, str(tmp_path), None)[0] == [{"path": "m"}]
-
-    summary = callbacks["summary"]
-    monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="storage-root"))
-    assert summary("ion", None, None, None, None, None, None, str(tmp_path)) == (
-        "Select a container."
-    )
-    monkeypatch.setattr(
-        testdata_app,
-        "ctx",
-        SimpleNamespace(triggered_id=testdata_app.CONTAINER_TABLE_IDS["ion"]),
-    )
-    assert summary("ion", None, None, None, None, None, None, str(tmp_path)) == (
-        "Select a container."
-    )
-    monkeypatch.setattr(
-        testdata_app.testdata,
-        "container_summary",
-        lambda path, modality: f"{path}:{modality}",
-    )
-    monkeypatch.setattr(
-        testdata_app,
-        "ctx",
-        SimpleNamespace(triggered_id=testdata_app.CONTAINER_TABLE_IDS["mudata"]),
-    )
-    selected = [{"path": "/tmp/data.h5mu", "modality": "ion"}]
-    assert summary("mudata", selected, None, None, None, None, None, str(tmp_path)) == (
-        "/tmp/data.h5mu:ion"
-    )
-
-
 @pytest.mark.parametrize(
     ("status", "expected"),
     [
@@ -295,7 +198,6 @@ def test_conversion_and_container_callbacks(
         ("failed", ("data", "job")),
         ("annotations", ("resources", "job")),
         ("fasta", ("resources", "job")),
-        ("convert", ("anndata", "job")),
         ("catalog", ("data", "job")),
         ("short", ("data", "job")),
     ],
@@ -344,7 +246,6 @@ def test_detail_callbacks_selection_override_and_main(
         "Select a row.",
         "",
         "",
-        None,
     )
     monkeypatch.setattr(testdata_app, "ctx", SimpleNamespace(triggered_id="catalog-table"))
     monkeypatch.setattr(
@@ -353,22 +254,10 @@ def test_detail_callbacks_selection_override_and_main(
         lambda _paths, row: ("file", "submission", f"params:{bool(row)}"),
     )
     row = {"module": "dda"}
-    assert details([row], str(tmp_path)) == ("file", "submission", "params:True", row)
-    assert details(None, str(tmp_path))[-1] is None
+    assert details([row], str(tmp_path)) == ("file", "submission", "params:True")
+    assert details(None, str(tmp_path)) == ("file", "submission", "params:False")
 
     run_calls: list[dict[str, Any]] = []
     monkeypatch.setattr(testdata_app.app, "run", lambda **kwargs: run_calls.append(kwargs))
     testdata_app.main()
     assert run_calls == [{"debug": True}]
-
-
-def test_selected_container_uses_triggered_table() -> None:
-    selections: dict[str, list[dict[str, Any]] | None] = {
-        testdata_app.CONTAINER_TABLE_IDS["mudata"]: [{"path": "mudata"}],
-        testdata_app.CONTAINER_TABLE_IDS["ion"]: [{"path": "ion"}],
-    }
-    assert testdata_app._selected_container_row(
-        "mudata",
-        selections,
-        testdata_app.CONTAINER_TABLE_IDS["ion"],
-    ) == {"path": "ion"}

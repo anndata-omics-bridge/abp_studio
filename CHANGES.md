@@ -1,5 +1,8 @@
 # Changes
 
+- 2026-07-24: Remove Fixture Manager conversion controls, status, converted
+  container browser, and backend launch helpers now that Corpus Runner owns all
+  conversion execution; retain fixture JSON/parameter details and configuration editing.
 - 2026-07-24: Persist Snakemake rule benchmarks and show elapsed time in
   completed Corpus Runner stage cells and artifact details.
 - 2026-07-24: Add a guarded Corpus Runner action to clear a selected completed

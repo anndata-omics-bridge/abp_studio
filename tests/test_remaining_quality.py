@@ -353,38 +353,11 @@ def test_testdata_rows_commands_and_statuses(
     assert testdata.read_rows(tmp_path / "missing.csv") == []
     assert testdata.row_details(paths, None) == ("Select a row.", "", "")
 
-    record = _record(tmp_path, state=fixture_inventory.LocalFixtureState.COMPLETE)
-    inventory = fixture_inventory.FixtureInventory(paths=paths, fixtures=(record,))
-    monkeypatch.setattr(
-        testdata.fixture_inventory,
-        "load_fixture_inventory",
-        lambda _paths: inventory,
-    )
-    monkeypatch.setattr(
-        testdata.capabilities,
-        "discover_capabilities",
-        lambda *_args: capabilities.CapabilityDiscovery(("ion",)),
-    )
     row = {
         "module": "dda",
         "repo_name": "repo",
         "intermediate_hash": "abc123",
     }
-    assert testdata.conversion_targets(paths, row) == ("all", "ion")
-    assert "all levels" in testdata._conversion_status(("all", "ion"), fixture=record)
-
-    unsupported = capabilities.CapabilityDiscovery((), diagnostic="unsupported input")
-    monkeypatch.setattr(
-        testdata.capabilities,
-        "discover_capabilities",
-        lambda *_args: unsupported,
-    )
-    assert testdata._conversion_status((), fixture=record) == "unsupported input"
-    incomplete = _record(tmp_path, state=fixture_inventory.LocalFixtureState.INCOMPLETE)
-    assert testdata._conversion_status((), fixture=incomplete) == "incomplete"
-    not_local = _record(tmp_path, state=fixture_inventory.LocalFixtureState.NOT_LOCAL)
-    assert testdata._conversion_status((), fixture=not_local) == "download first"
-
     selected = paths.selection_csv
     selected.write_text(
         "module,repo_name,intermediate_hash\ndda,repo,abc123\n",
@@ -398,8 +371,6 @@ def test_testdata_rows_commands_and_statuses(
     assert "--module" not in testdata.testdata_command("select", paths)
     with pytest.raises(ValueError, match="Unknown test-data action"):
         testdata.testdata_command("unknown", paths)
-    with pytest.raises(ValueError, match="Unknown conversion targets"):
-        testdata._selected_conversion_targets(["unknown"])
 
     monkeypatch.setattr(testdata, "_JOBS", {})
     assert testdata.job_status("missing") is None
@@ -411,17 +382,8 @@ def test_testdata_rows_commands_and_statuses(
     )
     testdata._JOBS["single"] = single
     assert cast(JobStatus, testdata.job_status("single")).success is True
-    statuses = iter(
-        [
-            _status(tmp_path, returncode=0, text="one"),
-            _status(tmp_path, returncode=2, text="two"),
-        ]
-    )
-    monkeypatch.setattr(testdata, "inspect_job", lambda _job: next(statuses))
-    grouped = testdata._status_for_registered_job((_job(tmp_path), _job(tmp_path)))
-    assert grouped.returncode == 2
     failed = testdata.job_presentation(
-        grouped,
+        _status(tmp_path, returncode=2, text="failed"),
         catalog_count=1,
         selection_count=2,
     )
@@ -435,7 +397,7 @@ def test_testdata_rows_commands_and_statuses(
     assert "running" in running[0]
 
 
-def test_testdata_details_and_launch_cleanup(
+def test_testdata_details_and_missing_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -468,55 +430,9 @@ def test_testdata_details_and_launch_cleanup(
             paths,
             {**row, "intermediate_hash": "missing"},
         )
-    inconsistent = record.model_copy(update={"input_files": (), "parameter_files": ()})
-    bad_inventory = fixture_inventory.FixtureInventory(paths=paths, fixtures=(inconsistent,))
-    monkeypatch.setattr(
-        testdata.fixture_inventory,
-        "load_fixture_inventory",
-        lambda _paths: bad_inventory,
-    )
-    with pytest.raises(ValueError, match="downloaded input"):
-        testdata.convert_command(paths, row, "ion")
-    no_parameters = record.model_copy(update={"parameter_files": ()})
-    monkeypatch.setattr(
-        testdata.fixture_inventory,
-        "load_fixture_inventory",
-        lambda _paths: fixture_inventory.FixtureInventory(
-            paths=paths,
-            fixtures=(no_parameters,),
-        ),
-    )
-    with pytest.raises(ValueError, match="param_0"):
-        testdata.convert_command(paths, row, "ion")
-    monkeypatch.setattr(
-        testdata.fixture_inventory,
-        "load_fixture_inventory",
-        lambda _paths: inventory,
-    )
-    with pytest.raises(ValueError, match="Unknown conversion target"):
-        testdata.convert_command(paths, row, "unknown")
-
-    started = _job(tmp_path)
-    terminated: list[Job] = []
-    calls = 0
-
-    def start_then_fail(*_args: object, **_kwargs: object) -> Job:
-        nonlocal calls
-        calls += 1
-        if calls == 2:
-            raise OSError("cannot start")
-        return started
-
-    monkeypatch.setattr(testdata, "_JOBS", {})
-    monkeypatch.setattr(testdata, "convert_command", lambda *_args: ["apb", "convert"])
-    monkeypatch.setattr(testdata, "start_job", start_then_fail)
-    monkeypatch.setattr(testdata, "terminate_job", lambda job: terminated.append(job) or True)
-    with pytest.raises(OSError, match="cannot start"):
-        testdata.launch_convert(paths, row, ["ion", "protein"])
-    assert terminated == [started]
 
 
-def test_testdata_unpopulated_details_and_unknown_container(
+def test_testdata_unpopulated_details(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -559,23 +475,6 @@ def test_testdata_unpopulated_details_and_unknown_container(
         ),
     )
     assert testdata.row_details(paths, row)[2] == "params\n"
-
-    monkeypatch.setattr(testdata, "catalog_rows", lambda _paths: [row])
-    monkeypatch.setattr(testdata, "converted_dir", lambda *_args: tmp_path / "absent")
-    assert all(not rows for rows in testdata.container_rows(paths).values())
-    converted = tmp_path / "converted"
-    converted.mkdir()
-    (converted / "unknown.h5ad").touch()
-    monkeypatch.setattr(testdata, "converted_dir", lambda *_args: converted)
-    monkeypatch.setattr(
-        testdata,
-        "_description_for",
-        lambda _path: {
-            "container_type": "anndata",
-            "quantification": {"level": "unknown"},
-        },
-    )
-    assert all(not rows for rows in testdata.container_rows(paths).values())
 
 
 def test_provenance_fallbacks_and_sidecar_errors(

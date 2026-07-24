@@ -33,11 +33,9 @@ TABLE_COLUMNS = [
     "nr_feature",
     "intermediate_hash",
     "download_status",
-    "conversion_status",
 ]
 TABLE_HEADERS = {
     "download_status": "Download",
-    "conversion_status": "Convert",
 }
 TABLE_COLUMN_WIDTHS = {
     "module": 125,
@@ -46,14 +44,6 @@ TABLE_COLUMN_WIDTHS = {
     "nr_feature": 100,
     "intermediate_hash": 280,
     "download_status": 120,
-    "conversion_status": 190,
-    "dataset": 280,
-    "n_obs": 90,
-    "n_var": 90,
-    "layers": 180,
-    "modalities": 180,
-    "mudata": 85,
-    "path": 420,
     "annotation_path": 420,
     "annotation_status": 105,
     "fasta_path": 420,
@@ -65,35 +55,6 @@ RESOURCE_COLUMNS = [
     "annotation_path",
     "fasta_status",
     "fasta_path",
-]
-MUDATA_COLUMNS = [
-    "dataset",
-    "module",
-    "software_name",
-    "software_version",
-    "n_obs",
-    "n_var",
-    "modalities",
-    "path",
-]
-LEVEL_COLUMNS = [
-    "dataset",
-    "module",
-    "software_name",
-    "software_version",
-    "n_obs",
-    "n_var",
-    "layers",
-    "mudata",
-    "path",
-]
-CONTAINER_TABLE_IDS = {
-    "mudata": "anndata-mudata-table",
-    **{level: f"anndata-{level}-table" for level in testdata.LEVELS},
-}
-CONVERSION_TARGETS = [
-    {"label": "All levels", "value": testdata.ALL_LEVELS},
-    *[{"label": level.title(), "value": level} for level in testdata.LEVELS],
 ]
 BUTTON_STYLE = {
     "fontSize": "11px",
@@ -170,19 +131,6 @@ def data_table(
     )
 
 
-def _selected_container_row(
-    active_tab: str,
-    selections: dict[str, list[dict[str, Any]] | None],
-    triggered_id: str | None,
-) -> dict[str, Any] | None:
-    """Return only the selected row belonging to the active container view."""
-    table_id = CONTAINER_TABLE_IDS.get(active_tab)
-    if triggered_id in CONTAINER_TABLE_IDS.values():
-        table_id = triggered_id
-    selected = selections.get(table_id or "")
-    return selected[0] if selected else None
-
-
 def download_controls() -> html.Div:
     """Build catalog, selection, and download controls."""
     return html.Div(
@@ -242,64 +190,11 @@ def download_controls() -> html.Div:
     )
 
 
-def conversion_controls() -> html.Div:
-    """Build controls for converting the selected downloaded fixture."""
-    return html.Div(
-        [
-            html.Span(
-                "Convert selected →",
-                style={"fontSize": "11px", "fontWeight": "bold"},
-            ),
-            dcc.Checklist(
-                id="convert-level",
-                options=[],
-                value=[],
-                inline=True,
-                style={"fontSize": "11px", "whiteSpace": "nowrap"},
-                labelStyle={"marginRight": "0.65rem"},
-            ),
-            html.Button(
-                "Convert",
-                id="convert-button",
-                disabled=True,
-                style=PRIMARY_BUTTON_STYLE,
-            ),
-            html.Span(id="convert-hint", style={"fontSize": "11px"}),
-        ],
-        style={
-            "display": "flex",
-            "flexWrap": "wrap",
-            "gap": "0.6rem",
-            "alignItems": "center",
-            "padding": "0.5rem 0",
-        },
-    )
-
-
 def workflow_controls() -> html.Div:
-    """Build Download/Convert subtabs and the shared collapsible job log."""
+    """Build download controls and the shared collapsible job log."""
     return html.Div(
         [
-            dcc.Tabs(
-                [
-                    dcc.Tab(
-                        download_controls(),
-                        label="Download",
-                        value="download",
-                        style=TAB_STYLE,
-                        selected_style=SELECTED_TAB_STYLE,
-                    ),
-                    dcc.Tab(
-                        conversion_controls(),
-                        label="Convert",
-                        value="convert",
-                        style=TAB_STYLE,
-                        selected_style=SELECTED_TAB_STYLE,
-                    ),
-                ],
-                id="data-workflow-tabs",
-                value="download",
-            ),
+            download_controls(),
             html.Details(
                 [
                     html.Summary(
@@ -324,54 +219,8 @@ def workflow_controls() -> html.Div:
     )
 
 
-def anndata_panel() -> html.Div:
-    """Build the converted-container cross-section and summary pane."""
-    tabs = [
-        dcc.Tab(
-            data_table(
-                CONTAINER_TABLE_IDS["mudata"],
-                MUDATA_COLUMNS,
-                height="30vh",
-            ),
-            label="MuData",
-            value="mudata",
-            style=TAB_STYLE,
-            selected_style=SELECTED_TAB_STYLE,
-        )
-    ]
-    tabs.extend(
-        dcc.Tab(
-            data_table(CONTAINER_TABLE_IDS[level], LEVEL_COLUMNS, height="30vh"),
-            label=level.title(),
-            value=level,
-            style=TAB_STYLE,
-            selected_style=SELECTED_TAB_STYLE,
-        )
-        for level in testdata.LEVELS
-    )
-    return html.Div(
-        [
-            dcc.Tabs(tabs, id="anndata-level-tabs", value="mudata"),
-            html.H2(
-                "Descriptive summary",
-                style={"fontSize": "15px", "margin": "0.6rem 0 0.35rem"},
-            ),
-            html.Pre(
-                "Select a container.",
-                id="anndata-summary",
-                style={
-                    **PRE_STYLE,
-                    "height": "34vh",
-                    "border": "1px solid #cfd3dc",
-                    "padding": "0.6rem",
-                },
-            ),
-        ]
-    )
-
-
 def data_panel() -> html.Div:
-    """Build one fixture table with download/conversion workflows and details."""
+    """Build one fixture table with download workflows and source details."""
     return html.Div(
         [
             workflow_controls(),
@@ -548,7 +397,6 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
             dcc.Interval(id="poll", interval=1000, n_intervals=0),
             dcc.Store(id="job-id"),
             dcc.Store(id="finished-job-id"),
-            dcc.Store(id="selected-fixture"),
             dcc.Store(
                 id="storage-root",
                 data=str(active_paths.data_dir),
@@ -559,13 +407,6 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
                         data_panel(),
                         label="Data",
                         value="data",
-                        style=TAB_STYLE,
-                        selected_style=SELECTED_TAB_STYLE,
-                    ),
-                    dcc.Tab(
-                        anndata_panel(),
-                        label="AnnData",
-                        value="anndata",
                         style=TAB_STYLE,
                         selected_style=SELECTED_TAB_STYLE,
                     ),
@@ -612,11 +453,8 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
         Input("annotations-button", "n_clicks"),
         Input("fasta-button", "n_clicks"),
         Input("clean-button", "n_clicks"),
-        Input("convert-button", "n_clicks"),
         State("strategy", "value"),
         State("module", "value"),
-        State("selected-fixture", "data"),
-        State("convert-level", "value"),
         State("storage-root", "data"),
         State("job-id", "data"),
         prevent_initial_call=True,
@@ -628,11 +466,8 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
         _annotations: int | None,
         _fasta: int | None,
         _clean: int | None,
-        _convert: int | None,
         strategy: str,
         module: str | None,
-        selected_fixture: dict[str, Any] | None,
-        convert_levels: list[str] | None,
         data_root: str,
         active_job_id: str | None,
     ) -> str:
@@ -645,10 +480,6 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
         action = triggered_id.removesuffix("-button")
         paths = testdata.TestDataPaths(data_dir=Path(data_root))
         try:
-            if action == "convert":
-                if not selected_fixture or not convert_levels:
-                    raise PreventUpdate
-                return testdata.launch_convert(paths, selected_fixture, convert_levels)
             return testdata.launch(action, paths, strategy=strategy, module=module)
         except testdata.JobAlreadyRunningError as error:
             raise PreventUpdate from error
@@ -817,111 +648,6 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
         return "Assignment saved.", {"color": "#16733c", "fontSize": "11px"}
 
     @app.callback(
-        Output("convert-level", "options"),
-        Output("convert-level", "value"),
-        Output("convert-hint", "children"),
-        Input("selected-fixture", "data"),
-    )
-    def _select_conversion_targets(
-        row: dict[str, Any] | None,
-    ) -> tuple[list[dict[str, Any]], list[str], str]:
-        """Offer only conversion targets supported by the selected fixture."""
-        if not row:
-            return [], [], "Select a fixture."
-        targets = row.get("conversion_targets", [])
-        options = [option for option in CONVERSION_TARGETS if option["value"] in targets]
-        if not options:
-            return [], [], row.get("conversion_status", "Not convertible.")
-        return options, [options[0]["value"]], row["conversion_status"]
-
-    @app.callback(
-        Output("convert-button", "disabled"),
-        Input("selected-fixture", "data"),
-        Input("convert-level", "value"),
-    )
-    def _toggle_convert_button(
-        row: dict[str, Any] | None,
-        levels: list[str] | None,
-    ) -> bool:
-        """Disable conversion until a fixture and at least one level are selected."""
-        return not row or not levels
-
-    @app.callback(
-        Output(CONTAINER_TABLE_IDS["mudata"], "rowData"),
-        Output(CONTAINER_TABLE_IDS["ion"], "rowData"),
-        Output(CONTAINER_TABLE_IDS["fragment"], "rowData"),
-        Output(CONTAINER_TABLE_IDS["peptidoform"], "rowData"),
-        Output(CONTAINER_TABLE_IDS["peptide"], "rowData"),
-        Output(CONTAINER_TABLE_IDS["protein"], "rowData"),
-        Input("poll", "n_intervals"),
-        Input("storage-root", "data"),
-        State("job-id", "data"),
-    )
-    def _refresh_containers(
-        _tick: int,
-        data_root: str,
-        job_id: str | None,
-    ) -> tuple[object, object, object, object, object, object]:
-        """Refresh converted rows without reading a container being written."""
-        status = testdata.job_status(job_id)
-        if status is not None and status.running:
-            return (
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-            )
-        paths = testdata.TestDataPaths(data_dir=Path(data_root))
-        tables = testdata.container_rows(paths)
-        return (
-            tables["mudata"],
-            tables["ion"],
-            tables["fragment"],
-            tables["peptidoform"],
-            tables["peptide"],
-            tables["protein"],
-        )
-
-    @app.callback(
-        Output("anndata-summary", "children"),
-        Input("anndata-level-tabs", "value"),
-        Input(CONTAINER_TABLE_IDS["mudata"], "selectedRows"),
-        Input(CONTAINER_TABLE_IDS["ion"], "selectedRows"),
-        Input(CONTAINER_TABLE_IDS["fragment"], "selectedRows"),
-        Input(CONTAINER_TABLE_IDS["peptidoform"], "selectedRows"),
-        Input(CONTAINER_TABLE_IDS["peptide"], "selectedRows"),
-        Input(CONTAINER_TABLE_IDS["protein"], "selectedRows"),
-        Input("storage-root", "data"),
-    )
-    def _show_container_summary(
-        active_tab: str,
-        mudata_selected: list[dict[str, Any]] | None,
-        ion_selected: list[dict[str, Any]] | None,
-        fragment_selected: list[dict[str, Any]] | None,
-        peptidoform_selected: list[dict[str, Any]] | None,
-        peptide_selected: list[dict[str, Any]] | None,
-        protein_selected: list[dict[str, Any]] | None,
-        _data_root: str,
-    ) -> str:
-        """Show the exact standalone, MuData, or MuData-modality target selected."""
-        if ctx.triggered_id == "storage-root":
-            return "Select a container."
-        selections = {
-            CONTAINER_TABLE_IDS["mudata"]: mudata_selected,
-            CONTAINER_TABLE_IDS["ion"]: ion_selected,
-            CONTAINER_TABLE_IDS["fragment"]: fragment_selected,
-            CONTAINER_TABLE_IDS["peptidoform"]: peptidoform_selected,
-            CONTAINER_TABLE_IDS["peptide"]: peptide_selected,
-            CONTAINER_TABLE_IDS["protein"]: protein_selected,
-        }
-        row = _selected_container_row(active_tab, selections, ctx.triggered_id)
-        if row is None:
-            return "Select a container."
-        return testdata.container_summary(row["path"], row.get("modality"))
-
-    @app.callback(
         Output("workspace-tabs", "value"),
         Output("finished-job-id", "data"),
         Input("poll", "n_intervals"),
@@ -953,28 +679,24 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
                     (fixture.module for fixture in inventory.fixtures),
                 )
             return "resources", job_id
-        destination = (
-            "anndata" if len(status.command) > 1 and status.command[1] == "convert" else "data"
-        )
-        return destination, job_id
+        return "data", job_id
 
     @app.callback(
         Output("file-info", "children"),
         Output("submission-json", "children"),
         Output("parameters", "children"),
-        Output("selected-fixture", "data"),
         Input("catalog-table", "selectedRows"),
         Input("storage-root", "data"),
     )
     def _show_details(
         catalog_selected: list[dict[str, Any]] | None,
         data_root: str,
-    ) -> tuple[str, str, str, dict[str, Any] | None]:
+    ) -> tuple[str, str, str]:
         if ctx.triggered_id == "storage-root":
-            return "Select a row.", "", "", None
+            return "Select a row.", "", ""
         row = catalog_selected[0] if catalog_selected else None
         paths = testdata.TestDataPaths(data_dir=Path(data_root))
-        return (*testdata.row_details(paths, row), row)
+        return testdata.row_details(paths, row)
 
     register_configuration_callbacks(app)
     return app

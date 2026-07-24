@@ -76,8 +76,9 @@ resources, then resolves them without requiring manual paths. The same module TO
 annotation and the ProteoBench experiment-design contract; these remain independent execution
 stages.
 
-Its Configuration workspace catalogs APB parsing-rule JSON documents. The AnnData
-workspace keeps MuData and standalone `.h5ad` outputs distinct and displays APB's stored summaries.
+Its Data workspace retains the fixture file, submission JSON, and parameter views. Its
+Configuration workspace catalogs and edits APB parsing-rule JSON documents. Conversion execution
+and converted-artifact inspection belong exclusively to Corpus Runner.
 
 ## Quick start
 
