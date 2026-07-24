@@ -366,13 +366,7 @@ def stage_by_basket(registry: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def descendants(registry: list[dict[str, Any]], stage: str) -> set[str]:
-    """Stages that transitively DEPEND ON `stage` (its downstream in the DAG).
-
-    Basket Clean deletes `stage` and its descendants for the selected datasets (cascade, §8.3):
-    a convert artifact can't be removed while a downstream annotate/fasta derives from it.
-    Cascading also sweeps a *stray* downstream artifact left by a partial run or manual copy, so a
-    Clean always leaves a contiguous prefix, never an orphan, regardless of prior on-disk state.
-    """
+    """Return stages that transitively depend on ``stage`` in the registry DAG."""
     children: dict[str, set[str]] = defaultdict(set)
     for s in registry:
         for dep in s.get("depends_on") or []:
@@ -773,7 +767,7 @@ def _benchmark_seconds(output: Path | str) -> float | None:
     return seconds if math.isfinite(seconds) and seconds >= 0 else None
 
 
-def _format_duration(seconds: float) -> str:
+def format_duration(seconds: float) -> str:
     """Format elapsed seconds compactly for a stage cell."""
     if seconds < 10:
         return f"{seconds:.1f}s"
@@ -929,7 +923,7 @@ def _stage_detail(
             {}
             if duration_seconds is None
             else {
-                "duration": _format_duration(duration_seconds),
+                "duration": format_duration(duration_seconds),
                 "duration_seconds": str(duration_seconds),
             }
         )
@@ -1126,40 +1120,12 @@ def baskets(
     return result
 
 
-def select_targets(
-    targets: list[Target],
-    *,
-    scope: str = "all",
-    module: str | None = None,
-    dataset: str | None = None,
-    stage: str = "all",
-) -> list[Target]:
-    """Filter targets by a scope×stage selection (the selector the Snakefile / clean_paths use)."""
-    selected = targets
-    if stage != "all":
-        selected = [t for t in selected if t.stage == stage]
-    if scope == "module":
-        selected = [t for t in selected if t.module == module]
-    elif scope == "dataset":
-        selected = [t for t in selected if t.module == module and t.dataset == dataset]
-    return selected
-
-
-def targets_for(targets: list[Target], keys: set[tuple[str, str]], *, stage: str) -> list[Target]:
-    """The Targets at `stage` for the selected (module, dataset) rows — the multi-row basket
-    selection scope×stage cannot express (§8.2). Run feeds the outputs to run_pipeline; Clean feeds
-    them to clean_targets."""
-    keyset = set(keys)
-    return [t for t in targets if t.stage == stage and (t.module, t.dataset) in keyset]
-
-
 def reject_input_paths(paths: list[Path], input_root: Path | str) -> list[Path]:
     """Return paths outside `input_root`; raise `CleanGuardError` for an input path.
 
-    Resolves both sides, so it also catches relative paths and symlink escapes. Shared by
-    `clean_paths` (scope×stage) and `execution.clean_targets` (row-set), keeping the guard
-    single-source. This is a **real exception**, not an `assert`: `assert` is stripped by
-    `python -O`, and a destructive-action guard must never be optimized away.
+    Resolves both sides, so it also catches relative paths and symlink escapes. This is a **real
+    exception**, not an `assert`: `assert` is stripped by `python -O`, and a destructive-action
+    guard must never be optimized away.
     """
     in_root = Path(input_root).resolve()
     for p in paths:
@@ -1167,24 +1133,3 @@ def reject_input_paths(paths: list[Path], input_root: Path | str) -> list[Path]:
         if in_root == resolved or in_root in resolved.parents:
             raise CleanGuardError(f"refusing to clean {p}: it is under input_root {in_root}")
     return paths
-
-
-def clean_paths(
-    targets: list[Target],
-    *,
-    input_root: Path | str,
-    scope: str = "all",
-    module: str | None = None,
-    dataset: str | None = None,
-    stage: str = "all",
-) -> list[Path]:
-    """The exact output files a scope×stage Clean would delete — never an input.
-
-    `input_root` is REQUIRED: the guard (`reject_input_paths`) must never be silently skipped by an
-    omitted argument.
-    """
-    paths = [
-        t.output
-        for t in select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage)
-    ]
-    return reject_input_paths(paths, input_root)

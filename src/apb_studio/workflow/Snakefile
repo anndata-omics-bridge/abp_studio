@@ -25,6 +25,7 @@ _SRC_PATHS = [_SRC_ROOT, _WORKSPACE_ROOT / "apb" / "src"]
 for source_path in _SRC_PATHS:
     if source_path.exists():
         sys.path.insert(0, str(source_path))
+from apb_studio.execution import clean_targets
 from apb_studio.pipeline import (
     ANNOTATE_ARTIFACT_RE,
     CONVERT_ARTIFACT_RE,
@@ -33,6 +34,7 @@ from apb_studio.pipeline import (
     load_run_snapshot,
     runnable_targets,
 )
+from apb_studio.run_history import mark_operation
 
 # ``--configfile`` is only Snakemake's transport for the internal JSON. No default is allowed:
 # Snakemake merges defaults with an explicit config file, which would violate snapshot isolation.
@@ -62,6 +64,18 @@ if _APB_EXECUTABLE is None:
     raise ValueError(
         "apb_studio: APB executable is absent from the Snakemake environment"
     )
+
+
+onstart:
+    mark_operation(_RUN_PATH, "running")
+
+
+onsuccess:
+    mark_operation(_RUN_PATH, "succeeded")
+
+
+onerror:
+    mark_operation(_RUN_PATH, "failed")
 
 
 def _target(wildcards):
@@ -96,6 +110,16 @@ wildcard_constraints:
 rule all:
     input:
         DEFAULT_TARGETS
+
+
+localrules: clean
+
+
+rule clean:
+    """Remove every managed corpus artifact and its Snakemake-side state."""
+    run:
+        clean_targets(TARGETS, input_root=RUN.test_data_root)
+
 
 # Disjoint artifact constraints make the three rules unambiguous; ruleorder is a backstop.
 ruleorder: proteobench > fasta > annotate > convert

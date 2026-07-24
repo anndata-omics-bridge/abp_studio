@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from apb_studio import dashboard, pipeline
+from apb_studio import dashboard
 from apb_studio.registry import load_registry
 
 _ROW_ID = '["module-a","dataset-a","ion"]'
@@ -111,42 +111,6 @@ def test_failed_log_download_must_resolve_from_authoritative_row(
     assert dashboard._downloadable_log(rows, forged) is None
 
 
-def test_stage_clear_resolves_exact_branch_and_downstream_targets(tmp_path: Path) -> None:
-    targets = [
-        pipeline.Target(
-            module="module-a",
-            dataset="dataset-a",
-            branch=branch,
-            stage=stage,
-            output=tmp_path / branch / stage,
-            command=[],
-        )
-        for branch in ("mudata", "ion", "peptidoform")
-        for stage in ("convert", "annotate", "fasta", "proteobench")
-    ]
-
-    selected = dashboard._targets_for_stage_clear(targets, _selection(), load_registry())
-
-    assert {(target.branch, target.stage) for target in selected} == {
-        ("ion", "convert"),
-        ("ion", "annotate"),
-        ("ion", "fasta"),
-        ("ion", "proteobench"),
-    }
-    mudata_selection = {**_selection(), "level": "MuData", "stage": "annotate"}
-    selected = dashboard._targets_for_stage_clear(targets, mudata_selection, load_registry())
-    assert {(target.branch, target.stage) for target in selected} == {
-        ("mudata", "annotate"),
-    }
-
-
-def test_stage_clear_rejects_missing_or_unavailable_selection() -> None:
-    with pytest.raises(ValueError, match="Select a stage"):
-        dashboard._targets_for_stage_clear([], None, load_registry())
-    with pytest.raises(ValueError, match="not available"):
-        dashboard._targets_for_stage_clear([], _selection(), load_registry())
-
-
 def test_completed_cell_describes_exact_artifact(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -168,6 +132,7 @@ def test_completed_cell_describes_exact_artifact(
 
     assert described == [artifact]
     assert '"n_runs": 4' in children[-1].children
+    assert "Runtime unavailable" in children[1].children
     timed = dashboard._artifact_detail(
         {
             "state": "completed",
@@ -195,6 +160,39 @@ def test_unsupported_detail_has_no_rule_log() -> None:
     assert len(children) == 2
 
 
+def test_corpus_summary_reports_states_and_timing_coverage() -> None:
+    rows = [
+        {
+            "_stage_details": {
+                "convert": {
+                    "state": "completed",
+                    "duration_seconds": "61.2",
+                },
+                "annotate": {"state": "completed"},
+                "fasta": {"state": "failed"},
+                "proteobench": {"state": "pending"},
+            }
+        }
+    ]
+
+    summary = dashboard._corpus_summary(rows, load_registry())
+
+    assert "2 produced · 1 failed" in summary
+    assert "1/2 produced stages timed" in summary
+    assert "1m 01s recorded runtime" in summary
+    untimed = dashboard._corpus_summary(
+        [{"_stage_details": {"convert": {"state": "completed"}}}],
+        [{"name": "convert"}],
+    )
+    assert "existing artifacts predate" in untimed
+    pending = dashboard._corpus_summary(
+        [{"_stage_details": {"convert": {"state": "pending"}}}],
+        [{"name": "convert"}],
+    )
+    assert "No completed-stage timing yet" in pending
+    assert dashboard._corpus_summary([], load_registry()) == "No corpus branches resolved."
+
+
 def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
     app = dashboard.create_app()
 
@@ -214,6 +212,7 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
     }
     layout_ids = [getattr(child, "id", None) for child in app.layout.children]
     assert layout_ids.index("corpus-grid") < layout_ids.index("stage-detail-panel")
+    assert layout_ids.index("corpus-grid") < layout_ids.index("corpus-summary-panel")
     assert layout_ids.index("stage-detail-panel") < layout_ids.index("global-log-panel")
     grid = next(
         child for child in app.layout.children if getattr(child, "id", None) == "corpus-grid"
@@ -224,15 +223,15 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
         for child in app.layout.children
         if isinstance(getattr(child, "children", None), list)
         and any(
-            getattr(grandchild, "id", None) == "confirm-clear-stage"
+            getattr(grandchild, "id", None) == "confirm-clear-corpus"
             for grandchild in child.children
         )
     )
     confirm = next(
-        child for child in controls.children if getattr(child, "id", None) == "confirm-clear-stage"
+        child for child in controls.children if getattr(child, "id", None) == "confirm-clear-corpus"
     )
-    assert confirm.children.id == "clear-stage"
-    assert confirm.children.disabled is True
+    assert confirm.children.id == "clear-corpus"
+    assert "all Snakemake-managed corpus outputs" in confirm.message
 
 
 def test_documented_cell_event_renders_clicked_stage(
@@ -267,7 +266,7 @@ def test_documented_cell_event_renders_clicked_stage(
 
     result = detail_callback(event, 0, "job-id", None)
 
-    assert result == ("completed", _selection(), True, False)
+    assert result == ("completed", _selection(), True)
 
 
 def test_poll_refreshes_the_stored_stage_selection(
@@ -306,8 +305,6 @@ def test_poll_refreshes_the_stored_stage_selection(
     assert first[0] == "pending"
     assert second[0] == "completed"
     assert second[1] == _selection()
-    assert first[3] is True
-    assert second[3] is False
 
 
 def test_refresh_reconnects_browser_to_server_active_job(
@@ -334,7 +331,7 @@ def test_refresh_reconnects_browser_to_server_active_job(
     monkeypatch.setattr(
         dashboard,
         "_live_log",
-        lambda job_id: (seen.append(job_id) or "running", True, "in progress"),
+        lambda job_id, **_kwargs: (seen.append(job_id) or "running", True, "in progress"),
     )
     monkeypatch.setattr(
         dashboard.settings,
@@ -342,14 +339,15 @@ def test_refresh_reconnects_browser_to_server_active_job(
         lambda _path: SimpleNamespace(test_data_root=Path("/fixtures")),
     )
 
-    result = refresh_callback(0, 0, 1, 0, "/outputs", None, 4, None)
+    result = refresh_callback(0, 0, 1, 0, "/outputs", None, 4)
 
     assert seen == ["server-active", "server-active"]
-    assert result[3] is True  # Run disabled
-    assert result[4] is False  # Poll enabled
-    assert result[6] == "server-active"
-    assert result[7].endswith("· 2 complete · 0 branches")
-    assert result[8] == 5
+    assert result[4] is True  # Run disabled
+    assert result[5] is True  # Clear disabled
+    assert result[6] is False  # Poll enabled
+    assert result[8] == "server-active"
+    assert result[9].endswith("· 2 complete · 0 branches")
+    assert result[10] == 5
 
 
 def test_grid_revision_clears_a_selection_missing_after_root_reload(
@@ -371,4 +369,4 @@ def test_grid_revision_clears_a_selection_missing_after_root_reload(
 
     result = detail_callback(None, 2, "job-id", _selection())
 
-    assert result == ("Click a completed stage or a status cell.", None, True, True)
+    assert result == ("Click a completed stage or a status cell.", None, True)

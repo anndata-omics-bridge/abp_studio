@@ -47,7 +47,8 @@ APB/registry versions into:
 
 That JSON file is internal execution state, not user configuration. Snakemake consumes the frozen
 snapshot with `--keep-going`; a fixture downloaded during a run joins only after that run finishes
-and the application reloads.
+and the application reloads. Each run directory also stores durable operation state and the
+Snakemake log, which Corpus Runner reloads after an application restart.
 
 The stage states have precise meanings:
 
@@ -61,11 +62,15 @@ The stage states have precise meanings:
 
 Only `FAILED` is red and offers a downloadable rule log. A leftover log alone never means failure,
 and an artifact wins over an old failure marker. Clicking `DONE` shows APB's cumulative artifact
-summary; clicking another terminal state shows its diagnostic. `Clear selected stage…` removes a
-selected `DONE` or `FAILED` stage plus its downstream artifacts for that branch after confirmation;
-fixture inputs and sibling branches are never touched, and clearing is disabled while a corpus run
-is active. Newly executed stages include Snakemake's persisted elapsed time directly in their state,
-for example `DONE · 2m 14s`; existing artifacts remain plain `DONE` until Snakemake runs them again.
+summary, including `uns`; clicking another terminal state shows its diagnostic. `Clear corpus…`
+launches the packaged Snakemake clean target for every managed stage. It removes artifacts and
+their rule logs, failure markers, benchmarks, and provenance while preserving fixture inputs and
+persisted run/log history. Run and clean are disabled while either operation is active.
+
+Newly executed stages include Snakemake's persisted elapsed time directly in their state, for
+example `DONE · 2m 14s`. Existing artifacts remain plain `DONE` and report runtime unavailable
+until Snakemake records a benchmark for them. The Corpus summary reports stage-state counts,
+produced artifacts, and timing coverage.
 
 ## Fixture Manager
 

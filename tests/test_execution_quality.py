@@ -4,18 +4,27 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import cast
 
 import pytest
 
-from apb_studio import capabilities, execution, fixture_inventory, module_resources, settings
+from apb_studio import (
+    capabilities,
+    execution,
+    fixture_inventory,
+    module_resources,
+    run_history,
+    settings,
+)
 from apb_studio.jobrunner import Job, JobStatus
 from apb_studio.pipeline import (
     RUN_SNAPSHOT_SCHEMA_VERSION,
     ResolvedFixture,
     RunSnapshot,
     Target,
+    write_run_snapshot,
 )
 
 
@@ -300,9 +309,6 @@ def test_snapshot_log_prepare_and_job_state_branches(
     monkeypatch.setattr(execution, "_JOBS", {"active": job})
     monkeypatch.setattr(execution, "active_corpus_job_id", lambda: "active")
     assert execution.inspect_corpus_job(None) is not None
-    assert execution.corpus_job_running("active") is False
-    monkeypatch.setattr(execution, "inspect_job", lambda _job: _status(tmp_path, running=True))
-    assert execution.corpus_job_running("active") is True
 
 
 def test_clean_targets_removes_directory_output(tmp_path: Path) -> None:
@@ -313,3 +319,113 @@ def test_clean_targets_removes_directory_output(tmp_path: Path) -> None:
     deleted = execution.clean_targets([target], input_root=tmp_path / "inputs")
     assert deleted == [output]
     assert not output.exists()
+
+
+def test_latest_persisted_run_skips_invalid_and_foreign_snapshots(
+    tmp_path: Path,
+) -> None:
+    output_root = tmp_path / "outputs"
+    invalid = output_root / ".apb_studio/runs/newest/run.json"
+    invalid.parent.mkdir(parents=True)
+    invalid.write_text("not JSON", encoding="utf-8")
+
+    foreign = _snapshot(tmp_path / "foreign", run_id="foreign")
+    foreign_path = output_root / ".apb_studio/runs/foreign/run.json"
+    write_run_snapshot(foreign, foreign_path)
+
+    snapshot = _snapshot(tmp_path, run_id="valid")
+    valid_path = execution.run_snapshot_path(snapshot)
+    write_run_snapshot(snapshot, valid_path)
+    (valid_path.parent / "snakemake.log").write_text("persisted log", encoding="utf-8")
+    run_history.start_operation(valid_path, "run", started_at="now")
+    run_history.mark_operation(valid_path, "succeeded", finished_at="later")
+    orphan = _snapshot(tmp_path, run_id="orphan")
+    orphan_path = execution.run_snapshot_path(orphan)
+    write_run_snapshot(orphan, orphan_path)
+    os.utime(valid_path, (1, 1))
+    os.utime(foreign_path, (2, 2))
+    os.utime(orphan_path, (3, 3))
+    os.utime(invalid, (4, 4))
+
+    persisted = execution.latest_persisted_run(output_root)
+
+    assert persisted is not None
+    assert persisted.snapshot == snapshot
+    assert persisted.log_path.read_text(encoding="utf-8") == "persisted log"
+    assert persisted.operation is not None
+    assert persisted.operation.status == "succeeded"
+    assert execution.latest_persisted_run(tmp_path / "missing") is None
+    empty_runs = tmp_path / "empty/.apb_studio/runs"
+    empty_runs.mkdir(parents=True)
+    assert execution.latest_persisted_run(tmp_path / "empty") is None
+
+
+def test_operation_launch_failure_is_persisted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _snapshot(tmp_path)
+    run_path = execution.run_snapshot_path(snapshot)
+    write_run_snapshot(snapshot, run_path)
+    monkeypatch.setattr(execution, "_JOBS", {})
+    monkeypatch.setattr(execution, "_RUNS", {})
+    monkeypatch.setattr(
+        execution,
+        "prepare_run",
+        lambda **_kwargs: (snapshot, run_path, list(snapshot.targets)),
+    )
+    monkeypatch.setattr(
+        execution,
+        "run_pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("cannot start")),
+    )
+
+    with pytest.raises(OSError, match="cannot start"):
+        execution.clear_corpus()
+
+    operation = run_history.load_operation(run_path)
+    assert operation is not None
+    assert operation.status == "failed"
+
+
+def test_clean_prepare_and_operation_lookup_edge_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    empty = _snapshot(tmp_path)
+    empty = RunSnapshot(
+        schema_version=empty.schema_version,
+        run_id=empty.run_id,
+        created_at=empty.created_at,
+        test_data_root=empty.test_data_root,
+        output_root=empty.output_root,
+        registry_digest=empty.registry_digest,
+        apb_version=empty.apb_version,
+        fixtures=empty.fixtures,
+        targets=(),
+    )
+    monkeypatch.setattr(execution, "resolve_current_run", lambda **_kwargs: empty)
+    with pytest.raises(ValueError, match="no managed stages"):
+        execution.prepare_run(operation="clean")
+
+    run_path = tmp_path / "operation/run.json"
+    run_history.start_operation(run_path, "clean", started_at="now")
+    monkeypatch.setattr(execution, "_RUNS", {"job": run_path})
+    monkeypatch.setattr(execution, "active_corpus_job_id", lambda: "job")
+    record = execution.corpus_operation(None)
+    assert record is not None
+    assert record.operation == "clean"
+    assert execution.corpus_operation("unknown") is None
+
+
+def test_clean_targets_accepts_absent_artifact(tmp_path: Path) -> None:
+    target = Target(
+        "module",
+        "dataset",
+        "convert",
+        tmp_path / "outputs/missing.h5ad",
+        [],
+        [],
+    )
+
+    assert execution.clean_targets([target], input_root=tmp_path / "inputs") == []

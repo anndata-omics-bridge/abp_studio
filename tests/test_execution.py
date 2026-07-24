@@ -1,4 +1,4 @@
-"""Tests for execution.py (scope×stage → Snakemake job / Clean) and the jobrunner."""
+"""Tests for whole-corpus Snakemake operations and the background job runner."""
 
 import json
 from collections.abc import Mapping, Sequence
@@ -8,15 +8,13 @@ from typing import Any, Literal, TextIO
 
 import pytest
 
-from apb_studio import execution, provenance, settings
+from apb_studio import execution, provenance, run_history, settings
 from apb_studio.capabilities import CapabilityDiscovery, CapabilityStatus
 from apb_studio.execution import (
-    clean_selection,
     clean_targets,
     load_overview,
     prepare_run,
     run_pipeline,
-    selected_outputs,
     snakemake_argv,
 )
 from apb_studio.fixture_inventory import load_fixture_inventory
@@ -24,10 +22,6 @@ from apb_studio.jobrunner import Job, Process, inspect_job, make_run_key, start_
 from apb_studio.pipeline import (
     CleanGuardError,
     Target,
-    descendants,
-    expand_targets,
-    load_registry,
-    targets_for,
 )
 
 
@@ -129,7 +123,7 @@ def _supported_discovery(*_args: object) -> CapabilityDiscovery:
     )
 
 
-# --- snakemake_argv / selected_outputs --------------------------------------------------------
+# --- snakemake_argv ---------------------------------------------------------------------------
 
 
 def test_snakemake_argv_default_goal():
@@ -160,13 +154,6 @@ def test_snakemake_argv_with_targets_and_dry_run():
         snakemake_exe="snakemake",
     )
     assert "-n" in argv and "/out/x.h5mu" in argv
-
-
-def test_selected_outputs_filters_by_scope_and_stage():
-    targets = _targets()
-    assert len(selected_outputs(targets)) == 3
-    assert len(selected_outputs(targets, stage="convert")) == 2
-    assert selected_outputs(targets, scope="module", module="m2") == [Path("/out/m2/d/ion.h5ad")]
 
 
 # --- run_pipeline uses an injectable launcher (no real process) -------------------------------
@@ -271,45 +258,58 @@ def test_launch_corpus_keeps_existing_targets_for_snakemake_staleness(
     assert target.output in captured_targets
     assert captured_args[1] == run_path
     assert execution._RUNS[job_id] == run_path
+    operation = run_history.load_operation(run_path)
+    assert operation is not None
+    assert operation.operation == "run"
+    assert operation.pid == 1
 
 
-# --- clean_selection deletes outputs, never inputs --------------------------------------------
+def test_clear_corpus_launches_packaged_snakemake_clean(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings_path, _data_root, _output_root = _fixture_settings(tmp_path)
+    snapshot, run_path, selected = prepare_run(
+        settings_path=settings_path,
+        discover=_supported_discovery,
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(execution, "_JOBS", {})
+    monkeypatch.setattr(execution, "_RUNS", {})
+    monkeypatch.setattr(
+        execution,
+        "prepare_run",
+        lambda **_kwargs: (snapshot, run_path, selected),
+    )
+
+    def fake_run_pipeline(*args: object, **kwargs: object) -> Job:
+        captured["args"] = args
+        captured.update(kwargs)
+        return _fake_job()
+
+    monkeypatch.setattr(execution, "run_pipeline", fake_run_pipeline)
+
+    job_id = execution.clear_corpus(settings_path=settings_path)
+
+    assert job_id
+    assert captured["targets"] == [Path("clean")]
+    operation = run_history.load_operation(run_path)
+    assert operation is not None
+    assert operation.operation == "clean"
 
 
-def test_clean_selection_deletes_selected_outputs(tmp_path: Path) -> None:
+# --- whole-corpus clean primitive --------------------------------------------------------------
+
+
+def test_clean_targets_deletes_the_supplied_inventory(tmp_path: Path) -> None:
     out = tmp_path / "out"
     targets = _targets(out=str(out))
     for t in targets:
         t.output.parent.mkdir(parents=True, exist_ok=True)
         t.output.touch()
-    deleted = clean_selection(targets, input_root=str(tmp_path / "in"), stage="convert")
-    assert {p.name for p in deleted} == {"mudata.h5mu", "ion.h5ad"}
-    assert not (out / "m1/d/mudata.h5mu").exists()
-    assert (out / "m1/d/mudata.annotated.h5mu").exists()
-
-
-def test_clean_selection_refuses_input_root():
-    bad = [Target("m", "d", "convert", Path("/in/r.tsv"), [], [])]
-    with pytest.raises(CleanGuardError, match="input_root"):
-        clean_selection(bad, input_root="/in")
-
-
-# --- clean_targets: the row-set primitive the kanban baskets use ------------------------------
-
-
-def test_clean_targets_deletes_only_the_given_rows(tmp_path: Path) -> None:
-    # Basket Clean = clean the selected rows' artifact at that basket's stage (via targets_for).
-    out = tmp_path / "out"
-    targets = _targets(out=str(out))
-    for t in targets:
-        t.output.parent.mkdir(parents=True, exist_ok=True)
-        t.output.touch()
-    selected = targets_for(targets, {("m1", "d")}, stage="convert")  # one row, one stage
-    deleted = clean_targets(selected, input_root=str(tmp_path / "in"))
-    assert deleted == [out / "m1/d/mudata.h5mu"]
-    assert not (out / "m1/d/mudata.h5mu").exists()
-    assert (out / "m1/d/mudata.annotated.h5mu").exists()
-    assert (out / "m2/d/ion.h5ad").exists()  # other module untouched
+    deleted = clean_targets(targets, input_root=str(tmp_path / "in"))
+    assert set(deleted) == {target.output for target in targets}
+    assert not any(target.output.exists() for target in targets)
 
 
 def test_clean_targets_refuses_input_root():
@@ -335,55 +335,7 @@ def test_clean_targets_removes_sidecar_log_and_failure_marker(tmp_path: Path) ->
     assert not Path(f"{conv.output}.benchmark.tsv").exists()
 
 
-def test_clean_cascade_removes_stray_downstream_artifact(tmp_path: Path) -> None:
-    # Holey on-disk state: convert + fasta present, annotate MISSING (partial run / manual copy).
-    # The dataset shows in `converted`; a basket Clean must cascade (convert + its descendants) so
-    # the stray annotated_fasta.* is swept too — no orphan left behind (§8.3, review Medium #1).
-    reg = load_registry()
-    corpus = {
-        "input_root": str(tmp_path / "in"),
-        "output_root": str(tmp_path / "out"),
-        "modules": {
-            "m": {
-                "annotation": "/a.toml",
-                "fasta": "/p.fasta",
-                "datasets": [
-                    {
-                        "name": "diann-d",
-                        "vendor": "diann",
-                        "input": "r.tsv",
-                        "params": "r.log",
-                    }
-                ],
-            }
-        },
-    }
-    targets = expand_targets(
-        reg,
-        corpus,
-        discover=lambda *_args: CapabilityDiscovery(("mudata",)),
-    )
-    for stage in ("convert", "fasta"):  # annotate deliberately absent
-        t = next(x for x in targets if x.stage == stage)
-        t.output.parent.mkdir(parents=True, exist_ok=True)
-        t.output.touch()
-
-    keys = {("m", "diann-d")}
-    cascade = [
-        "convert",
-        *descendants(reg, "convert"),
-    ]  # what a `converted` Clean sweeps
-    to_clean = [t for s in cascade for t in targets_for(targets, keys, stage=s)]
-    deleted = clean_targets(to_clean, input_root=str(tmp_path / "in"))
-
-    assert {p.name for p in deleted} == {
-        "mudata.h5mu",
-        "mudata.fasta.h5mu",
-    }
-    assert not any(t.output.exists() for t in targets)  # nothing orphaned
-
-
-def test_clean_selection_prunes_provenance(tmp_path: Path) -> None:
+def test_clean_targets_prune_provenance(tmp_path: Path) -> None:
     out = tmp_path / "out"
     targets = _targets(out=str(out))
     for t in targets:
@@ -393,7 +345,7 @@ def test_clean_selection_prunes_provenance(tmp_path: Path) -> None:
     provenance.write_for_target(conv, timestamp="t")
     sidecar = provenance.sidecar_path(conv.output)
     assert sidecar.exists()
-    clean_selection(targets, input_root=str(tmp_path / "in"), scope="module", module="m1")
+    clean_targets([conv], input_root=str(tmp_path / "in"))
     assert not sidecar.exists()
 
 

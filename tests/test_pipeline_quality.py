@@ -185,10 +185,10 @@ def test_stage_timing_parses_and_formats_snakemake_benchmarks(tmp_path: Path) ->
     benchmark = pipeline.benchmark_path(output)
     benchmark.write_text("s\th:m:s\n134.25\t0:02:14\n", encoding="utf-8")
     assert pipeline._benchmark_seconds(output) == 134.25
-    assert pipeline._format_duration(0.25) == "0.2s"
-    assert pipeline._format_duration(12.4) == "12s"
-    assert pipeline._format_duration(134.25) == "2m 14s"
-    assert pipeline._format_duration(3_725) == "1h 02m"
+    assert pipeline.format_duration(0.25) == "0.2s"
+    assert pipeline.format_duration(12.4) == "12s"
+    assert pipeline.format_duration(134.25) == "2m 14s"
+    assert pipeline.format_duration(3_725) == "1h 02m"
 
     benchmark.write_text("", encoding="utf-8")
     assert pipeline._benchmark_seconds(output) is None
@@ -298,23 +298,6 @@ def test_baskets_capability_fallback_and_dataset_selection(tmp_path: Path) -> No
     assert baskets["converted"][0]["problem"] == "warning"
     annotate.output.touch()
     assert pipeline.baskets([convert, annotate], registry)["annotated"][0]["runnable"] is False
-
-    selected = pipeline.select_targets(
-        [convert, annotate],
-        scope="dataset",
-        module="module",
-        dataset="dataset",
-    )
-    assert selected == [convert, annotate]
-    assert (
-        pipeline.select_targets(
-            [convert],
-            scope="dataset",
-            module="other",
-            dataset="dataset",
-        )
-        == []
-    )
 
     without_status = cast(
         capabilities.CapabilityDiscovery,

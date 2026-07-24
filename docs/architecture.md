@@ -7,6 +7,16 @@ module resources. The Corpus Runner asks APB which branches each fixture
 supports, freezes the resolved run into `run.json`, and gives that immutable
 snapshot to the packaged Snakemake workflow.
 
+The Corpus Runner UI is deliberately limited to whole-corpus `run` and `clean`
+operations, both executed by the packaged Snakefile. The branch grid is
+inspection-only. Dash callbacks never delete individual artifacts.
+
+Each operation persists its immutable `run.json`, lifecycle state, and
+`snakemake.log` below `<output_root>/.apb_studio/runs/<run-id>/`, allowing the
+dashboard to restore the latest run and log after restart. Per-rule benchmark
+files are the sole runtime source; old artifacts without one report timing as
+unavailable.
+
 Each branch follows:
 
 ```text

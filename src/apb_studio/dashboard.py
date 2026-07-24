@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
@@ -219,6 +220,11 @@ def _artifact_detail(
     metadata = str(artifact)
     if detail.get("duration"):
         metadata = f"{metadata} · Runtime {detail['duration']}"
+    else:
+        metadata = (
+            f"{metadata} · Runtime unavailable "
+            "(no Snakemake benchmark was recorded for this artifact)"
+        )
     try:
         summary = describe_path(artifact)
         rendered = json.dumps(summary, indent=2, sort_keys=True)
@@ -307,78 +313,89 @@ def _downloadable_log(
     return path if path.is_file() else None
 
 
-def _targets_for_stage_clear(
-    targets: list[pipeline.Target],
-    selection: dict[str, str] | None,
+def _corpus_summary(
+    rows: list[dict[str, Any]],
     registry: list[dict[str, Any]],
-) -> list[pipeline.Target]:
-    """Resolve one authoritative branch/stage selection and its downstream targets."""
-    if selection is None:
-        raise ValueError("Select a stage cell before clearing.")
-    module = selection.get("module")
-    dataset = selection.get("dataset")
-    level = selection.get("level")
-    stage = selection.get("stage")
-    branch = pipeline.MUDATA if level == "MuData" else level
-    exact = [
-        target
-        for target in targets
-        if (
-            target.module == module
-            and target.dataset == dataset
-            and target.branch == branch
-            and target.stage == stage
-        )
+) -> str:
+    """Summarize stage states and persisted timing coverage without reading artifacts."""
+    stage_names = [str(stage["name"]) for stage in registry]
+    details = [
+        detail
+        for row in rows
+        for stage in stage_names
+        if isinstance((detail := row.get("_stage_details", {}).get(stage)), dict)
     ]
-    if not exact:
-        raise ValueError("The selected stage is not available for this branch.")
-    stages = {cast(str, stage), *pipeline.descendants(registry, cast(str, stage))}
-    return [
-        target
-        for target in targets
-        if (
-            target.module == module
-            and target.dataset == dataset
-            and target.branch == branch
-            and target.stage in stages
-        )
+    if not details:
+        return "No corpus branches resolved."
+    counts = Counter(str(detail.get("state", "pending")) for detail in details)
+    completed = counts["completed"]
+    timed = [
+        float(detail["duration_seconds"])
+        for detail in details
+        if detail.get("state") == "completed" and detail.get("duration_seconds")
     ]
-
-
-def _clear_selected_stage(
-    selection: dict[str, str] | None,
-    registry: list[dict[str, Any]],
-    *,
-    job_id: str | None,
-    settings_path: Path | None,
-) -> None:
-    """Clear one selected stage and its descendants through the guarded execution primitive."""
-    if execution.corpus_job_running(job_id):
-        raise RuntimeError("wait for the active corpus run to finish before clearing outputs")
-    targets, _coverage, snapshot, error = execution.load_overview(
-        job_id,
-        settings_path=settings_path,
+    state_summary = (
+        f"{completed} produced · {counts['failed']} failed · {counts['blocked']} blocked"
+        f" · {counts['unsupported']} unsupported · {counts['pending']} pending"
     )
-    if error is not None:
-        raise RuntimeError(error)
-    if snapshot is None:
-        raise RuntimeError("Corpus Runner could not resolve the fixture inventory.")
-    selected = _targets_for_stage_clear(targets, selection, registry)
-    execution.clean_targets(selected, input_root=snapshot.test_data_root)
+    if timed:
+        timing = (
+            f"{len(timed)}/{completed} produced stages timed"
+            f" · {pipeline.format_duration(sum(timed))} recorded runtime"
+        )
+    elif completed:
+        timing = (
+            f"0/{completed} produced stages timed"
+            " · existing artifacts predate Snakemake benchmark metadata"
+        )
+    else:
+        timing = "No completed-stage timing yet."
+    return f"{state_summary}\n{timing}\nClick a produced stage for its APB summary and uns."
 
 
-def _live_log(job_id: str | None) -> tuple[str, bool, str]:
-    """Return live log text, running state, and a compact job label."""
+def _live_log(
+    job_id: str | None,
+    *,
+    settings_path: Path | None = None,
+) -> tuple[str, bool, str]:
+    """Return live or persisted Snakemake log text, activity, and operation label."""
     status = execution.inspect_corpus_job(job_id)
     if status is not None:
+        record = execution.corpus_operation(job_id)
+        operation = record.operation if record is not None else "run"
+        noun = "Corpus clean" if operation == "clean" else "Corpus run"
         if status.running:
-            label = "Corpus run in progress"
+            label = f"{noun} in progress"
         elif status.success:
-            label = "Corpus run completed"
+            label = f"{noun} completed"
         else:
-            label = f"Corpus run failed (exit {status.returncode})"
+            label = f"{noun} failed (exit {status.returncode})"
         return status.log_text or "Waiting for Snakemake output…", status.running, label
 
+    active_settings = settings.load_settings(settings_path)
+    persisted = execution.latest_persisted_run(active_settings.output_root)
+    if persisted is not None:
+        record = persisted.operation
+        log_text = jobrunner.read_text_tail(persisted.log_path)
+        if record is None:
+            return (
+                log_text or "This persisted run has no Snakemake log.",
+                False,
+                "Loaded persisted Snakemake run",
+            )
+        noun = "Corpus clean" if record.operation == "clean" else "Corpus run"
+        labels = {
+            "starting": f"{noun} starting",
+            "running": f"{noun} in progress",
+            "succeeded": f"{noun} completed",
+            "failed": f"{noun} failed",
+        }
+        running = record.status in {"starting", "running"}
+        return (
+            log_text or "Waiting for Snakemake output…",
+            running,
+            labels[record.status],
+        )
     return "No corpus run log yet.", False, "Corpus not running"
 
 
@@ -433,15 +450,14 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                     ),
                     dcc.ConfirmDialogProvider(
                         html.Button(
-                            "Clear selected stage…",
-                            id="clear-stage",
-                            disabled=True,
+                            "Clear corpus…",
+                            id="clear-corpus",
                             style={"height": "2rem"},
                         ),
-                        id="confirm-clear-stage",
+                        id="confirm-clear-corpus",
                         message=(
-                            "Clear the selected stage and all downstream outputs for this branch? "
-                            "Fixture inputs and other branches are untouched."
+                            "Clear all Snakemake-managed corpus outputs and rule state? "
+                            "Fixture inputs and persisted run/log history are preserved."
                         ),
                     ),
                     html.Span(
@@ -483,6 +499,20 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                 },
                 getRowId="params.data._row_id",
                 style={"height": "560px", "marginTop": "0.75rem"},
+            ),
+            html.Section(
+                [
+                    html.H2(
+                        "Corpus summary",
+                        style={"fontSize": "1rem", "margin": "0"},
+                    ),
+                    html.Div(
+                        id="corpus-summary",
+                        style={"marginTop": "0.4rem", "whiteSpace": "pre-wrap"},
+                    ),
+                ],
+                id="corpus-summary-panel",
+                style=_PANEL_STYLE,
             ),
             html.Section(
                 [
@@ -540,7 +570,9 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         Output("corpus-grid", "rowData"),
         Output("error", "children"),
         Output("global-log", "children"),
+        Output("corpus-summary", "children"),
         Output("run-corpus", "disabled"),
+        Output("clear-corpus", "disabled"),
         Output("poll-corpus", "disabled"),
         Output("run-status", "children"),
         Output("active-job-id", "data"),
@@ -549,11 +581,10 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         Input("reload", "n_clicks"),
         Input("run-corpus", "n_clicks"),
         Input("poll-corpus", "n_intervals"),
-        Input("confirm-clear-stage", "submit_n_clicks"),
+        Input("confirm-clear-corpus", "submit_n_clicks"),
         State("output-root", "value"),
         State("active-job-id", "data"),
         State("grid-revision", "data"),
-        State("selected-stage", "data"),
     )
     def _refresh_corpus(
         _reload_clicks: int | None,
@@ -563,11 +594,12 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         output_root: str,
         job_id: str | None,
         grid_revision: int | None,
-        selected_stage: dict[str, str] | None,
     ) -> tuple[
         list[dict[str, Any]],
         str,
         str,
+        str,
+        bool,
         bool,
         bool,
         str,
@@ -577,9 +609,12 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
     ]:
         """Launch when requested, then refresh rows and the live global log."""
         launch_error = ""
-        action_status = ""
         job_id = execution.active_corpus_job_id() or job_id
-        if ctx.triggered_id in {"reload", "run-corpus"}:
+        if ctx.triggered_id in {
+            "reload",
+            "run-corpus",
+            "confirm-clear-corpus",
+        }:
             try:
                 settings.update_settings(
                     output_root=output_root,
@@ -590,26 +625,25 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                         cores=3,
                         settings_path=settings_path,
                     )
+                elif ctx.triggered_id == "confirm-clear-corpus":
+                    job_id = execution.clear_corpus(
+                        settings_path=settings_path,
+                    )
             except (OSError, RuntimeError, ValueError) as exc:
-                action = "launch corpus" if ctx.triggered_id == "run-corpus" else "save settings"
+                action = {
+                    "run-corpus": "launch corpus run",
+                    "confirm-clear-corpus": "launch corpus clean",
+                }.get(str(ctx.triggered_id), "save settings")
                 launch_error = f"Could not {action}: {exc}"
-        elif ctx.triggered_id == "confirm-clear-stage":
-            try:
-                _clear_selected_stage(
-                    selected_stage,
-                    registry,
-                    job_id=job_id,
-                    settings_path=settings_path,
-                )
-                action_status = "Selected stage and downstream outputs cleared"
-            except (OSError, RuntimeError, ValueError, pipeline.CleanGuardError) as exc:
-                launch_error = f"Could not clear selected stage: {exc}"
 
         rows, snapshot, load_error = _load_dashboard_rows(
             job_id,
             settings_path=settings_path,
         )
-        log_text, running, status_label = _live_log(job_id)
+        log_text, running, status_label = _live_log(
+            job_id,
+            settings_path=settings_path,
+        )
         active_settings = settings.load_settings(settings_path)
         fixture_count = len(snapshot.fixtures) if snapshot is not None else 0
         source_label = (
@@ -617,14 +651,14 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
             f" · {fixture_count} complete · {len(rows)} branches"
         )
         errors = "\n\n".join(error for error in (load_error, launch_error) if error)
-        if action_status and not running:
-            status_label = action_status
-        run_disabled = running or load_error is not None
+        operation_disabled = running or load_error is not None
         return (
             rows,
             errors,
             log_text,
-            run_disabled,
+            _corpus_summary(rows, registry),
+            operation_disabled,
+            operation_disabled,
             not running,
             status_label,
             job_id,
@@ -636,7 +670,6 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         Output("stage-detail", "children"),
         Output("selected-stage", "data"),
         Output("download-log", "disabled"),
-        Output("clear-stage", "disabled"),
         Input("corpus-grid", "cellClicked"),
         Input("grid-revision", "data"),
         State("active-job-id", "data"),
@@ -648,37 +681,33 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         _grid_revision: int,
         job_id: str | None,
         selected_stage: dict[str, str] | None,
-    ) -> tuple[object, object, object, object]:
+    ) -> tuple[object, object, object]:
         """Show a clicked stage and refresh that same selection while the job runs."""
         rows, _snapshot, error = _load_dashboard_rows(
             job_id,
             settings_path=settings_path,
         )
         if error is not None:
-            return error, selected_stage or no_update, True, True
+            return error, selected_stage or no_update, True
         selection = (
             _selection_from_click(cell, registry, rows)
             if ctx.triggered_id == "corpus-grid"
             else selected_stage
         )
         if selection is None:
-            return no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update
         detail = _find_stage_detail(rows, selection)
         if detail is None:
             return (
                 "Click a completed stage or a status cell.",
                 None,
                 True,
-                True,
             )
         log_path = _downloadable_log(rows, selection)
-        clear_disabled = detail.get("state") not in {"completed", "failed"}
-        clear_disabled = clear_disabled or execution.corpus_job_running(job_id)
         return (
             _render_stage_detail(detail, selection, registry),
             selection,
             log_path is None,
-            clear_disabled,
         )
 
     @app.callback(

@@ -12,7 +12,7 @@ from anndata_proteomics.converters.recognize import _expected_long_columns
 from anndata_proteomics.params.registry import parse_params
 from anndata_proteomics.rules.loader import resolve_rule_for_version
 
-from apb_studio import capabilities
+from apb_studio import capabilities, run_history
 from apb_studio.pipeline import (
     RUN_SNAPSHOT_SCHEMA_VERSION,
     ResolvedFixture,
@@ -280,8 +280,10 @@ def _single_command_run(
     run_id: str,
 ) -> tuple[Path, Path]:
     """Write a one-target run snapshot for real shell-behavior tests."""
-    input_path = tmp_path / "input.tsv"
-    parameter_path = tmp_path / "params.txt"
+    input_root = tmp_path / "in"
+    input_root.mkdir()
+    input_path = input_root / "input.tsv"
+    parameter_path = input_root / "params.txt"
     input_path.write_text("header\n")
     parameter_path.write_text("params\n")
     output = tmp_path / "out" / "module" / "fixture" / "ion.h5ad"
@@ -312,7 +314,7 @@ def _single_command_run(
         schema_version=RUN_SNAPSHOT_SCHEMA_VERSION,
         run_id=run_id,
         created_at="2026-07-22T00:00:00+00:00",
-        test_data_root=tmp_path,
+        test_data_root=input_root,
         output_root=tmp_path / "out",
         registry_digest="test-registry",
         apb_version=None,
@@ -373,6 +375,56 @@ def test_successful_rule_writes_elapsed_time_benchmark(tmp_path: Path) -> None:
     header, values = benchmark.read_text(encoding="utf-8").splitlines()
     elapsed = dict(zip(header.split("\t"), values.split("\t"), strict=True))["s"]
     assert float(elapsed) >= 0
+
+
+@pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
+def test_clean_rule_removes_all_managed_state_and_records_success(tmp_path: Path) -> None:
+    assert _SNAKEMAKE is not None
+    run_path, resolved_output = _single_command_run(
+        tmp_path,
+        ["sh", "-c", "unused"],
+        run_id="clean-test",
+    )
+    resolved_output.parent.mkdir(parents=True)
+    resolved_output.write_text("artifact", encoding="utf-8")
+    for suffix in (".log", ".failed", ".benchmark.tsv", ".provenance.json"):
+        Path(f"{resolved_output}{suffix}").write_text("state", encoding="utf-8")
+    run_history.start_operation(run_path, "clean", started_at="before")
+
+    proc = subprocess.run(
+        [
+            _SNAKEMAKE,
+            "-s",
+            str(_SNAKEFILE),
+            "--configfile",
+            str(run_path),
+            "--cores",
+            "1",
+            "--runtime-source-cache-path",
+            _runtime_cache(tmp_path),
+            "clean",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        env=_snakemake_env(tmp_path),
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert not resolved_output.exists()
+    assert not any(
+        Path(f"{resolved_output}{suffix}").exists()
+        for suffix in (
+            ".log",
+            ".failed",
+            ".benchmark.tsv",
+            ".provenance.json",
+        )
+    )
+    assert (tmp_path / "in/input.tsv").is_file()
+    operation = run_history.load_operation(run_path)
+    assert operation is not None
+    assert operation.status == "succeeded"
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")

@@ -1,5 +1,4 @@
-"""Drive the pipeline from the dashboard: turn a scope×stage selection into a Snakemake invocation
-run as a background job, or a Clean that deletes the selected outputs.
+"""Drive whole-corpus Snakemake run and clean operations from the dashboard.
 
 Command rendering and target/path derivation live in `pipeline` (the single source of truth);
 this module adds only the Snakemake-CLI + background-runner glue.
@@ -13,6 +12,7 @@ import shutil
 import sys
 import uuid
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -24,7 +24,7 @@ from anndata_proteomics.proteobench.config import (
 )
 from anndata_proteomics.test_data import find_proteobench_tool_settings
 
-from apb_studio import capabilities, provenance
+from apb_studio import capabilities, provenance, run_history
 from apb_studio.disk import atomic_write_text
 from apb_studio.fixture_inventory import FixtureRecord, load_fixture_inventory
 from apb_studio.jobrunner import Job, JobStatus, inspect_job, start_job
@@ -42,7 +42,6 @@ from apb_studio.pipeline import (
     load_run_snapshot,
     reject_input_paths,
     runnable_targets,
-    select_targets,
     write_run_snapshot,
 )
 from apb_studio.settings import load_settings
@@ -52,6 +51,16 @@ _VENV_SNAKEMAKE = Path(sys.executable).with_name("snakemake")
 _JOBS: dict[str, Job] = {}
 _RUNS: dict[str, Path] = {}
 _ALIAS_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedRun:
+    """One valid run snapshot and its durable Snakemake presentation state."""
+
+    snapshot: RunSnapshot
+    run_path: Path
+    log_path: Path
+    operation: run_history.OperationRecord | None
 
 
 class _JobStarter(Protocol):
@@ -363,21 +372,6 @@ def _save_output_aliases(
     atomic_write_text(output_alias_path(output_root), f"{source}\n")
 
 
-def selected_outputs(
-    targets: list[Target],
-    *,
-    scope: str = "all",
-    module: str | None = None,
-    dataset: str | None = None,
-    stage: str = "all",
-) -> list[Path]:
-    """The output paths a (scope, stage) Run would (re)build."""
-    return [
-        t.output
-        for t in select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage)
-    ]
-
-
 def snakemake_argv(
     snakefile: Path | str,
     run_path: Path | str,
@@ -468,25 +462,95 @@ def corpus_log_path(
     return output_root / ".apb_studio" / "snakemake.log"
 
 
+def latest_persisted_run(output_root: Path | str) -> PersistedRun | None:
+    """Load the newest valid run snapshot and its persisted log/operation state."""
+    root = Path(output_root).expanduser().resolve()
+    runs_root = root / ".apb_studio" / "runs"
+    if not runs_root.is_dir():
+        return None
+    candidates = sorted(
+        runs_root.glob("*/run.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            snapshot = load_run_snapshot(path)
+            if snapshot.output_root.expanduser().resolve() != root:
+                continue
+            operation = run_history.reconcile_operation(path)
+            log_path = path.parent / "snakemake.log"
+            if operation is None and not log_path.is_file():
+                continue
+        except (OSError, ValueError):
+            continue
+        return PersistedRun(
+            snapshot=snapshot,
+            run_path=path,
+            log_path=log_path,
+            operation=operation,
+        )
+    return None
+
+
 def prepare_run(
     *,
+    operation: run_history.OperationKind = "run",
     settings_path: Path | None = None,
     discover: Callable[
         [Path, Path, str], capabilities.CapabilityDiscovery
     ] = capabilities.discover_capabilities,
 ) -> tuple[RunSnapshot, Path, list[Target]]:
-    """Freeze the current inventory and return its generated JSON and runnable targets."""
+    """Freeze the current inventory and select targets for one whole-corpus operation."""
     snapshot = resolve_current_run(
         run_id=uuid.uuid4().hex,
         settings_path=settings_path,
         persist_aliases=True,
         discover=discover,
     )
-    selected = runnable_targets(list(snapshot.targets))
-    if not selected:
+    selected = (
+        runnable_targets(list(snapshot.targets)) if operation == "run" else list(snapshot.targets)
+    )
+    if not selected and operation == "run":
         raise ValueError("Corpus has no runnable stages.")
+    if not selected:
+        raise ValueError("Corpus has no managed stages to clean.")
     path = write_run_snapshot(snapshot, run_snapshot_path(snapshot))
     return snapshot, path, selected
+
+
+def _launch_corpus_operation(
+    operation: run_history.OperationKind,
+    *,
+    cores: int = 3,
+    settings_path: Path | None = None,
+) -> str:
+    """Freeze and launch one whole-corpus Snakemake operation."""
+    if any(inspect_job(job).running for job in _JOBS.values()):
+        raise RuntimeError("A corpus operation is already active.")
+    snapshot, path, selected = prepare_run(
+        operation=operation,
+        settings_path=settings_path,
+    )
+    job_id = uuid.uuid4().hex
+    run_history.start_operation(path, operation)
+    targets = [target.output for target in selected] if operation == "run" else [Path("clean")]
+    try:
+        job = run_pipeline(
+            SNAKEFILE,
+            path,
+            corpus_log_path(snapshot),
+            targets=targets,
+            cores=cores,
+            cwd=SNAKEFILE.parent,
+        )
+        run_history.set_operation_pid(path, job.process.pid)
+    except Exception:
+        run_history.mark_operation(path, "failed")
+        raise
+    _JOBS[job_id] = job
+    _RUNS[job_id] = path
+    return job_id
 
 
 def launch_corpus(
@@ -495,20 +559,32 @@ def launch_corpus(
     settings_path: Path | None = None,
 ) -> str:
     """Freeze and launch every currently runnable corpus stage."""
-    if any(inspect_job(job).running for job in _JOBS.values()):
-        raise RuntimeError("A corpus run is already active.")
-    snapshot, path, selected = prepare_run(settings_path=settings_path)
-    job_id = uuid.uuid4().hex
-    _JOBS[job_id] = run_pipeline(
-        SNAKEFILE,
-        path,
-        corpus_log_path(snapshot),
-        targets=[target.output for target in selected],
+    return _launch_corpus_operation(
+        "run",
         cores=cores,
-        cwd=SNAKEFILE.parent,
+        settings_path=settings_path,
     )
-    _RUNS[job_id] = path
-    return job_id
+
+
+def clear_corpus(
+    *,
+    cores: int = 1,
+    settings_path: Path | None = None,
+) -> str:
+    """Freeze and launch the packaged whole-corpus Snakemake clean target."""
+    return _launch_corpus_operation(
+        "clean",
+        cores=cores,
+        settings_path=settings_path,
+    )
+
+
+def corpus_operation(job_id: str | None) -> run_history.OperationRecord | None:
+    """Return the durable operation record for a known in-memory job."""
+    job_id = job_id or active_corpus_job_id()
+    if not job_id or job_id not in _RUNS:
+        return None
+    return run_history.load_operation(_RUNS[job_id])
 
 
 def _running_snapshot(job_id: str | None) -> RunSnapshot | None:
@@ -539,19 +615,12 @@ def inspect_corpus_job(job_id: str | None) -> JobStatus | None:
     return inspect_job(_JOBS[job_id])
 
 
-def corpus_job_running(job_id: str | None) -> bool:
-    """Return whether a known corpus job is still active."""
-    status = inspect_corpus_job(job_id)
-    return status is not None and status.running
-
-
 def clean_targets(targets: list[Target], *, input_root: Path | str) -> list[Path]:
-    """Delete an explicit set of Targets' outputs (guarded); returns the deleted paths.
+    """Delete all supplied targets and their managed rule state.
 
-    The row-set primitive the kanban baskets use: a basket Clean passes the Targets for the selected
-    rows at that basket's defining stage (`pipeline.targets_for`). Guarded by
-    `reject_input_paths` (raises before anything is deleted). Prunes each cleaned stage from its
-    sibling ``provenance.json`` so a sidecar never outlives its artifact.
+    The packaged Snakefile's whole-corpus ``clean`` rule supplies its frozen target inventory.
+    ``reject_input_paths`` raises before anything is deleted, and each target's provenance is
+    pruned so a sidecar never outlives its artifact.
     """
     reject_input_paths([t.output for t in targets], input_root)
     deleted = []
@@ -575,23 +644,3 @@ def clean_targets(targets: list[Target], *, input_root: Path | str) -> list[Path
             benchmark.unlink()
         provenance.prune_for_target(target)
     return deleted
-
-
-def clean_selection(
-    targets: list[Target],
-    *,
-    input_root: Path | str,
-    scope: str = "all",
-    module: str | None = None,
-    dataset: str | None = None,
-    stage: str = "all",
-) -> list[Path]:
-    """Delete the outputs a (scope, stage) Clean selects; returns the deleted paths.
-
-    Thin wrapper over `clean_targets` for the scope×stage selector (Snakefile/CLI callers). Both go
-    through `reject_input_paths`, so neither can touch a path under `input_root`.
-    """
-    return clean_targets(
-        select_targets(targets, scope=scope, module=module, dataset=dataset, stage=stage),
-        input_root=input_root,
-    )

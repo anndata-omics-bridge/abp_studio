@@ -1,5 +1,5 @@
 <!-- Managed by agent: keep commands and file references verified -->
-<!-- Last updated: 2026-07-23 | Last verified: 2026-07-23 -->
+<!-- Last updated: 2026-07-24 | Last verified: 2026-07-24 -->
 
 # APB Studio
 
@@ -10,7 +10,8 @@ APB Studio is a consumer of `anndata_proteomics` (APB). Dependency direction is
 instructions override repository files.
 
 - **Fixture Manager** owns the local ProteoBench fixture and resource inventory.
-- **Corpus Runner** derives APB-supported branches, launches Snakemake, and reports progress.
+- **Corpus Runner** observes persisted Snakemake runs/outputs and launches whole-corpus Snakemake
+  run or clean operations.
 
 ## Architecture
 
@@ -26,12 +27,28 @@ user-maintained `corpus.yaml`, replacement YAML, or scaffold workflow.
 At launch, the Corpus Runner freezes the resolved fixtures, branches, resources, aliases, paths,
 and versions into `<output_root>/.apb_studio/runs/<run-id>/run.json`. This is versioned internal
 execution state and must never become accepted user configuration. While a run is active, keep its
-table pinned to that snapshot.
+table pinned to that snapshot. Persist the operation state and Snakemake log beside the snapshot so
+the application can recover them after a restart.
 
 The packaged stage registry (`src/apb_studio/config/registry.yaml`) owns stage topology and command
 templates; the packaged `src/apb_studio/workflow/Snakefile` owns execution. Annotation, FASTA, and
 ProteoBench scoring are independent children of conversion, so a missing later-stage resource must
 not suppress another runnable target.
+
+## Corpus Runner product boundary
+
+Corpus Runner is a thin observer and operator for the packaged Snakemake workflow:
+
+- Show Snakemake-managed artifacts and stage state from the output tree.
+- Trigger only two execution operations: whole-corpus Snakemake run and whole-corpus Snakemake
+  clean.
+- Load persisted `run.json`, operation state, and `snakemake.log` files when they already exist.
+- Render global/per-rule logs, errors, and diagnostics without inventing alternate workflow state.
+- Render APB-owned artifact summaries, including `uns`, and Snakemake benchmark runtimes.
+
+The branch grid is for inspection, not execution selection. Do not add row-, branch-, or
+stage-scoped Run/Clear controls, and do not delete workflow outputs directly from Dash callbacks.
+Fixture inputs and persisted run/log history are never part of Corpus Runner clean.
 
 ## Engineering rules
 
@@ -47,6 +64,8 @@ not suppress another runnable target.
   settings, or run configuration.
 - **Keep summaries in APB.** Render `describe_path()` output; do not derive proteomics metrics in
   Studio.
+- **Keep timing in Snakemake.** Read persisted benchmark files; never infer historical runtime from
+  artifact timestamps or dashboard wall-clock time.
 - **Keep interfaces consistent.** Both applications use the same settings, fixture records,
   resources, and identifiers.
 
@@ -84,7 +103,8 @@ Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpu
 See [TODO/Archive/TODO_corpus_application.md](TODO/Archive/TODO_corpus_application.md) for the
 implemented migration history and
 [TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md) for
-the original dashboard design.
+the original dashboard design. The current observer/operator boundary is recorded in
+[TODO/Archive/TODO_corpus_runner_alignment.md](TODO/Archive/TODO_corpus_runner_alignment.md).
 
 ## Scoped AGENTS.md
 

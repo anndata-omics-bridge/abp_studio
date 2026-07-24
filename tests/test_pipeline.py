@@ -15,12 +15,10 @@ from apb_studio.pipeline import (
     FASTA_ARTIFACT_RE,
     PROTEOBENCH_ARTIFACT_RE,
     RUN_SNAPSHOT_SCHEMA_VERSION,
-    CleanGuardError,
     ResolvedFixture,
     RunSnapshot,
     Target,
     branch_rows,
-    clean_paths,
     convert_artifact,
     coverage,
     descendants,
@@ -33,7 +31,6 @@ from apb_studio.pipeline import (
     runnable_targets,
     stage_order,
     target_blocker,
-    targets_for,
     validate_dataset,
     write_run_snapshot,
 )
@@ -531,23 +528,6 @@ def test_problems_read_artifact_provenance_warning(tmp_path: Path) -> None:
     )
     found = problems(corpus, targets)
     assert "parameter metadata incomplete" in "; ".join(found[("m", "diann-d")])
-
-
-def test_targets_for_selects_all_branches_at_stage(tmp_path: Path) -> None:
-    targets = _expand(_corpus(tmp_path), "mudata", "ion", "protein")
-    selected = targets_for(targets, {("m", "diann-d")}, stage="convert")
-    assert {target.branch for target in selected} == {"mudata", "ion", "protein"}
-
-
-def test_clean_paths_scope_and_input_root_guard(tmp_path: Path) -> None:
-    corpus = _corpus(tmp_path)
-    targets = _expand(corpus, "mudata", "ion")
-    paths = clean_paths(targets, stage="convert", input_root=corpus["input_root"])
-    assert {path.name for path in paths} == {"mudata.h5mu", "ion.h5ad"}
-
-    bad = [Target("m", "d", "convert", Path(corpus["input_root"]) / "x", [], [])]
-    with pytest.raises(CleanGuardError, match="input_root"):
-        clean_paths(bad, input_root=corpus["input_root"])
 
 
 def test_clean_guard_survives_python_optimized_mode() -> None:
