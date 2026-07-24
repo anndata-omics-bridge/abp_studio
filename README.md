@@ -101,6 +101,7 @@ individual checks.
 
 ## Historical design
 
-The current migration plan is [TODO/TODO_corpus_application.md](TODO/TODO_corpus_application.md).
-The original dashboard specification is archived at
+The implemented migration plan is archived at
+[TODO/Archive/TODO_corpus_application.md](TODO/Archive/TODO_corpus_application.md).
+The original dashboard specification is at
 [TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md).

@@ -1,6 +1,6 @@
 # Corpus Runner
 
-> Status: implemented and verified on 2026-07-22.
+> Status: implemented and verified on 2026-07-22; archived 2026-07-24.
 
 ## Decision
 
@@ -202,4 +202,4 @@ or ambiguous input/parameter files.
 - No output-directory rename in this change.
 
 The previous implemented branch/dashboard plan is archived in
-[`TODO/Archive/TODO_corpus_application_full_history_2026-07-22.md`](Archive/TODO_corpus_application_full_history_2026-07-22.md).
+[`TODO_corpus_application_full_history_2026-07-22.md`](TODO_corpus_application_full_history_2026-07-22.md).

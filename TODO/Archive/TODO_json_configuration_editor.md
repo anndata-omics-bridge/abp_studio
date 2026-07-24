@@ -1,5 +1,7 @@
 # Software-version JSON rules and configuration viewer
 
+> Implemented and archived 2026-07-24. The completed design is retained as implementation history.
+
 > Store every existing software-version rule family in one self-contained JSON document containing
 > a shared base and its quantification levels, then present those sections in a simple Studio viewer.
 

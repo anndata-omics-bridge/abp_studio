@@ -2,6 +2,8 @@
 
 *Reviewer: Claude — 2026-07-22. Opinion only; plan not authorized.*
 
+> Archived 2026-07-24 alongside the implemented Corpus Runner plan.
+
 ## Verdict
 
 Sound plan, worth doing. The core move — make APB's parsing-rule JSONs (via

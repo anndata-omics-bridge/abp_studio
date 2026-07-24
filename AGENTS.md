@@ -81,9 +81,10 @@ approval.
 Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
 `apb-studio-testdata`/`apb-studio` are compatibility aliases.
 
-See [TODO/TODO_corpus_application.md](TODO/TODO_corpus_application.md) for the approved migration
-plan and [TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md)
-for the original dashboard design.
+See [TODO/Archive/TODO_corpus_application.md](TODO/Archive/TODO_corpus_application.md) for the
+implemented migration history and
+[TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md) for
+the original dashboard design.
 
 ## Scoped AGENTS.md
 

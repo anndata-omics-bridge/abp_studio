@@ -3,10 +3,9 @@
 > Let the test-data explorer convert a downloaded ProteoBench fixture with APB and browse the
 > produced MuData / AnnData containers, with per-level tables and a **generic, tool-independent**
 > descriptive summary.
-
-This is a **plan only** — no code yet. Some decisions are deliberately deferred to
-implementation-time observation (see **Open questions**); the design is factored so those can be
-settled without rework.
+>
+> Implemented and archived 2026-07-24. Deferred open questions remain non-goals rather than
+> incomplete implementation work.
 
 ---
 
@@ -18,10 +17,11 @@ and per-level tables (ion / peptidoform / peptide / protein), where selecting a 
 that tells me whether the conversion looks right."*
 
 **Scope**
-- **In:** the *testdata-app* only ([src/apb_studio/testdata_app.py](../src/apb_studio/testdata_app.py)) —
+- **In:** the *testdata-app* only
+  ([src/apb_studio/testdata_app.py](../../src/apb_studio/testdata_app.py)) —
   a **Convert** action on the selected fixture, and a new **AnnData** tab that lists produced
   containers with a summary pane.
-- **Out:** the corpus app. [dashboard.py](../src/apb_studio/dashboard.py) already batch-converts the
+- **Out:** the corpus app. [dashboard.py](../../src/apb_studio/dashboard.py) already batch-converts the
   whole corpus via Snakemake; this is its interactive, single-fixture counterpart. We do not touch
   the corpus pipeline, registry, or Snakefile.
 - **Out:** benchmark scoring (see the boundary below). Convert scope is a **single selected
@@ -85,7 +85,7 @@ A second command row under the existing one in `action_panel()`:
 - A specific level →
   `apb convert <input> <level> --params <param_0> --output <dir>/<level>`, producing
   `<level>.h5ad`.
-- Runs as a background job (reuse [jobrunner.py](../src/apb_studio/jobrunner.py)); log streamed to
+- Runs as a background job (reuse [jobrunner.py](../../src/apb_studio/jobrunner.py)); log streamed to
   the existing job-log pane. On success, auto-switch to the AnnData tab (mirror `show_completed_job`).
 - Re-convert overwrites the existing artifact (idempotent, matches Snakemake semantics). If the
   same basename previously resolved to the other container type, APB removes that stale sibling
@@ -167,7 +167,7 @@ truth and cache invalidation; there is no independent sidecar lifecycle.
 
 ## Implementation plan
 
-**APB ([apb/](../../apb/))**
+**APB ([apb/](../../../apb/))**
 - [x] `readers/summary.py` (or similar): versioned summary schema; quantification- and FASTA-component
       producers; `describe(obj) -> dict`; and `describe_path(path, modality=None)`. The normal read
       path uses backed metadata + stored `uns`; only legacy fallback loads matrices.
@@ -187,7 +187,7 @@ truth and cache invalidation; there is no independent sidecar lifecycle.
       five alternating runs was 0.0706 s without summary storage and 0.0728 s with it: +0.0022 s
       (+3.1%).
 
-**apb_studio ([src/apb_studio/](../src/apb_studio/))**
+**apb_studio ([src/apb_studio/](../../src/apb_studio/))**
 - [x] `testdata.py`:
       - `convert_command(paths, row, level)` → the `apb convert …` command with an extensionless
         output basename (no sidecar step).
