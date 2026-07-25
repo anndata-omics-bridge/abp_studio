@@ -18,11 +18,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from anndata_proteomics.converters import pipeline as conversion_pipeline
-from anndata_proteomics.proteobench.config import (
-    load_module_settings,
-    load_tool_settings,
-)
-from anndata_proteomics.test_data import find_proteobench_tool_settings
+from anndata_proteomics.proteobench.config import load_module_settings
 
 from apb_studio import capabilities, provenance, run_history
 from apb_studio.disk import atomic_write_text
@@ -149,23 +145,6 @@ def resolve_current_run(
                     f"Invalid ProteoBench module settings {annotation_path}: "
                     f"{type(error).__name__}: {error}"
                 )
-        tool_settings_path = find_proteobench_tool_settings(
-            module=fixture.module,
-            vendor=(
-                discovery.software_slug
-                or conversion_pipeline.software_slug(fixture.catalog_software_name)
-            ),
-            test_data_dir=settings.test_data_root,
-        )
-        tool_settings_error = None
-        if tool_settings_path is not None:
-            try:
-                load_tool_settings(tool_settings_path)
-            except Exception as error:  # noqa: BLE001 - frozen as a BLOCKED diagnostic
-                tool_settings_error = (
-                    f"Invalid ProteoBench tool settings {tool_settings_path}: "
-                    f"{type(error).__name__}: {error}"
-                )
         fixtures.append(
             ResolvedFixture(
                 module=fixture.module,
@@ -186,9 +165,7 @@ def resolve_current_run(
                 fasta_path=resource.fasta_path if resource is not None else None,
                 annotation_error=(resource.annotation_error if resource is not None else None),
                 fasta_error=resource.fasta_error if resource is not None else None,
-                tool_settings_path=tool_settings_path,
                 module_settings_error=module_settings_error,
-                tool_settings_error=tool_settings_error,
                 proteobench_level=proteobench_level,
             )
         )

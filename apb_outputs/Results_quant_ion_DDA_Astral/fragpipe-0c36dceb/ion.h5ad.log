@@ -1,18 +1,2 @@
-INFO    | vendor=fragpipe software_version='23.0'
-Traceback (most recent call last):
-  File "/Users/wolski/projects/anndata_bridge/apb_studio/.venv/bin/apb", line 10, in <module>
-    sys.exit(main())
-             ~~~~^^
-  File "/Users/wolski/projects/anndata_bridge/apb/src/anndata_proteomics/scripts/cli.py", line 231, in main
-    rc = app()
-  File "/Users/wolski/projects/anndata_bridge/apb_studio/.venv/lib/python3.13/site-packages/cyclopts/core.py", line 1961, in __call__
-    result = _run_maybe_async_command(command, bound, resolved_backend)
-  File "/Users/wolski/projects/anndata_bridge/apb_studio/.venv/lib/python3.13/site-packages/cyclopts/_run.py", line 50, in _run_maybe_async_command
-    return command(*bound.args, **bound.kwargs)
-  File "/Users/wolski/projects/anndata_bridge/apb/src/anndata_proteomics/scripts/cli.py", line 117, in convert
-    adata = _convert_level(df, slug, level, version, params_path=params)
-  File "/Users/wolski/projects/anndata_bridge/apb/src/anndata_proteomics/converters/pipeline.py", line 128, in _convert_level
-    rule = select_rule(slug, level, version, df.columns)
-  File "/Users/wolski/projects/anndata_bridge/apb/src/anndata_proteomics/converters/pipeline.py", line 76, in select_rule
-    raise ValueError(f"{slug} {level}: no rule covers software version {version!r}")
-ValueError: fragpipe ion: no rule covers software version '23.0'
+INFO    | vendor=fragpipe software_version='23.0' version_status=present
+INFO    | wrote /Users/wolski/projects/anndata_bridge/apb_studio/apb_outputs/Results_quant_ion_DDA_Astral/fragpipe-0c36dceb/ion.h5ad  shape=(6, 53034)  layers=['Intensity', 'Spectral_Count', 'Apex_Retention_Time', 'Match_Type']

@@ -165,8 +165,6 @@ def _fixture_run(tmp_path: Path) -> Path:
             software,
         )
         assert discovery.branches, discovery.diagnostic
-        tool_settings = in_root / f"{dataset}_tool.toml"
-        tool_settings.write_text("[mapper]\nProtein = 'Proteins'\n")
         fixtures.append(
             ResolvedFixture(
                 module=module,
@@ -181,7 +179,6 @@ def _fixture_run(tmp_path: Path) -> Path:
                 capability_status=discovery.status.value,
                 annotation_path=annotation,
                 fasta_path=fasta,
-                tool_settings_path=tool_settings,
                 proteobench_level="ion",
             )
         )

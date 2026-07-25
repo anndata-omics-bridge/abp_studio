@@ -4,7 +4,7 @@ APB Studio provides two local applications over the
 [`anndata_proteomics` (APB)](../apb) CLI:
 
 - **Fixture Manager** catalogs, selects, downloads, and inspects ProteoBench fixtures and their
-  module, per-tool scoring, and FASTA resources.
+  module and FASTA resources.
 - **Corpus Runner** derives every branch supported by APB, launches the complete runnable corpus,
   and shows stage progress, artifact summaries, and exact failure logs.
 
@@ -14,7 +14,7 @@ APB Studio provides two local applications over the
 | --- | --- |
 | Catalog, download queue, report, and cached fixture files | Fixture Manager via `apb-testdata` |
 | Active test-data root | Fixture Manager setting |
-| ProteoBench module TOMLs, golden-verified per-tool scoring TOMLs, and FASTA resources | Fixture Manager downloads/resource inventory |
+| ProteoBench module TOMLs and FASTA resources | Fixture Manager downloads/resource inventory |
 | MuData and standalone levels | APB JSON rules resolved against local inputs and parameters |
 | Output root | Corpus Runner setting |
 | Scope and provenance of one launch | Corpus Runner-generated `run.json` |
@@ -76,8 +76,8 @@ produced artifacts, and timing coverage.
 
 The Fixture Manager owns the canonical cache lifecycle. Its fixture table combines the generated
 catalog, selection, and download-report CSVs with live filesystem checks. It downloads
-ProteoBench `module_settings.toml` files, golden-verified per-tool scoring TOMLs, and APB's FASTA
-resources, then resolves them without requiring manual paths. The same module TOML supplies sample
+ProteoBench `module_settings.toml` files and APB's FASTA resources, then resolves them without
+requiring manual paths. The same module TOML supplies sample
 annotation and the ProteoBench experiment-design contract; these remain independent execution
 stages.
 

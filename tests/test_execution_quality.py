@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -171,49 +170,6 @@ def test_incomplete_fixture_guards(
     )
     with pytest.raises(ValueError, match="no unique input and parameter"):
         execution.resolve_current_run()
-
-
-def test_invalid_tool_settings_are_frozen_as_diagnostic(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    record = _fixture_record(tmp_path)
-    active_settings = settings.StudioSettings(
-        test_data_root=tmp_path / "fixtures",
-        output_root=tmp_path / "outputs",
-    )
-    inventory = fixture_inventory.FixtureInventory(
-        paths=fixture_inventory.FixtureStorePaths(data_dir=active_settings.test_data_root),
-        fixtures=(record,),
-    )
-    tool_settings = tmp_path / "tool.toml"
-    tool_settings.write_text("invalid", encoding="utf-8")
-    monkeypatch.setattr(execution, "load_settings", lambda _path=None: active_settings)
-    monkeypatch.setattr(execution, "load_fixture_inventory", lambda _root: inventory)
-    monkeypatch.setattr(
-        execution,
-        "load_module_resources",
-        lambda _root: module_resources.ModuleResourceInventory(),
-    )
-    monkeypatch.setattr(
-        execution,
-        "find_proteobench_tool_settings",
-        lambda **_kwargs: tool_settings,
-    )
-    monkeypatch.setattr(
-        execution,
-        "load_tool_settings",
-        lambda _path: (_ for _ in ()).throw(ValueError("bad TOML")),
-    )
-    snapshot = execution.resolve_current_run(
-        discover=lambda *_args: capabilities.CapabilityDiscovery(
-            ("ion",),
-            software_slug="diann",
-        )
-    )
-    assert "Invalid ProteoBench tool settings" in cast(
-        str, snapshot.fixtures[0].tool_settings_error
-    )
 
 
 def test_alias_store_validation_and_exhaustion(tmp_path: Path) -> None:

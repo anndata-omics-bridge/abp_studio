@@ -1,5 +1,11 @@
 # Changes
 
+- 2026-07-25: Show the exact shell-quoted `apb` CLI command in every Corpus
+  Runner stage detail, or state explicitly when capability/prerequisite
+  resolution could not generate a command.
+- 2026-07-24: Select one Corpus Runner branch and inspect Convert, Annotate,
+  FASTA, and ProteoBench artifacts in tabs; surface FASTA matched,
+  proteotypic, and annotated feature counts ahead of the full APB JSON summary.
 - 2026-07-24: Add server-resolved resource previews to Fixture Manager:
   annotation cells show the assigned file and FASTA cells show a bounded 40-line head.
 - 2026-07-24: Remove Fixture Manager conversion controls, status, converted

@@ -11,6 +11,7 @@ import csv
 import json
 import math
 import re
+import shlex
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -87,9 +88,7 @@ class ResolvedFixture:
     fasta_path: Path | None = None
     annotation_error: str | None = None
     fasta_error: str | None = None
-    tool_settings_path: Path | None = None
     module_settings_error: str | None = None
-    tool_settings_error: str | None = None
     proteobench_level: str | None = None
 
     @property
@@ -145,13 +144,7 @@ def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
                 "fasta_path": (str(fixture.fasta_path) if fixture.fasta_path is not None else None),
                 "annotation_error": fixture.annotation_error,
                 "fasta_error": fixture.fasta_error,
-                "tool_settings_path": (
-                    str(fixture.tool_settings_path)
-                    if fixture.tool_settings_path is not None
-                    else None
-                ),
                 "module_settings_error": fixture.module_settings_error,
-                "tool_settings_error": fixture.tool_settings_error,
                 "proteobench_level": fixture.proteobench_level,
             }
             for fixture in snapshot.fixtures
@@ -203,19 +196,9 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
                 str(item["annotation_error"]) if item.get("annotation_error") is not None else None
             ),
             fasta_error=(str(item["fasta_error"]) if item.get("fasta_error") is not None else None),
-            tool_settings_path=(
-                Path(item["tool_settings_path"])
-                if item.get("tool_settings_path") is not None
-                else None
-            ),
             module_settings_error=(
                 str(item["module_settings_error"])
                 if item.get("module_settings_error") is not None
-                else None
-            ),
-            tool_settings_error=(
-                str(item["tool_settings_error"])
-                if item.get("tool_settings_error") is not None
                 else None
             ),
             proteobench_level=(
@@ -388,10 +371,7 @@ def _resolve(value: str, base: Path) -> Path:
 
 
 def _resource_names(stage: dict[str, Any]) -> tuple[str, ...]:
-    """Return a stage's one-or-many resource placeholders."""
-    resources = stage.get("resources")
-    if resources is not None:
-        return tuple(resources)
+    """Return a stage's optional resource placeholder."""
     resource = stage.get("resource")
     return (resource,) if resource is not None else ()
 
@@ -917,6 +897,8 @@ def _stage_detail(
     artifact = str(target.output)
     log_path = str(Path(f"{target.output}.log"))
     base = {"artifact": artifact, "log": log_path}
+    if target.command:
+        base["command"] = shlex.join(target.command)
     if target.output.exists():
         duration_seconds = _benchmark_seconds(target.output)
         timing = (

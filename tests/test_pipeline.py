@@ -119,7 +119,6 @@ def _resolved_fixture(  # noqa: PLR0913 - explicit fixture factory fields
     capability_status: str = "supported",
     annotation: Path | None = None,
     fasta: Path | None = None,
-    tool_settings: Path | None = None,
     proteobench_level: str | None = None,
     diagnostic: str | None = None,
 ) -> ResolvedFixture:
@@ -141,7 +140,6 @@ def _resolved_fixture(  # noqa: PLR0913 - explicit fixture factory fields
         diagnostic=diagnostic,
         annotation_path=annotation,
         fasta_path=fasta,
-        tool_settings_path=tool_settings,
         proteobench_level=proteobench_level,
     )
 
@@ -208,12 +206,12 @@ def test_expand_fans_out_every_json_supported_branch_through_all_stages(
     tmp_path: Path,
 ) -> None:
     targets = _expand(_corpus(tmp_path), "mudata", "ion", "fragment", "protein")
-    assert len(targets) == 4 * 3
+    assert len(targets) == 14
     assert {(target.branch, target.stage) for target in targets} == {
         (branch, stage)
         for branch in ("mudata", "ion", "fragment", "protein")
         for stage in ("convert", "annotate", "fasta")
-    }
+    } | {("mudata", "proteobench"), ("ion", "proteobench")}
 
     names = {target.output.name for target in targets}
     assert {
@@ -345,7 +343,7 @@ def test_resolved_expansion_keeps_blocked_descendants_without_suppressing_conver
     assert [target.stage for target in runnable_targets(targets)] == ["convert"]
     assert targets[1].blocked_reason == "Missing module resource: annotation"
     assert targets[2].blocked_reason == "Missing module resource: fasta"
-    assert targets[3].blocked_reason == "Missing module resource: tool_settings"
+    assert targets[3].blocked_reason == "Missing module resource: module_settings"
 
     rows = branch_rows(_run_snapshot(tmp_path, fixture, targets), targets)
     assert rows[0]["convert"] == ""
@@ -421,18 +419,17 @@ def test_rows_update_from_pending_to_completed_and_failed(tmp_path: Path) -> Non
     assert row["annotate"] == "FAILED"
     assert row["fasta"] == ""
     assert "group mismatch" in row["_stage_details"]["annotate"]["error"]
+    assert row["_stage_details"]["convert"]["command"].startswith("apb convert ")
+    assert row["_stage_details"]["annotate"]["command"].startswith("apb annotate ")
 
 
 def test_proteobench_uses_convert_and_only_module_level_branches(tmp_path: Path) -> None:
     annotation = tmp_path / "module.toml"
     annotation.write_text("[general]\nlevel = 'ion'\n")
-    tool = tmp_path / "tool.toml"
-    tool.write_text("[mapper]\nProtein = 'Proteins'\n")
     fixture = _resolved_fixture(
         tmp_path,
         branches=("mudata", "ion", "fragment", "protein"),
         annotation=annotation,
-        tool_settings=tool,
         proteobench_level="ion",
     )
 
@@ -444,9 +441,10 @@ def test_proteobench_uses_convert_and_only_module_level_branches(tmp_path: Path)
         converted = next(
             item for item in targets if item.branch == target.branch and item.stage == "convert"
         )
-        assert target.inputs == [converted.output, annotation, tool]
+        assert target.inputs == [converted.output, annotation]
         assert target.command[:3] == ["apb", "proteobench", str(converted.output)]
-        assert target.command[3:5] == [str(annotation), str(tool)]
+        assert target.command[3] == str(annotation)
+        assert target.command[4] == "--output"
 
 
 def test_growing_rule_log_is_pending_until_failure_marker_exists(

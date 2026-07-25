@@ -34,9 +34,7 @@ def test_non_root_stages_declare_artifact_and_resource():
     for stage in load_registry():
         if stage["depends_on"]:
             assert stage.get("artifact"), f"{stage['name']!r} needs an `artifact` basename"
-            assert stage.get("resource") or stage.get("resources"), (
-                f"{stage['name']!r} needs `resource`/`resources` (module key + gate)"
-            )
+            assert stage.get("resource"), f"{stage['name']!r} needs `resource` (module key + gate)"
 
 
 def test_registry_does_not_encode_fixture_levels() -> None:

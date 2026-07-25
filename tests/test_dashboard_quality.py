@@ -140,8 +140,8 @@ def test_dashboard_stage_rendering_and_logs(
     detail = cast(dict[str, str], row["_stage_details"]["convert"])
 
     assert "Converted" in dashboard._stage_heading(selection, registry)
-    assert len(dashboard._status_detail({"state": "blocked"}, selection, registry)) == 2
-    assert len(dashboard._status_detail({"state": "failed"}, selection, registry)) == 2
+    assert len(dashboard._status_detail({"state": "blocked"}, selection, registry)) == 3
+    assert len(dashboard._status_detail({"state": "failed"}, selection, registry)) == 3
     empty_log = tmp_path / "empty.log"
     empty_log.write_text("", encoding="utf-8")
     failed = dashboard._status_detail(
@@ -149,21 +149,21 @@ def test_dashboard_stage_rendering_and_logs(
         selection,
         registry,
     )
-    assert len(failed) == 3
-    assert len(dashboard._status_detail(detail, selection, registry)) == 4
+    assert len(failed) == 4
+    assert len(dashboard._status_detail(detail, selection, registry)) == 5
 
     artifact = tmp_path / "artifact.h5ad"
     completed = {"state": "completed", "artifact": str(artifact)}
     monkeypatch.setattr(dashboard, "describe_path", lambda _path: {"n_obs": 3})
-    assert len(dashboard._render_stage_detail(completed, selection, registry)) == 3
+    assert len(dashboard._render_stage_detail(completed, selection, registry)) == 4
     monkeypatch.setattr(
         dashboard,
         "describe_path",
         lambda _path: (_ for _ in ()).throw(OSError("corrupt")),
     )
-    assert len(dashboard._artifact_detail(completed, selection, registry)) == 3
-    assert len(dashboard._render_stage_detail(detail, selection, registry)) == 4
-    assert len(dashboard._render_stage_detail({"state": "pending"}, selection, registry)) == 2
+    assert len(dashboard._artifact_detail(completed, selection, registry)) == 4
+    assert len(dashboard._render_stage_detail(detail, selection, registry)) == 5
+    assert len(dashboard._render_stage_detail({"state": "pending"}, selection, registry)) == 3
 
     assert dashboard._downloadable_log([row], selection) == Path(detail["log"])
     assert dashboard._downloadable_log([], selection) is None
@@ -302,6 +302,7 @@ def test_dashboard_callbacks_and_main(
 ) -> None:
     app = dashboard.create_app(settings_path=tmp_path / "settings.json")
     refresh = _callback(app, "corpus-grid.rowData")
+    select = _callback(app, "selected-row.data")
     show = _callback(app, "stage-detail.children")
     download = _callback(app, "log-download.data")
     row = _row(tmp_path)
@@ -368,40 +369,39 @@ def test_dashboard_callbacks_and_main(
     )
 
     selection = _selection(row)
-    monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="corpus-grid"))
-    shown = show(
+    selected = select(
         {"colId": "convert", "rowId": row["_row_id"]},
-        1,
         "job",
-        None,
     )
-    assert shown[1] == selection
+    assert selected == (selection, "convert")
+    shown = show(selection, "convert", 1, "job")
+    assert shown[1] is False
 
     monkeypatch.setattr(
         dashboard,
         "_load_dashboard_rows",
         lambda *_args, **_kwargs: ([], None, "load failed"),
     )
-    assert show(None, 1, "job", selection) == ("load failed", selection, True)
-    assert download(1, selection, "job") is no_update
+    assert select(None, "job") == (no_update, no_update)
+    assert show(selection, "convert", 1, "job") == ("load failed", True)
+    assert download(1, selection, "convert", "job") is no_update
 
     monkeypatch.setattr(
         dashboard,
         "_load_dashboard_rows",
         lambda *_args, **_kwargs: ([row], snapshot, None),
     )
-    monkeypatch.setattr(dashboard, "ctx", SimpleNamespace(triggered_id="grid-revision"))
-    assert show(None, 2, "job", None) == (no_update, no_update, no_update)
+    assert show(None, "convert", 2, "job") == (no_update, no_update)
     missing = {**selection, "row_id": "gone"}
-    assert show(None, 2, "job", missing)[1] is None
-    assert download(1, missing, "job") is no_update
+    assert show(missing, "convert", 2, "job")[1] is True
+    assert download(1, missing, "convert", "job") is no_update
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(
         dashboard.dcc,
         "send_file",
         lambda path, *, filename: sent.append((path, filename)) or "download",
     )
-    assert download(1, selection, "job") == "download"
+    assert download(1, selection, "convert", "job") == "download"
     assert sent[0][1] == "failure.log"
 
     run_calls: list[dict[str, Any]] = []

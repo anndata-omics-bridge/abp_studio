@@ -362,7 +362,7 @@ def resources_panel() -> html.Div:
                         style={"fontSize": "11px", "minWidth": "220px"},
                     ),
                     html.Span(
-                        "Module and golden-verified per-tool settings come from ProteoBench",
+                        "Module settings come from ProteoBench",
                         style={"fontSize": "11px", "color": "#555"},
                     ),
                     dcc.Input(

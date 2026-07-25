@@ -214,6 +214,7 @@ def test_stage_detail_includes_persisted_runtime(tmp_path: Path) -> None:
 
     assert completed["display"] == "DONE · 1m 01s"
     assert completed["duration"] == "1m 01s"
+    assert completed["command"] == "apb convert"
     target.output.unlink()
     pipeline.failure_marker_path(target.output).write_text("exit 1", encoding="utf-8")
     failed = pipeline._stage_detail(target, targets=[target])

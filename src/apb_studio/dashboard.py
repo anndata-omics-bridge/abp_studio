@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -77,6 +78,20 @@ _PRE_STYLE = {
     "padding": "0.65rem",
     "whiteSpace": "pre-wrap",
 }
+_SUMMARY_CARD_STYLE = {
+    "backgroundColor": "#f8fafc",
+    "border": "1px solid #eaecf0",
+    "borderRadius": "6px",
+    "minWidth": "220px",
+    "padding": "0.75rem",
+}
+_SUMMARY_METRIC_STYLE = {
+    "alignItems": "baseline",
+    "display": "flex",
+    "justifyContent": "space-between",
+    "gap": "1rem",
+    "marginTop": "0.4rem",
+}
 
 
 def _stage_label(stage: dict[str, Any]) -> str:
@@ -85,6 +100,16 @@ def _stage_label(stage: dict[str, Any]) -> str:
     if label.lower().startswith("fasta"):
         return "FASTA" + label[5:]
     return label[:1].upper() + label[1:]
+
+
+def _stage_tab_label(stage: dict[str, Any]) -> str:
+    """Return the action label shown on a branch's artifact tabs."""
+    name = str(stage["name"])
+    if name == "fasta":
+        return "FASTA"
+    if name == "proteobench":
+        return "ProteoBench"
+    return name.replace("_", " ").title()
 
 
 def _column_definitions(registry: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -149,13 +174,14 @@ def _selection_from_click(
     registry: list[dict[str, Any]],
     rows: list[dict[str, Any]],
 ) -> dict[str, str] | None:
-    """Resolve AG Grid's documented row ID against authoritative server rows."""
+    """Resolve an AG Grid cell click to an authoritative branch row."""
     if not cell:
         return None
-    stage_names = {str(stage["name"]) for stage in registry}
-    stage = cell.get("colId")
-    if not isinstance(stage, str) or stage not in stage_names:
+    stage_names = [str(stage["name"]) for stage in registry]
+    if not stage_names:
         return None
+    stage = cell.get("colId")
+    selected_stage = stage if isinstance(stage, str) and stage in stage_names else stage_names[0]
     clicked_row_id = cell.get("rowId")
     if not isinstance(clicked_row_id, (str, int)):
         return None
@@ -173,7 +199,7 @@ def _selection_from_click(
         "dataset": cast(str, dataset),
         "level": cast(str, level),
         "row_id": row_id,
-        "stage": stage,
+        "stage": selected_stage,
     }
 
 
@@ -209,6 +235,121 @@ def _stage_heading(
     )
 
 
+def _command_detail(detail: dict[str, str]) -> html.Div:
+    """Render the exact registry-generated APB CLI command, when one exists."""
+    command = detail.get("command")
+    if command:
+        value: Any = html.Pre(command, style={**_PRE_STYLE, "maxHeight": "none"})
+    else:
+        value = html.P(
+            "No APB CLI command was generated because this stage could not be resolved.",
+            style={"color": "#667085", "margin": "0.35rem 0 0"},
+        )
+    return html.Div(
+        [
+            html.H3(
+                "APB CLI command",
+                style={"fontSize": "0.9rem", "margin": "0.65rem 0 0"},
+            ),
+            value,
+        ]
+    )
+
+
+def _summary_targets(
+    summary: Mapping[str, Any],
+) -> list[tuple[str, Mapping[str, Any]]]:
+    """Return display labels and AnnData summaries from an APB summary."""
+    modalities = summary.get("modalities")
+    if isinstance(modalities, Mapping):
+        return [
+            (str(name), payload)
+            for name, payload in modalities.items()
+            if isinstance(payload, Mapping)
+        ]
+
+    quantification = summary.get("quantification")
+    level = quantification.get("level") if isinstance(quantification, Mapping) else None
+    return [(str(level or "Artifact"), summary)]
+
+
+def _summary_count(value: object) -> int | None:
+    """Return a summary count without accepting booleans as integers."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _summary_metric(label: str, value: str) -> html.Div:
+    """Render one label/value pair in a compact summary card."""
+    return html.Div(
+        [
+            html.Span(label, style={"color": "#475467"}),
+            html.Strong(value),
+        ],
+        style=_SUMMARY_METRIC_STYLE,
+    )
+
+
+def _fasta_overview(summary: Mapping[str, Any]) -> html.Div | None:
+    """Render APB-owned FASTA counts prominently for each applicable level."""
+    cards: list[html.Div] = []
+    for level, payload in _summary_targets(summary):
+        fasta = payload.get("fasta")
+        if not isinstance(fasta, Mapping):
+            continue
+        feature_count = _summary_count(fasta.get("feature_count"))
+        if feature_count is None:
+            continue
+
+        metrics = [_summary_metric("Features checked", f"{feature_count:,}")]
+        matched = _summary_count(fasta.get("matched_feature_count"))
+        if matched is not None:
+            metrics.append(
+                _summary_metric(
+                    "Matched to FASTA",
+                    f"{matched:,} / {feature_count:,}",
+                )
+            )
+        proteotypic = _summary_count(fasta.get("proteotypic_feature_count"))
+        if proteotypic is not None:
+            metrics.append(
+                _summary_metric(
+                    "Proteotypic (one protein)",
+                    f"{proteotypic:,} / {feature_count:,}",
+                )
+            )
+        annotated = _summary_count(fasta.get("annotated_feature_count"))
+        if annotated is not None:
+            metrics.append(
+                _summary_metric(
+                    "Annotated from FASTA",
+                    f"{annotated:,} / {feature_count:,}",
+                )
+            )
+
+        cards.append(
+            html.Div(
+                [
+                    html.Strong(level, style={"fontSize": "0.9rem"}),
+                    *metrics,
+                ],
+                style=_SUMMARY_CARD_STYLE,
+            )
+        )
+
+    if not cards:
+        return None
+    return html.Div(
+        [
+            html.H3("FASTA coverage", style={"fontSize": "0.95rem", "margin": "0 0 0.5rem"}),
+            html.Div(
+                cards,
+                style={"display": "flex", "flexWrap": "wrap", "gap": "0.65rem"},
+            ),
+        ],
+        style={"marginTop": "0.75rem"},
+    )
+
+
 def _artifact_detail(
     detail: dict[str, str],
     selection: dict[str, str],
@@ -232,16 +373,34 @@ def _artifact_detail(
         return [
             html.H2(heading, style={"fontSize": "1rem", "margin": "0"}),
             html.Div(metadata, style={"color": "#667085", "fontSize": "0.78rem"}),
+            _command_detail(detail),
             html.P(
                 f"Could not read this artifact summary: {type(exc).__name__}: {exc}",
                 style={"color": "#b42318"},
             ),
         ]
-    return [
+    children: list[Any] = [
         html.H2(heading, style={"fontSize": "1rem", "margin": "0"}),
         html.Div(metadata, style={"color": "#667085", "fontSize": "0.78rem"}),
-        html.Pre(rendered, style=_PRE_STYLE),
+        _command_detail(detail),
     ]
+    fasta_overview = _fasta_overview(summary) if selection["stage"] == "fasta" else None
+    if fasta_overview is not None:
+        children.extend(
+            [
+                fasta_overview,
+                html.Details(
+                    [
+                        html.Summary("Full APB summary (JSON)"),
+                        html.Pre(rendered, style=_PRE_STYLE),
+                    ],
+                    style={"marginTop": "0.75rem"},
+                ),
+            ]
+        )
+    else:
+        children.append(html.Pre(rendered, style=_PRE_STYLE))
+    return children
 
 
 def _status_detail(
@@ -267,6 +426,7 @@ def _status_detail(
             detail.get("error", f"Stage is {label.lower()}."),
             style={"margin": "0.4rem 0"},
         ),
+        _command_detail(detail),
     ]
     if state != "failed":
         return children
@@ -298,6 +458,7 @@ def _render_stage_detail(
             style={"fontSize": "1rem", "margin": "0"},
         ),
         html.P("Pending — this stage is waiting to run or finish."),
+        _command_detail(detail),
     ]
 
 
@@ -410,7 +571,7 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
     app.layout = html.Main(
         [
             dcc.Store(id="active-job-id"),
-            dcc.Store(id="selected-stage"),
+            dcc.Store(id="selected-row"),
             dcc.Store(id="grid-revision", data=0),
             dcc.Interval(
                 id="poll-corpus",
@@ -495,6 +656,11 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                     "headerHeight": 34,
                     "pagination": True,
                     "paginationPageSize": 25,
+                    "rowSelection": {
+                        "mode": "singleRow",
+                        "checkboxes": False,
+                        "enableClickSelection": True,
+                    },
                     "rowHeight": 32,
                 },
                 getRowId="params.data._row_id",
@@ -535,8 +701,20 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                             "justifyContent": "space-between",
                         },
                     ),
+                    dcc.Tabs(
+                        id="artifact-stage-tabs",
+                        value=str(registry[0]["name"]),
+                        children=[
+                            dcc.Tab(
+                                label=_stage_tab_label(stage),
+                                value=str(stage["name"]),
+                            )
+                            for stage in registry
+                        ],
+                        style={"marginTop": "0.65rem"},
+                    ),
                     html.Div(
-                        "Click a completed stage or a status cell.",
+                        "Select a row, then choose an artifact tab.",
                         id="stage-detail",
                         style={"marginTop": "0.5rem"},
                     ),
@@ -667,62 +845,81 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         )
 
     @app.callback(
-        Output("stage-detail", "children"),
-        Output("selected-stage", "data"),
-        Output("download-log", "disabled"),
+        Output("selected-row", "data"),
+        Output("artifact-stage-tabs", "value"),
         Input("corpus-grid", "cellClicked"),
-        Input("grid-revision", "data"),
         State("active-job-id", "data"),
-        State("selected-stage", "data"),
         prevent_initial_call=True,
     )
-    def _show_stage_detail(
+    def _select_branch(
         cell: dict[str, Any] | None,
-        _grid_revision: int,
         job_id: str | None,
-        selected_stage: dict[str, str] | None,
-    ) -> tuple[object, object, object]:
-        """Show a clicked stage and refresh that same selection while the job runs."""
+    ) -> tuple[object, object]:
+        """Select one authoritative branch and activate the clicked stage tab."""
         rows, _snapshot, error = _load_dashboard_rows(
             job_id,
             settings_path=settings_path,
         )
         if error is not None:
-            return error, selected_stage or no_update, True
-        selection = (
-            _selection_from_click(cell, registry, rows)
-            if ctx.triggered_id == "corpus-grid"
-            else selected_stage
-        )
+            return no_update, no_update
+        selection = _selection_from_click(cell, registry, rows)
         if selection is None:
-            return no_update, no_update, no_update
+            return no_update, no_update
+        return selection, selection["stage"]
+
+    @app.callback(
+        Output("stage-detail", "children"),
+        Output("download-log", "disabled"),
+        Input("selected-row", "data"),
+        Input("artifact-stage-tabs", "value"),
+        Input("grid-revision", "data"),
+        State("active-job-id", "data"),
+        prevent_initial_call=True,
+    )
+    def _show_stage_detail(
+        selected_row: dict[str, str] | None,
+        active_stage: str,
+        _grid_revision: int,
+        job_id: str | None,
+    ) -> tuple[object, object]:
+        """Show the selected branch's active artifact tab and refresh it while running."""
+        if selected_row is None:
+            return no_update, no_update
+        selection = {**selected_row, "stage": active_stage}
+        rows, _snapshot, error = _load_dashboard_rows(
+            job_id,
+            settings_path=settings_path,
+        )
+        if error is not None:
+            return error, True
         detail = _find_stage_detail(rows, selection)
         if detail is None:
             return (
-                "Click a completed stage or a status cell.",
-                None,
+                "The selected row is no longer available. Select a row again.",
                 True,
             )
         log_path = _downloadable_log(rows, selection)
         return (
             _render_stage_detail(detail, selection, registry),
-            selection,
             log_path is None,
         )
 
     @app.callback(
         Output("log-download", "data"),
         Input("download-log", "n_clicks"),
-        State("selected-stage", "data"),
+        State("selected-row", "data"),
+        State("artifact-stage-tabs", "value"),
         State("active-job-id", "data"),
         prevent_initial_call=True,
     )
     def _download_selected_log(
         _clicks: int,
-        selection: dict[str, str] | None,
+        selected_row: dict[str, str] | None,
+        active_stage: str,
         job_id: str | None,
     ) -> object:
         """Download only a currently known Target log resolved on the server."""
+        selection = None if selected_row is None else {**selected_row, "stage": active_stage}
         rows, _snapshot, error = _load_dashboard_rows(
             job_id,
             settings_path=settings_path,

@@ -16,8 +16,7 @@
 #   depends_on      upstream stage names (a list); [] marks the root, which reads the raw dataset.
 #                   pipeline.expand_targets derives each stage's INPUT edge from this (decision 5) —
 #                   no hardcoded edges — and reconnects to the nearest emitted upstream (§13.1).
-#   resource(s)     fixture resources consumed by this stage. ``resources`` supports commands
-#                   that need more than one contract file.
+#   resource        optional fixture resource consumed by this stage.
 #   branch_policy   ``module_level`` emits MuData plus the standalone level declared by the
 #                   ProteoBench module TOML, excluding unrelated protein/fragment branches.
 #   container_agnostic  operates on whatever object it's given (a level .h5ad or the .h5mu)
@@ -59,9 +58,9 @@ stages:
     depends_on: [convert]
     resource: fasta
 
-  # Quantitative HYE scoring. The module TOML is the scoring/sample-design contract and the
-  # per-tool TOML resolves the raw vendor columns retained by APB conversion. FASTA and sample
-  # annotation are deliberately not prerequisites.
+  # Quantitative HYE scoring. The module TOML is the scoring/sample-design contract.
+  # Vendor interpretation is complete at conversion; FASTA and sample annotation are
+  # deliberately not prerequisites.
   - name: proteobench
     scope: dataset
     basket: proteobench scored
@@ -69,6 +68,6 @@ stages:
     branch_policy: module_level
     output_pattern: "{module}/{dataset}/{branch}.proteobench{suffix}"
     artifact: proteobench
-    command: "apb proteobench {input} {module_settings} {tool_settings} --output {output}"
+    command: "apb proteobench {input} {module_settings} --output {output}"
     depends_on: [convert]
-    resources: [module_settings, tool_settings]
+    resource: module_settings

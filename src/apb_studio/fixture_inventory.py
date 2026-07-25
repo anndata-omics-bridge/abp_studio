@@ -78,11 +78,6 @@ class FixtureStorePaths(BaseModel):
         return self.data_dir / "annotations"
 
     @property
-    def proteobench_settings_dir(self) -> Path:
-        """Return the APB-managed per-tool ProteoBench TOML cache."""
-        return self.data_dir / "proteobench_settings"
-
-    @property
     def log_dir(self) -> Path:
         """Return the OS-cache directory for this root's background logs."""
         root_key = make_run_key(self.data_dir)[:12]
