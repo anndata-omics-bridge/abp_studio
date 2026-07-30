@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+from anndata_proteomics.params.model import Parameters
 
 from apb_studio import capabilities
 
@@ -22,15 +22,16 @@ def test_discovery_reads_version_and_headers_and_puts_mudata_first(
     parameter_path.write_text("version details\n", encoding="utf-8")
     calls: list[tuple[str, str | None, tuple[str, ...]]] = []
 
-    def fake_parse_params(path: str, *, software: str) -> SimpleNamespace:
+    def fake_parse_params(path: str, *, software: str) -> Parameters:
         assert path == str(parameter_path)
         assert software == "diann"
-        return SimpleNamespace(software_version="2.1")
+        return Parameters(software_name="DIA-NN", software_version="2.1")
 
     def fake_available_targets(
         slug: str,
         version: str | None,
         headers: tuple[str, ...],
+        **_kwargs: object,
     ) -> list[str]:
         calls.append((slug, version, headers))
         return ["ion", "protein", "mudata"]
@@ -61,6 +62,7 @@ def test_discovery_reads_version_and_headers_and_puts_mudata_first(
         ("mudata", "ion", "protein"),
         software_slug="diann",
         software_version="2.1",
+        parameter_software_slug="diann",
     )
     assert second == first
     assert calls == [("diann", "2.1", ("Run", "Precursor.Id"))]
@@ -76,21 +78,26 @@ def test_discovery_cache_invalidates_when_input_mtime_changes(
     parameter_path.write_text("params\n", encoding="utf-8")
     headers_seen: list[tuple[str, ...]] = []
 
+    monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
     monkeypatch.setattr(
         capabilities.parameter_registry,
         "parse_params",
-        lambda *_args, **_kwargs: SimpleNamespace(software_version="1"),
+        lambda *_args, **_kwargs: Parameters(
+            software_name="software",
+            software_version="1",
+        ),
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
-        "available_software",
-        lambda: ["software"],
+        "parser_slug",
+        lambda _name: "diann",
     )
 
     def fake_available_targets(
         _slug: str,
         _version: str | None,
         headers: tuple[str, ...],
+        **_kwargs: object,
     ) -> list[str]:
         headers_seen.append(headers)
         return ["ion", "mudata"]
@@ -121,6 +128,7 @@ def test_discovery_cache_invalidates_when_packaged_rules_change(
     fingerprint = [("rules.json", 1, 10)]
     target_calls = 0
 
+    monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
     monkeypatch.setattr(
         capabilities,
         "_parsing_rule_fingerprint",
@@ -133,16 +141,19 @@ def test_discovery_cache_invalidates_when_packaged_rules_change(
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
-        "available_software",
-        lambda: ["software"],
+        "parser_slug",
+        lambda _name: "diann",
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
         "parse_params",
-        lambda *_args, **_kwargs: SimpleNamespace(software_version="1"),
+        lambda *_args, **_kwargs: Parameters(
+            software_name="software",
+            software_version="1",
+        ),
     )
 
-    def fake_available_targets(*_args: object) -> list[str]:
+    def fake_available_targets(*_args: object, **_kwargs: object) -> list[str]:
         nonlocal target_calls
         target_calls += 1
         return [] if target_calls == 1 else ["ion"]
@@ -183,21 +194,23 @@ def test_discovery_reads_parquet_schema_without_loading_rows(
     parameter_path.write_text("params\n", encoding="utf-8")
     headers_seen: list[tuple[str, ...]] = []
 
+    monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
     monkeypatch.setattr(
         capabilities.parameter_registry,
         "parse_params",
-        lambda *_args, **_kwargs: SimpleNamespace(software_version=None),
+        lambda *_args, **_kwargs: Parameters(software_name="software"),
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
-        "available_software",
-        lambda: ["software"],
+        "parser_slug",
+        lambda _name: "diann",
     )
 
     def fake_available_targets(
         _slug: str,
         _version: str | None,
         headers: tuple[str, ...],
+        **_kwargs: object,
     ) -> list[str]:
         headers_seen.append(headers)
         return ["protein", "mudata"]
@@ -243,8 +256,10 @@ def test_discovery_returns_diagnostic_instead_of_raising(
     )
 
     assert result.branches == ()
-    assert result.status is capabilities.CapabilityStatus.BLOCKED
-    assert result.diagnostic == ("Capability discovery failed: ValueError: invalid parameter file")
+    assert result.status is capabilities.CapabilityStatus.FAILED
+    assert result.diagnostic == (
+        "Could not read the parameter file: ValueError: invalid parameter file"
+    )
 
 
 def test_discovery_reports_a_missing_input(tmp_path: Path) -> None:
@@ -258,10 +273,107 @@ def test_discovery_reports_a_missing_input(tmp_path: Path) -> None:
     )
 
     assert result.branches == ()
-    assert result.status is capabilities.CapabilityStatus.BLOCKED
+    assert result.status is capabilities.CapabilityStatus.UNSUPPORTED
     assert result.diagnostic is not None
     assert "FileNotFoundError" in result.diagnostic
     assert "missing.tsv" in result.diagnostic
+
+
+def test_discovery_reports_rule_inspection_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "input_file.tsv"
+    input_path.write_text("Run\n", encoding="utf-8")
+    parameter_path = tmp_path / "param_0.txt"
+    parameter_path.write_text("params\n", encoding="utf-8")
+
+    def fail_fingerprint() -> tuple[tuple[str, int, int], ...]:
+        raise RuntimeError("rule registry unavailable")
+
+    monkeypatch.setattr(capabilities, "_parsing_rule_fingerprint", fail_fingerprint)
+
+    result = capabilities.discover_capabilities(
+        input_path,
+        parameter_path,
+        "DIA-NN",
+    )
+
+    assert result.status is capabilities.CapabilityStatus.FAILED
+    assert result.diagnostic == (
+        "Could not inspect packaged parsing rules: RuntimeError: rule registry unavailable"
+    )
+
+
+def test_discovery_reports_software_recognition_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "input_file.tsv"
+    input_path.write_text("Run\n", encoding="utf-8")
+    parameter_path = tmp_path / "param_0.txt"
+    parameter_path.write_text("params\n", encoding="utf-8")
+
+    def fail_recognition(_headers: tuple[str, ...]) -> str:
+        raise ValueError("invalid header schema")
+
+    monkeypatch.setattr(
+        capabilities.conversion_pipeline,
+        "recognize_software",
+        fail_recognition,
+    )
+
+    result = capabilities.discover_capabilities(
+        input_path,
+        parameter_path,
+        "DIA-NN",
+    )
+
+    assert result.status is capabilities.CapabilityStatus.FAILED
+    assert result.diagnostic == (
+        "Could not recognize the input software: ValueError: invalid header schema"
+    )
+
+
+def test_discovery_reports_rule_matching_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "input_file.tsv"
+    input_path.write_text("Run\tPrecursor.Id\n", encoding="utf-8")
+    parameter_path = tmp_path / "param_0.txt"
+    parameter_path.write_text("params\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        capabilities.parameter_registry,
+        "parse_params",
+        lambda *_args, **_kwargs: Parameters(
+            software_name="DIA-NN",
+            software_version="2.1",
+        ),
+    )
+
+    def fail_matching(*_args: object, **_kwargs: object) -> tuple[str, ...]:
+        raise ValueError("invalid rule document")
+
+    monkeypatch.setattr(
+        capabilities.conversion_pipeline,
+        "available_targets",
+        fail_matching,
+    )
+
+    result = capabilities.discover_capabilities(
+        input_path,
+        parameter_path,
+        "DIA-NN",
+    )
+
+    assert result.status is capabilities.CapabilityStatus.FAILED
+    assert result.software_slug == "diann"
+    assert result.software_version == "2.1"
+    assert result.diagnostic == (
+        "Could not match APB parsing rules: ValueError: invalid rule document"
+    )
 
 
 def test_discovery_explains_when_no_rule_matches(
@@ -272,15 +384,24 @@ def test_discovery_explains_when_no_rule_matches(
     input_path.write_text("Mystery\n", encoding="utf-8")
     parameter_path = tmp_path / "param_0.txt"
     parameter_path.write_text("params\n", encoding="utf-8")
+    monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
     monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
-        lambda *_args, **_kwargs: SimpleNamespace(software_version="3"),
+        capabilities.conversion_pipeline,
+        "recognize_software",
+        lambda _headers: "unknowntool",
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
-        "available_software",
-        lambda: ["unknowntool"],
+        "parser_slug",
+        lambda _name: "diann",
+    )
+    monkeypatch.setattr(
+        capabilities.parameter_registry,
+        "parse_params",
+        lambda *_args, **_kwargs: Parameters(
+            software_name="Unknown Tool",
+            software_version="3",
+        ),
     )
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
@@ -303,7 +424,93 @@ def test_discovery_explains_when_no_rule_matches(
     )
 
 
-def test_discovery_treats_unregistered_software_as_unsupported(
+def test_discovery_marks_software_without_rules_unsupported_before_reading_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "missing-input.xlsx"
+    parameter_path = tmp_path / "missing-params.json"
+    header_read = False
+    parse_called = False
+
+    def unexpected_header_read(_path: Path) -> list[str]:
+        nonlocal header_read
+        header_read = True
+        return []
+
+    def unexpected_parse(*_args: object, **_kwargs: object) -> None:
+        nonlocal parse_called
+        parse_called = True
+
+    monkeypatch.setattr(capabilities, "read_table_columns", unexpected_header_read)
+    monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
+
+    result = capabilities.discover_capabilities(
+        input_path,
+        parameter_path,
+        "MSAngel",
+    )
+
+    assert not header_read
+    assert not parse_called
+    assert result.status is capabilities.CapabilityStatus.UNSUPPORTED
+    assert result.software_slug == "msangel"
+    assert result.software_version is None
+    assert result.diagnostic == (
+        "APB has no packaged parsing-rule document for software 'msangel'; "
+        "this software is unsupported."
+    )
+
+
+def test_comma_delimited_txt_headers_are_detected_not_assumed_tab(tmp_path: Path) -> None:
+    """A `.txt` is not necessarily TSV.
+
+    AlphaPept and some PEAKS exports ship comma-delimited `.txt`. Reading them as TSV
+    yields one column, so header matching fails and the fixture reports UNSUPPORTED even
+    with a correct parsing rule. Delegating to APB's reader content-detects the delimiter,
+    so the capability probe and the conversion path agree.
+    """
+    input_path = tmp_path / "input_file.txt"
+    input_path.write_text("sequence,charge,protein\nPEPTIDE,2,P1\n", encoding="utf-8")
+
+    assert tuple(capabilities.read_table_columns(input_path)) == (
+        "sequence",
+        "charge",
+        "protein",
+    )
+
+
+def test_discovery_reports_a_malformed_supported_input_as_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "input_file.tsv"
+    input_path.write_bytes(b"\xff\xfe")
+    parameter_path = tmp_path / "param_0.txt"
+    parameter_path.write_text("params\n", encoding="utf-8")
+    parse_called = False
+
+    def unexpected_parse(*_args: object, **_kwargs: object) -> None:
+        nonlocal parse_called
+        parse_called = True
+
+    monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
+
+    result = capabilities.discover_capabilities(
+        input_path,
+        parameter_path,
+        "DIA-NN",
+    )
+
+    assert not parse_called
+    assert result.status is capabilities.CapabilityStatus.FAILED
+    assert result.software_slug is None
+    assert result.software_version is None
+    assert result.diagnostic is not None
+    assert result.diagnostic.startswith("Could not read input table headers: UnicodeDecodeError:")
+
+
+def test_discovery_treats_missing_parameter_parser_as_unsupported(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -317,6 +524,7 @@ def test_discovery_treats_unregistered_software_as_unsupported(
         nonlocal parse_called
         parse_called = True
 
+    monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
     monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
 
     result = capabilities.discover_capabilities(
@@ -333,7 +541,7 @@ def test_discovery_treats_unregistered_software_as_unsupported(
     assert "no parameter parser" in result.diagnostic
 
 
-def test_discovery_prefers_header_recognition_over_compound_catalog_label(
+def test_discovery_separates_compound_parameter_and_rule_software(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -346,26 +554,32 @@ def test_discovery_prefers_header_recognition_over_compound_catalog_label(
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
         "recognize_software",
-        lambda _headers: "spectronaut",
+        lambda _headers: "diann",
     )
 
-    def fake_parse(_path: str, *, software: str) -> SimpleNamespace:
+    def fake_parse(_path: str, *, software: str) -> Parameters:
         parsed_with.append(software)
-        return SimpleNamespace(software_version="19")
+        return Parameters(
+            software_name="FragPipe",
+            software_version="24.0",
+            quantification_software="DIA-NN",
+            quantification_software_version="1.8.2 beta 8",
+        )
 
     monkeypatch.setattr(capabilities.parameter_registry, "parse_params", fake_parse)
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
         "available_targets",
-        lambda *_args: ["ion"],
+        lambda *_args, **_kwargs: ["ion"],
     )
 
     result = capabilities.discover_capabilities(
         input_path,
         parameter_path,
-        "DIA-NN / Spectronaut",
+        "FragPipe (DIA-NN quant)",
     )
 
-    assert parsed_with == ["spectronaut"]
-    assert result.software_slug == "spectronaut"
-    assert result.software_version == "19"
+    assert parsed_with == ["fragpipe"]
+    assert result.software_slug == "diann"
+    assert result.software_version == "1.8.2 beta 8"
+    assert result.parameter_software_slug == "fragpipe"

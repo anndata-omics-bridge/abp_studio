@@ -34,8 +34,8 @@ left untouched but is no longer read.
 
 The Corpus Runner shows one compact table with `Module`, `Dataset`, `Software`, `Level`,
 `Converted`, `Annotated`, `FASTA annotated`, and `ProteoBench scored`. Each supported fixture fans
-out to MuData plus all supported standalone levels. Annotation, FASTA, and ProteoBench scoring are
-independent children of conversion, so one missing resource does not block the other enrichments.
+out to MuData plus all supported standalone levels. ProteoBench scoring consumes the annotated
+artifact and therefore runs after annotation; FASTA remains an independent child of conversion.
 Unsupported or invalid local fixtures remain visible as one unresolved row.
 
 `Run corpus` freezes fixture identities, resolved branches, paths, resources, output aliases, and
@@ -77,9 +77,9 @@ produced artifacts, and timing coverage.
 The Fixture Manager owns the canonical cache lifecycle. Its fixture table combines the generated
 catalog, selection, and download-report CSVs with live filesystem checks. It downloads
 ProteoBench `module_settings.toml` files and APB's FASTA resources, then resolves them without
-requiring manual paths. The same module TOML supplies sample
-annotation and the ProteoBench experiment-design contract; these remain independent execution
-stages.
+requiring manual paths. The same module TOML supplies sample annotation and the ProteoBench
+experiment-design contract; scoring consumes the `sample_name` and `condition` added by the
+annotation stage.
 
 Its Data workspace retains the fixture file, submission JSON, and parameter views. Its
 Configuration workspace catalogs and edits APB parsing-rule JSON documents. Conversion execution
@@ -92,11 +92,18 @@ annotation or FASTA status/path cell previews the annotation content or the firs
 uv sync --frozen
 
 make fixture-manager   # Fixture Manager, default Dash port 8050
-make corpus-runner     # Corpus Runner, default Dash port 8051
+make corpus-runner     # Stop any managed instance, then run Corpus Runner on port 8051
+make corpus-runner-stop
 ```
 
-Use `make corpus-runner APP_PORT=8052` if port 8051 is occupied. The preferred console commands
-are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
+`make corpus-clean` runs the packaged Snakemake clean rule without the application, removing
+exactly what `Clear corpus…` removes. It deletes immediately, without a confirmation prompt.
+
+The lifecycle targets are scoped by `APP_PORT`; for example, use
+`make corpus-runner APP_PORT=8052` and `make corpus-runner-stop APP_PORT=8052`. A restart also
+recognizes an older Corpus Runner already listening on that port, but refuses to terminate an
+unrelated process. The preferred console commands are `apb-studio-fixture-manager` and
+`apb-studio-corpus-runner`.
 `apb-studio-testdata` and `apb-studio` remain compatibility aliases.
 
 For development, install all locked checks and run the local CI stages:

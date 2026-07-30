@@ -17,14 +17,19 @@ dashboard to restore the latest run and log after restart. Per-rule benchmark
 files are the sole runtime source; old artifacts without one report timing as
 unavailable.
 
+`make corpus-clean` runs the same clean rule without a browser
+(`scripts/clean_corpus.py`). It must freeze a snapshot first: the Snakefile
+refuses to load without one, and the clean rule deletes the inventory frozen
+into it.
+
 Each branch follows:
 
 ```text
-convert ─┬─ annotate
-         ├─ fasta
-         └─ proteobench
+convert ─┬─ annotate ── proteobench
+         └─ fasta
 ```
 
-Annotation, FASTA enrichment, and ProteoBench scoring are independent children
-of conversion. The packaged `config/registry.yaml` owns stage topology and
-command templates. Artifacts and explicit failure markers own runtime state.
+ProteoBench scoring requires the `sample_name` and `condition` added by
+annotation. FASTA enrichment remains independent. The packaged
+`config/registry.yaml` owns stage topology and command templates. Artifacts and
+explicit failure markers own runtime state.

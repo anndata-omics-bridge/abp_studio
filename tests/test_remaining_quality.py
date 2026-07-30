@@ -152,8 +152,8 @@ def test_small_remaining_branches(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with pytest.raises(ValueError, match="unsupported table extension"):
-        capabilities.read_table_headers(tmp_path / "data.xlsx")
+    with pytest.raises(ValueError, match="unsupported extension"):
+        capabilities.read_table_columns(tmp_path / "data.xlsx")
 
     monkeypatch.setattr(
         config_editor,

@@ -1,5 +1,22 @@
 # Changes
 
+- 2026-07-30: Upgrade to pandas 3.0.5 and anndata 0.13.2 (also mudata 0.3.10, numpy
+  2.5.1) to match APB, which needed the upgrade to pick up an anndata fix. No source
+  changes were required. Outputs under `apb_outputs/` predating this were produced on
+  the old stack and carry the PEAKS layer defects APB fixed on the same date; regenerate
+  them to get correct `Normalized_Area` and `AScore` missingness.
+- 2026-07-30: Read capability-probe headers through APB's
+  `readers.dispatch.read_table_columns` and delete the private `read_table_headers`
+  copy, which hardcoded `.txt` to tab. Comma-delimited `.txt` exports (AlphaPept, some
+  PEAKS) read as one column there, so they reported `UNSUPPORTED` even with a correct
+  parsing rule while converting fine. Drops the now-unused direct `pyarrow` dependency.
+- 2026-07-30: Score every annotated branch with ProteoBench. Drops the
+  `module_level` branch policy, its `proteobench_level` snapshot field, and the
+  level restriction in the Snakefile's ProteoBench wildcard constraint, so
+  `protein`/`fragment` branches are no longer reported `UNSUPPORTED`.
+- 2026-07-30: Add `make corpus-clean` over `scripts/clean_corpus.py` (cyclopts +
+  loguru), which freezes the run snapshot the packaged Snakefile requires and
+  invokes its clean rule headlessly.
 - 2026-07-25: Show the exact shell-quoted `apb` CLI command in every Corpus
   Runner stage detail, or state explicitly when capability/prerequisite
   resolution could not generate a command.

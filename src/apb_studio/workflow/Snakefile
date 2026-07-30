@@ -47,9 +47,9 @@ OUTPUT_ROOT = RUN.output_root
 TARGETS = list(RUN.targets)
 BY_OUTPUT = {str(t.output): t for t in TARGETS}
 
-# Missing external resources are represented as BLOCKED cells in the dashboard and are not allowed
-# to abort DAG construction for otherwise independent branches. Existing artifacts stay in the goal
-# so Snakemake can assess input timestamps and rebuild stale work.
+# Missing external resources are represented as UNSUPPORTED cells in the dashboard and are not
+# allowed to abort DAG construction for otherwise independent branches. Existing artifacts stay in
+# the goal so Snakemake can assess input timestamps and rebuild stale work.
 DEFAULT_TARGETS = [str(t.output) for t in runnable_targets(TARGETS)]
 BENCHMARK_PATTERN = str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".benchmark.tsv"
 

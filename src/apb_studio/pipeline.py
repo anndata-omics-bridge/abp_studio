@@ -41,10 +41,7 @@ FASTA_ARTIFACT_RE = (
     rf"{MUDATA}\.fasta\.h5mu|"
     rf"(?:{_LEVEL_RE})\.fasta\.h5ad"
 )
-PROTEOBENCH_ARTIFACT_RE = (
-    rf"{MUDATA}\.proteobench\.h5mu|"
-    rf"(?:ion|peptidoform)\.proteobench\.h5ad"
-)
+PROTEOBENCH_ARTIFACT_RE = rf"{MUDATA}\.proteobench\.h5mu|(?:{_LEVEL_RE})\.proteobench\.h5ad"
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
@@ -89,7 +86,7 @@ class ResolvedFixture:
     annotation_error: str | None = None
     fasta_error: str | None = None
     module_settings_error: str | None = None
-    proteobench_level: str | None = None
+    parameter_vendor: str = ""
 
     @property
     def identity(self) -> tuple[str, str, str]:
@@ -133,6 +130,7 @@ def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
                 "dataset": fixture.dataset,
                 "software": fixture.software,
                 "vendor": fixture.vendor,
+                "parameter_vendor": fixture.parameter_vendor,
                 "input_path": str(fixture.input_path),
                 "parameter_path": str(fixture.parameter_path),
                 "branches": list(fixture.branches),
@@ -145,7 +143,6 @@ def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
                 "annotation_error": fixture.annotation_error,
                 "fasta_error": fixture.fasta_error,
                 "module_settings_error": fixture.module_settings_error,
-                "proteobench_level": fixture.proteobench_level,
             }
             for fixture in snapshot.fixtures
         ],
@@ -201,11 +198,7 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
                 if item.get("module_settings_error") is not None
                 else None
             ),
-            proteobench_level=(
-                str(item["proteobench_level"])
-                if item.get("proteobench_level") is not None
-                else None
-            ),
+            parameter_vendor=str(item.get("parameter_vendor", item["vendor"])),
         )
         for item in data.get("fixtures", [])
     )
@@ -376,22 +369,6 @@ def _resource_names(stage: dict[str, Any]) -> tuple[str, ...]:
     return (resource,) if resource is not None else ()
 
 
-def _stage_applies_to_branch(
-    stage: dict[str, Any],
-    branch: str,
-    *,
-    proteobench_level: str | None,
-) -> bool:
-    """Apply registry branch policies before a target enters the DAG."""
-    if stage.get("branch_policy") != "module_level":
-        return True
-    if branch == MUDATA:
-        return proteobench_level in {None, "ion", "peptidoform"}
-    if proteobench_level is None:
-        return branch in {"ion", "peptidoform"}
-    return branch == proteobench_level
-
-
 def _resolved_resource(
     fixture: ResolvedFixture,
     name: str,
@@ -409,18 +386,30 @@ def _nearest_upstream(
     deps: list[str],
     emitted: dict[str, Path],
     reg: dict[str, dict[str, Any]],
-) -> Path | None:
+) -> Path:
     """Nearest already-emitted upstream artifact for a stage's `depends_on` (§13.1 reconnection).
 
     Walk the `depends_on` graph until an emitted stage is found, so an optional *intermediate* stage
     that was skipped for this dataset is transparent — its successor reconnects to the last present
-    artifact. Returns None only above the root (which always emits, so downstream always finds one).
+    artifact. The DAG root always emits, so a well-formed registry always yields one.
     """
+    found = _emitted_ancestor(deps, emitted, reg)
+    if found is None:
+        raise ValueError(f"No emitted upstream stage for dependencies {deps}.")
+    return found
+
+
+def _emitted_ancestor(
+    deps: list[str],
+    emitted: dict[str, Path],
+    reg: dict[str, dict[str, Any]],
+) -> Path | None:
+    """Walk `depends_on` breadth-first for the first emitted artifact."""
     for dep in deps:
         if dep in emitted:
             return emitted[dep]
     for dep in deps:
-        up = _nearest_upstream(list(reg.get(dep, {}).get("depends_on") or []), emitted, reg)
+        up = _emitted_ancestor(list(reg.get(dep, {}).get("depends_on") or []), emitted, reg)
         if up is not None:
             return up
     return None
@@ -465,12 +454,6 @@ def expand_targets(  # noqa: C901, PLR0912 - registry-driven target graph expans
 
                 for name in order:
                     stage = reg[name]
-                    if not _stage_applies_to_branch(
-                        stage,
-                        branch,
-                        proteobench_level=mcfg.get("proteobench_level"),
-                    ):
-                        continue
                     deps = list(stage.get("depends_on") or [])
 
                     if not deps:
@@ -481,6 +464,9 @@ def expand_targets(  # noqa: C901, PLR0912 - registry-driven target graph expans
                                 "input": _resolve(ds["input"], in_root),
                                 "output": output.with_suffix(""),
                                 "vendor": ds["vendor"],
+                                "parameter_vendor": (
+                                    discovery.parameter_software_slug or ds["vendor"]
+                                ),
                                 "params": _resolve(ds["params"], in_root),
                             },
                         )
@@ -514,8 +500,6 @@ def expand_targets(  # noqa: C901, PLR0912 - registry-driven target graph expans
                         if required_missing:
                             continue
                         upstream = _nearest_upstream(deps, emitted, reg)
-                        if upstream is None:
-                            continue
                         output = base / stage_artifact(stage, branch)
                         context = {"input": upstream, "output": output}
                         context.update(resource_paths)
@@ -563,12 +547,6 @@ def expand_resolved_targets(  # noqa: C901, PLR0912 - registry-driven target gra
 
             for name in order:
                 stage = reg[name]
-                if not _stage_applies_to_branch(
-                    stage,
-                    branch,
-                    proteobench_level=fixture.proteobench_level,
-                ):
-                    continue
                 dependencies = list(stage.get("depends_on") or [])
                 blocked_reason: str | None = None
 
@@ -580,6 +558,7 @@ def expand_resolved_targets(  # noqa: C901, PLR0912 - registry-driven target gra
                             "input": fixture.input_path,
                             "output": output.with_suffix(""),
                             "vendor": fixture.vendor,
+                            "parameter_vendor": (fixture.parameter_vendor or fixture.vendor),
                             "params": fixture.parameter_path,
                         },
                     )
@@ -587,14 +566,11 @@ def expand_resolved_targets(  # noqa: C901, PLR0912 - registry-driven target gra
                         command += ["--level", branch]
                     inputs = [fixture.input_path, fixture.parameter_path]
                 else:
+                    # Every stage emits a target here, so a dependency always has an artifact.
                     upstream = _nearest_upstream(dependencies, emitted, reg)
                     output = base / stage_artifact(stage, branch)
-                    inputs = [] if upstream is None else [upstream]
-                    context: dict[str, Path] = {}
-                    if upstream is None:
-                        blocked_reason = "Blocked by unavailable stage: " + ", ".join(dependencies)
-                    else:
-                        context = {"input": upstream, "output": output}
+                    inputs = [upstream]
+                    context: dict[str, Path] = {"input": upstream, "output": output}
 
                     for resource_name in _resource_names(stage):
                         resource_path, resource_error = _resolved_resource(
@@ -840,7 +816,7 @@ def _terminal_blocker(  # noqa: C901 - recursive target-state evaluation
     target: Target,
     targets: list[Target],
 ) -> str | None:
-    """Return a static or terminal upstream blocker, but never a pending dependency."""
+    """Return a terminal upstream blocker, but never a direct or pending prerequisite."""
     by_output = {item.output: item for item in targets}
     memo: dict[Path, str | None] = {}
 
@@ -858,10 +834,6 @@ def _terminal_blocker(  # noqa: C901 - recursive target-state evaluation
         for input_path in item.inputs:
             upstream = by_output.get(input_path)
             if upstream is None:
-                if not input_path.exists():
-                    reason = f"Missing prerequisite: {input_path}"
-                    memo[item.output] = reason
-                    return reason
                 continue
             if upstream.output.exists():
                 continue
@@ -880,7 +852,7 @@ def _terminal_blocker(  # noqa: C901 - recursive target-state evaluation
     return visit(target)
 
 
-def _stage_detail(
+def _stage_detail(  # noqa: PLR0911 - explicit stage-state decision table
     target: Target | None,
     *,
     targets: list[Target],
@@ -889,8 +861,8 @@ def _stage_detail(
     """Build one JSON-compatible table-cell detail payload."""
     if target is None:
         return {
-            "state": "blocked",
-            "display": "BLOCKED",
+            "state": "unsupported",
+            "display": "UNSUPPORTED",
             "error": missing_reason or "Stage target unavailable",
         }
 
@@ -914,9 +886,32 @@ def _stage_detail(
     error = _failed_rule_error(target.output)
     if error is not None:
         return {**base, "state": "failed", "display": "FAILED", "error": error}
+    if target.blocked_reason is not None:
+        return {
+            **base,
+            "state": "unsupported",
+            "display": "UNSUPPORTED",
+            "error": target.blocked_reason,
+        }
+    target_outputs = {item.output for item in targets}
+    missing_prerequisite = next(
+        (
+            input_path
+            for input_path in target.inputs
+            if input_path not in target_outputs and not input_path.exists()
+        ),
+        None,
+    )
+    if missing_prerequisite is not None:
+        return {
+            **base,
+            "state": "unsupported",
+            "display": "UNSUPPORTED",
+            "error": f"Missing prerequisite: {missing_prerequisite}",
+        }
     blocker = _terminal_blocker(target, targets)
     if blocker is not None:
-        return {**base, "state": "blocked", "display": "BLOCKED", "error": blocker}
+        return {**base, "state": "unavailable", "display": ""}
     return {**base, "state": "pending", "display": ""}
 
 
@@ -941,18 +936,25 @@ def branch_rows(
     for fixture in run.fixtures:
         if not fixture.branches:
             status = fixture.capability_status.lower()
-            state = "unsupported" if status == "unsupported" else "blocked"
-            display = "UNSUPPORTED" if state == "unsupported" else "BLOCKED"
+            state = status if status in {"failed", "unsupported"} else "failed"
+            display = state.upper()
             root_stage = order[0]
+            root_reason = fixture.diagnostic or "No supported APB branch"
             details = {
                 root_stage: {
                     "state": state,
                     "display": display,
-                    "error": fixture.diagnostic or "No supported APB branch",
+                    "error": root_reason,
                 }
             }
             details.update(
-                {stage_name: {"state": "pending", "display": ""} for stage_name in order[1:]}
+                {
+                    stage_name: {
+                        "state": "unavailable",
+                        "display": "",
+                    }
+                    for stage_name in order[1:]
+                }
             )
             row: dict[str, Any] = {
                 "module": fixture.repo_name,

@@ -1,14 +1,68 @@
 APP_PORT ?= 8051
+CORPUS_RUNNER_PID_FILE ?= $(CURDIR)/.apb-studio-corpus-runner-$(APP_PORT).pid
 
 .DEFAULT_GOAL := help
-.PHONY: help sync corpus-runner fixture-manager test lint check check-full audit package docs docs-serve
+.PHONY: help sync corpus-runner corpus-runner-stop corpus-clean fixture-manager test lint check check-full audit package docs docs-serve
 
 help:                     ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-corpus-runner:            ## run APB Studio — Corpus Runner
-	APB_STUDIO_PORT=$(APP_PORT) uv run --frozen apb-studio-corpus-runner
+corpus-runner: corpus-runner-stop  ## restart APB Studio — Corpus Runner
+	@trap 'rm -f "$(CORPUS_RUNNER_PID_FILE)"' EXIT; \
+		VIRTUAL_ENV= APB_STUDIO_PORT=$(APP_PORT) uv run --frozen sh -c \
+		'echo $$$$ > "$(CORPUS_RUNNER_PID_FILE)"; exec apb-studio-corpus-runner'; \
+		status=$$?; \
+		if test $$status -eq 130 || test $$status -eq 143; then exit 0; fi; \
+		exit $$status
+
+corpus-runner-stop:       ## stop the managed Corpus Runner
+	@pid_file="$(CORPUS_RUNNER_PID_FILE)"; \
+		pids=""; \
+		if test -f "$$pid_file"; then \
+			pid="$$(tr -d '[:space:]' < "$$pid_file")"; \
+			case "$$pid" in \
+				''|*[!0-9]*) rm -f "$$pid_file" ;; \
+				*) if kill -0 "$$pid" 2>/dev/null; then pids="$$pid"; fi ;; \
+			esac; \
+		fi; \
+		if command -v lsof >/dev/null 2>&1; then \
+			for pid in $$(lsof -tiTCP:$(APP_PORT) -sTCP:LISTEN 2>/dev/null || true); do \
+				case " $$pids " in *" $$pid "*) ;; *) pids="$$pids $$pid" ;; esac; \
+			done; \
+		fi; \
+		if test -z "$${pids## }"; then \
+			rm -f "$$pid_file"; \
+			echo "Corpus Runner is not running on port $(APP_PORT)."; \
+			exit 0; \
+		fi; \
+		for pid in $$pids; do \
+			command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
+			case "$$command" in \
+				*apb-studio-corpus-runner*) ;; \
+				*) echo "Refusing to stop PID $$pid on port $(APP_PORT): $$command"; exit 1 ;; \
+			esac; \
+		done; \
+		echo "Stopping Corpus Runner on port $(APP_PORT) (PID$$(test "$$(echo $$pids | wc -w | tr -d ' ')" = 1 || printf 's') $$pids)..."; \
+		kill -INT $$pids 2>/dev/null || true; \
+		attempt=0; \
+		while test $$attempt -lt 50; do \
+			alive=""; \
+			for pid in $$pids; do \
+				if kill -0 "$$pid" 2>/dev/null; then alive="$$alive $$pid"; fi; \
+			done; \
+			if test -z "$${alive## }"; then break; fi; \
+			sleep 0.1; \
+			attempt=$$((attempt + 1)); \
+		done; \
+		if test -n "$${alive## }"; then \
+			echo "Corpus Runner did not stop cleanly (PID$${alive})."; \
+			exit 1; \
+		fi; \
+		rm -f "$$pid_file"
+
+corpus-clean:             ## run the packaged Snakemake clean rule over the whole corpus
+	uv run --frozen python scripts/clean_corpus.py
 
 fixture-manager:          ## run APB Studio — Fixture Manager
 	uv run --frozen apb-studio-fixture-manager

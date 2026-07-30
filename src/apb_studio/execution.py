@@ -136,11 +136,12 @@ def resolve_current_run(
         resource = resources.for_module(fixture.module)
         annotation_path = resource.annotation_path if resource is not None else None
         module_settings_error = resource.annotation_error if resource is not None else None
-        proteobench_level = None
         if annotation_path is not None and module_settings_error is None:
             try:
-                proteobench_level = load_module_settings(annotation_path).general.level
-            except Exception as error:  # noqa: BLE001 - frozen as a BLOCKED diagnostic
+                # Scoring needs a readable module TOML; its declared level does not restrict which
+                # branches are scored — every annotated branch enters the ProteoBench stage.
+                load_module_settings(annotation_path)
+            except Exception as error:  # noqa: BLE001 - frozen as a resource diagnostic
                 module_settings_error = (
                     f"Invalid ProteoBench module settings {annotation_path}: "
                     f"{type(error).__name__}: {error}"
@@ -156,6 +157,10 @@ def resolve_current_run(
                     discovery.software_slug
                     or conversion_pipeline.software_slug(fixture.catalog_software_name)
                 ),
+                parameter_vendor=(
+                    discovery.parameter_software_slug
+                    or conversion_pipeline.software_slug(fixture.catalog_software_name)
+                ),
                 input_path=input_path,
                 parameter_path=parameter_path,
                 branches=tuple(discovery.branches),
@@ -166,7 +171,6 @@ def resolve_current_run(
                 annotation_error=(resource.annotation_error if resource is not None else None),
                 fasta_error=resource.fasta_error if resource is not None else None,
                 module_settings_error=module_settings_error,
-                proteobench_level=proteobench_level,
             )
         )
     registry = load_registry()

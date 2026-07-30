@@ -120,6 +120,7 @@ def _supported_discovery(*_args: object) -> CapabilityDiscovery:
         status=CapabilityStatus.SUPPORTED,
         software_slug="diann",
         software_version="2.0",
+        parameter_software_slug="diann",
     )
 
 

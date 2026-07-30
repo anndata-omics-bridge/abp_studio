@@ -24,7 +24,7 @@ def _copy_rule_document(tmp_path: Path) -> Path:
 
 def test_catalog_lists_one_row_per_software_version_document() -> None:
     rows = config_editor.catalog_rows()
-    assert len(rows) == 7
+    assert len(rows) == 9
     assert all(row["valid"] for row in rows)
     assert sum(row["vendor"] == "diann" for row in rows) == 2
     assert next(row for row in rows if row["vendor"] == "spectronaut")["levels"] == [

@@ -31,9 +31,12 @@ table pinned to that snapshot. Persist the operation state and Snakemake log bes
 the application can recover them after a restart.
 
 The packaged stage registry (`src/apb_studio/config/registry.yaml`) owns stage topology and command
-templates; the packaged `src/apb_studio/workflow/Snakefile` owns execution. Annotation, FASTA, and
-ProteoBench scoring are independent children of conversion, so a missing later-stage resource must
-not suppress another runnable target.
+templates; the packaged `src/apb_studio/workflow/Snakefile` owns execution. Annotation and FASTA
+are children of conversion; ProteoBench scoring is a child of annotation because it requires
+`sample_name` and `condition`. A missing FASTA resource must not suppress the annotation/scoring
+chain, and a missing annotation resource must not suppress FASTA. Every annotated branch is
+scored: the level declared in a ProteoBench module TOML never restricts which branches enter the
+scoring stage.
 
 ## Corpus Runner product boundary
 
@@ -71,17 +74,18 @@ Fixture inputs and persisted run/log history are never part of Corpus Runner cle
 
 ## Status contract
 
-- blank: runnable/pending, including a downstream stage normally waiting for its upstream output.
+- blank: runnable/pending, or a downstream stage made irrelevant by an unsupported/failed
+  conversion. Irrelevant downstream cells are excluded from pending counts.
 - `DONE`: the expected artifact exists.
-- `UNSUPPORTED`: APB has no registered capability for the software, or no parsing-rule JSON
-  matches.
-- `BLOCKED`: a required input/resource is absent or invalid, or an upstream stage terminated.
-- `FAILED`: the workflow engine attempted that concrete rule, it exited non-zero, and its
-  failure marker exists.
+- `UNSUPPORTED`: the stage cannot run with the current software, version, input schema, or required
+  resource. This includes absent parsing rules and missing annotation, FASTA, or module settings.
+  Rule-document presence is checked before reading the fixture input or parameter file.
+- `FAILED`: input/parameter inspection or an attempted workflow stage failed. A workflow failure
+  requires a non-zero exit and its failure marker.
 
-Unreadable input or parameters are `BLOCKED`, not `UNSUPPORTED`. A log alone never means failure.
-An artifact wins over an old marker. If conversion fails, its unattempted descendants are
-`BLOCKED`. Only an actual `FAILED` cell offers a log download.
+Every `UNSUPPORTED` or `FAILED` cell exposes its exact diagnostic when clicked. A log alone never
+means failure. An artifact wins over an old marker. If conversion is unsupported or fails, its
+unattempted descendants stay blank. Only a workflow-stage `FAILED` cell offers a log download.
 
 ## Development
 

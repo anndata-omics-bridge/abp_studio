@@ -140,7 +140,7 @@ def test_dashboard_stage_rendering_and_logs(
     detail = cast(dict[str, str], row["_stage_details"]["convert"])
 
     assert "Converted" in dashboard._stage_heading(selection, registry)
-    assert len(dashboard._status_detail({"state": "blocked"}, selection, registry)) == 3
+    assert len(dashboard._status_detail({"state": "unsupported"}, selection, registry)) == 3
     assert len(dashboard._status_detail({"state": "failed"}, selection, registry)) == 3
     empty_log = tmp_path / "empty.log"
     empty_log.write_text("", encoding="utf-8")
@@ -163,13 +163,14 @@ def test_dashboard_stage_rendering_and_logs(
     )
     assert len(dashboard._artifact_detail(completed, selection, registry)) == 4
     assert len(dashboard._render_stage_detail(detail, selection, registry)) == 5
+    assert len(dashboard._render_stage_detail({"state": "unavailable"}, selection, registry)) == 2
     assert len(dashboard._render_stage_detail({"state": "pending"}, selection, registry)) == 3
 
     assert dashboard._downloadable_log([row], selection) == Path(detail["log"])
     assert dashboard._downloadable_log([], selection) is None
     assert (
         dashboard._downloadable_log(
-            [{**row, "_stage_details": {"convert": {"state": "blocked"}}}],
+            [{**row, "_stage_details": {"convert": {"state": "unsupported"}}}],
             selection,
         )
         is None
@@ -296,7 +297,7 @@ def test_clear_callback_refreshes_status_and_reports_errors(
     assert "Could not launch corpus clean: clean failed" in result[1]
 
 
-def test_dashboard_callbacks_and_main(
+def test_dashboard_callbacks_and_main(  # noqa: PLR0915 - exercises one callback family
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -304,6 +305,7 @@ def test_dashboard_callbacks_and_main(
     refresh = _callback(app, "corpus-grid.rowData")
     select = _callback(app, "selected-row.data")
     show = _callback(app, "stage-detail.children")
+    fixture_detail = _callback(app, "fixture-detail.children")
     download = _callback(app, "log-download.data")
     row = _row(tmp_path)
     snapshot = SimpleNamespace(fixtures=(1, 2))
@@ -376,6 +378,13 @@ def test_dashboard_callbacks_and_main(
     assert selected == (selection, "convert")
     shown = show(selection, "convert", 1, "job")
     assert shown[1] is False
+    monkeypatch.setattr(
+        dashboard,
+        "_fixture_detail_text",
+        lambda current, _selection, tab: f"{tab}:{len(current.fixtures)}",
+    )
+    assert fixture_detail(selection, "parameters", 1, "job") == "parameters:2"
+    assert fixture_detail(None, "file", 1, "job") == "Select a row."
 
     monkeypatch.setattr(
         dashboard,
@@ -384,6 +393,7 @@ def test_dashboard_callbacks_and_main(
     )
     assert select(None, "job") == (no_update, no_update)
     assert show(selection, "convert", 1, "job") == ("load failed", True)
+    assert fixture_detail(selection, "file", 1, "job") == "load failed"
     assert download(1, selection, "convert", "job") is no_update
 
     monkeypatch.setattr(
@@ -408,4 +418,4 @@ def test_dashboard_callbacks_and_main(
     monkeypatch.setattr(dashboard.app, "run", lambda **kwargs: run_calls.append(kwargs))
     monkeypatch.setenv("APB_STUDIO_PORT", "9000")
     dashboard.main()
-    assert run_calls == [{"debug": True, "port": 9000}]
+    assert run_calls == [{"debug": True, "port": 9000, "use_reloader": False}]

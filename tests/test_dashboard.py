@@ -57,6 +57,7 @@ def test_columns_are_one_compact_branch_table() -> None:
         "fasta",
         "proteobench",
     ]
+    assert all(column["sortable"] is True for column in columns[-4:])
     failed_style = columns[-1]["cellStyle"]["styleConditions"][0]
     assert "FAILED" in failed_style["condition"]
     assert failed_style["style"]["color"] == "#b42318"
@@ -64,7 +65,8 @@ def test_columns_are_one_compact_branch_table() -> None:
         condition["condition"] for condition in columns[-1]["cellStyle"]["styleConditions"]
     }
     assert any("UNSUPPORTED" in condition for condition in styled_states)
-    assert any("BLOCKED" in condition for condition in styled_states)
+    assert not any("ERROR" in condition for condition in styled_states)
+    assert not any("BLOCKED" in condition for condition in styled_states)
 
 
 def test_cell_click_selects_authoritative_row_and_clicked_stage() -> None:
@@ -254,6 +256,28 @@ def test_unsupported_detail_has_no_rule_log() -> None:
     assert len(children) == 3
 
 
+@pytest.mark.parametrize(
+    ("state", "label", "diagnostic"),
+    [
+        ("failed", "FAILED", "Could not read input table headers."),
+        ("unsupported", "UNSUPPORTED", "No APB parsing rule matches this fixture."),
+    ],
+)
+def test_non_runnable_status_detail_shows_exact_diagnostic(
+    state: str,
+    label: str,
+    diagnostic: str,
+) -> None:
+    children = dashboard._status_detail(
+        {"state": state, "error": diagnostic},
+        _selection(),
+        load_registry(),
+    )
+
+    assert label in children[0].children
+    assert children[1].children == diagnostic
+
+
 def test_corpus_summary_reports_states_and_timing_coverage() -> None:
     rows = [
         {
@@ -272,6 +296,7 @@ def test_corpus_summary_reports_states_and_timing_coverage() -> None:
     summary = dashboard._corpus_summary(rows, load_registry())
 
     assert "2 produced · 1 failed" in summary
+    assert "unsupported" in summary
     assert "1/2 produced stages timed" in summary
     assert "1m 01s recorded runtime" in summary
     untimed = dashboard._corpus_summary(
@@ -290,7 +315,15 @@ def test_corpus_summary_reports_states_and_timing_coverage() -> None:
 def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
     app = dashboard.create_app()
 
-    assert len(app.callback_map) == 4
+    assert len(app.callback_map) == 5
+    assert app.layout.style["fontSize"] == "10px"
+    title = next(
+        child
+        for child in app.layout.children
+        if getattr(child, "children", None) == "APB Studio — Corpus Runner"
+    )
+    assert title.style["fontSize"] == "12px"
+    assert title.style["fontWeight"] == "700"
     callbacks = " ".join(app.callback_map)
     assert "corpus-grid.rowData" in callbacks
     assert "selected-row.data" in callbacks
@@ -306,6 +339,16 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
         "artifact-stage-tabs",
         "grid-revision",
     }
+    fixture_detail_callback = next(
+        callback
+        for output, callback in app.callback_map.items()
+        if "fixture-detail.children" in output
+    )
+    assert {item["id"] for item in fixture_detail_callback["inputs"]} == {
+        "selected-row",
+        "fixture-detail-tabs",
+        "grid-revision",
+    }
     layout_ids = [getattr(child, "id", None) for child in app.layout.children]
     assert layout_ids.index("corpus-grid") < layout_ids.index("stage-detail-panel")
     assert layout_ids.index("corpus-grid") < layout_ids.index("corpus-summary-panel")
@@ -314,7 +357,12 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
         child for child in app.layout.children if getattr(child, "id", None) == "corpus-grid"
     )
     assert grid.getRowId == "params.data._row_id"
+    assert grid.dashGridOptions["pagination"] is False
+    assert grid.dashGridOptions["alwaysShowVerticalScroll"] is True
+    assert grid.dashGridOptions["rowHeight"] == 27
     assert grid.dashGridOptions["rowSelection"]["mode"] == "singleRow"
+    assert grid.style["height"] == "570px"
+    assert grid.style["--ag-font-size"] == "10px"
     panel = next(
         child for child in app.layout.children if getattr(child, "id", None) == "stage-detail-panel"
     )
@@ -326,6 +374,14 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
         "Annotate",
         "FASTA",
         "ProteoBench",
+    ]
+    fixture_tabs = next(
+        child for child in panel.children if getattr(child, "id", None) == "fixture-detail-tabs"
+    )
+    assert [tab.label for tab in fixture_tabs.children] == [
+        "File",
+        "Submission JSON",
+        "Parameters",
     ]
     controls = next(
         child
@@ -341,6 +397,66 @@ def test_create_app_registers_run_poll_detail_and_download_callbacks() -> None:
     )
     assert confirm.children.id == "clear-corpus"
     assert "all Snakemake-managed corpus outputs" in confirm.message
+
+
+def test_fixture_detail_reuses_fixture_manager_row_details(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = SimpleNamespace(
+        module="module-source",
+        repo_name="module-a",
+        intermediate_hash="abc123",
+        dataset="dataset-a",
+    )
+    snapshot = cast(
+        dashboard.pipeline.RunSnapshot,
+        SimpleNamespace(fixtures=(fixture,), test_data_root=tmp_path),
+    )
+    seen: list[tuple[Path, dict[str, str]]] = []
+
+    def fake_row_details(
+        paths: dashboard.testdata.TestDataPaths,
+        row: dict[str, str],
+    ) -> tuple[str, str, str]:
+        seen.append((paths.data_dir, row))
+        return "file", "submission", "parameters"
+
+    monkeypatch.setattr(dashboard.testdata, "row_details", fake_row_details)
+
+    assert dashboard._fixture_detail_text(snapshot, _selection(), "file") == "file"
+    assert dashboard._fixture_detail_text(snapshot, _selection(), "unknown") == "file"
+    assert dashboard._fixture_detail_text(snapshot, _selection(), "submission") == "submission"
+    assert dashboard._fixture_detail_text(snapshot, _selection(), "parameters") == "parameters"
+    assert seen[0] == (
+        tmp_path,
+        {
+            "module": "module-source",
+            "repo_name": "module-a",
+            "intermediate_hash": "abc123",
+        },
+    )
+    assert dashboard._fixture_detail_text(snapshot, None, "file") == "Select a row."
+    assert dashboard._fixture_detail_text(None, _selection(), "file") == "Select a row."
+    missing = cast(
+        dashboard.pipeline.RunSnapshot,
+        SimpleNamespace(fixtures=(), test_data_root=tmp_path),
+    )
+    assert "no longer available" in dashboard._fixture_detail_text(
+        missing,
+        _selection(),
+        "file",
+    )
+    monkeypatch.setattr(
+        dashboard.testdata,
+        "row_details",
+        lambda *_args: (_ for _ in ()).throw(ValueError("bad metadata")),
+    )
+    assert "ValueError: bad metadata" in dashboard._fixture_detail_text(
+        snapshot,
+        _selection(),
+        "file",
+    )
 
 
 def test_documented_cell_event_selects_row_and_renders_active_tab(

@@ -11,6 +11,7 @@ public/
 # local corpus config & pipeline state
 config/corpus.yaml
 .snakemake/
+.apb-studio-corpus-runner-*.pid
 
 # outputs (filesystem-as-database lives outside the repo, but ignore stray local runs)
 /outputs/

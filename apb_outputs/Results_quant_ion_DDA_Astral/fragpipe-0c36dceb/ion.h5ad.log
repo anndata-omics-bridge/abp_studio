@@ -1,2 +1,0 @@
-INFO    | vendor=fragpipe software_version='23.0' version_status=present
-INFO    | wrote /Users/wolski/projects/anndata_bridge/apb_studio/apb_outputs/Results_quant_ion_DDA_Astral/fragpipe-0c36dceb/ion.h5ad  shape=(6, 53034)  layers=['Intensity', 'Spectral_Count', 'Apex_Retention_Time', 'Match_Type']

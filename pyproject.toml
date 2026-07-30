@@ -6,11 +6,12 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "anndata-proteomics",
+    "cyclopts",
+    "loguru",
     "snakemake>=8",
     "dash>=3",
     "dash-ag-grid",
     "pandas",
-    "pyarrow",
     "platformdirs>=4",
     "pydantic>=2",
     "pyyaml",

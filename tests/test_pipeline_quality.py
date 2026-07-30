@@ -100,7 +100,9 @@ def test_registry_helpers_and_nearest_upstream(tmp_path: Path) -> None:
     emitted = {"convert": tmp_path / "converted.h5ad"}
     by_name: dict[str, dict[str, Any]] = {cast(str, item["name"]): item for item in registry}
     assert pipeline._nearest_upstream(["optional"], emitted, by_name) == emitted["convert"]
-    assert pipeline._nearest_upstream(["missing"], emitted, by_name) is None
+    # A chain with no emitted stage means a malformed registry: every real chain reaches the root.
+    with pytest.raises(ValueError, match="No emitted upstream stage"):
+        pipeline._nearest_upstream(["missing"], emitted, by_name)
 
     diamond: list[dict[str, Any]] = [
         {"name": "root"},
@@ -258,6 +260,9 @@ def test_problem_aggregation_and_terminal_blockers(tmp_path: Path) -> None:
     assert "failed upstream" in cast(
         str, pipeline._terminal_blocker(downstream, [upstream, downstream])
     )
+    assert pipeline._stage_detail(downstream, targets=[upstream, downstream])["state"] == (
+        "unavailable"
+    )
     Path(f"{upstream.output}.failed").unlink()
     blocked = replace(upstream, blocked_reason="resource absent")
     assert "upstream stage" in cast(
@@ -313,20 +318,27 @@ def test_baskets_capability_fallback_and_dataset_selection(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize("optional", [False, True])
-def test_legacy_expansion_skips_unavailable_root_dependency(
+def test_legacy_expansion_handles_a_stage_skipped_for_a_missing_resource(
     tmp_path: Path,
     optional: bool,
 ) -> None:
+    """A required skipped stage takes its descendants with it; an optional one is transparent."""
     registry: list[dict[str, Any]] = [
         {
             "name": "root",
             "command": "apb convert {input} --output {output}",
-            "branch_policy": "module_level",
+        },
+        {
+            "name": "middle",
+            "depends_on": ["root"],
+            "artifact": "middled",
+            "resource": "annotation",
             "optional": optional,
+            "command": "apb annotate {input} {annotation} --output {output}",
         },
         {
             "name": "finish",
-            "depends_on": ["root"],
+            "depends_on": ["middle"],
             "artifact": "finished",
             "command": "apb finish {input} --output {output}",
         },
@@ -335,8 +347,8 @@ def test_legacy_expansion_skips_unavailable_root_dependency(
         "input_root": str(tmp_path),
         "output_root": str(tmp_path / "out"),
         "modules": {
+            # No `annotation` entry, so `middle` has no resource and is skipped.
             "module": {
-                "proteobench_level": "protein",
                 "datasets": [
                     {
                         "name": "dataset",
@@ -352,9 +364,16 @@ def test_legacy_expansion_skips_unavailable_root_dependency(
     def discover(*_args: object) -> capabilities.CapabilityDiscovery:
         return capabilities.CapabilityDiscovery(("ion",))
 
-    assert pipeline.expand_targets(registry, corpus, discover=discover) == []
+    stages = [
+        target.stage for target in pipeline.expand_targets(registry, corpus, discover=discover)
+    ]
+    assert stages == ["root", "finish"] if optional else stages == ["root"]
 
-    fixture = replace(_fixture(tmp_path), proteobench_level="protein")
-    resolved = pipeline.expand_resolved_targets(registry, (fixture,), tmp_path / "out")
-    assert len(resolved) == 1
-    assert resolved[0].blocked_reason == "Blocked by unavailable stage: root"
+    # The resolved path emits every stage instead, and blocks only the one missing its resource.
+    resolved = pipeline.expand_resolved_targets(registry, (_fixture(tmp_path),), tmp_path / "out")
+    blocked = {target.stage: target.blocked_reason for target in resolved}
+    assert blocked == {
+        "root": None,
+        "middle": "Missing module resource: annotation",
+        "finish": None,
+    }

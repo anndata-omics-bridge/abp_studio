@@ -13,11 +13,13 @@ import dash_ag_grid as dag
 from anndata_proteomics.readers.summary import describe_path
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 
-from apb_studio import execution, jobrunner, pipeline, settings
+from apb_studio import execution, jobrunner, pipeline, settings, testdata
 from apb_studio.registry import load_registry
 
 _POLL_INTERVAL_MS = 1_000
 _ROW_ID_FIELDS = ("module", "dataset", "level")
+_TEXT_FONT_SIZE = "10px"
+_TITLE_FONT_SIZE = "12px"
 _STAGE_CELL_STYLE = {
     "styleConditions": [
         {
@@ -34,15 +36,6 @@ _STAGE_CELL_STYLE = {
             "style": {
                 "backgroundColor": "#f8fafc",
                 "color": "#475467",
-                "cursor": "pointer",
-                "fontWeight": "600",
-            },
-        },
-        {
-            "condition": "params.value === 'BLOCKED'",
-            "style": {
-                "backgroundColor": "#fffaeb",
-                "color": "#93370d",
                 "cursor": "pointer",
                 "fontWeight": "600",
             },
@@ -70,7 +63,7 @@ _PRE_STYLE = {
     "border": "1px solid #eaecf0",
     "borderRadius": "4px",
     "fontFamily": "ui-monospace, SFMono-Regular, Menlo, monospace",
-    "fontSize": "0.78rem",
+    "fontSize": _TEXT_FONT_SIZE,
     "lineHeight": "1.35",
     "margin": "0.5rem 0 0",
     "maxHeight": "360px",
@@ -128,7 +121,7 @@ def _column_definitions(registry: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "flex": 0.8,
             "cellStyle": _STAGE_CELL_STYLE,
             "filter": False,
-            "sortable": False,
+            "sortable": True,
         }
         for stage in registry
     ]
@@ -223,6 +216,41 @@ def _find_stage_detail(
     return None
 
 
+def _fixture_detail_text(
+    snapshot: pipeline.RunSnapshot | None,
+    selection: dict[str, str] | None,
+    active_tab: str,
+) -> str:
+    """Return one Fixture Manager detail for the selected corpus fixture."""
+    if snapshot is None or selection is None:
+        return "Select a row."
+    fixture = next(
+        (
+            item
+            for item in snapshot.fixtures
+            if item.repo_name == selection.get("module")
+            and item.dataset == selection.get("dataset")
+        ),
+        None,
+    )
+    if fixture is None:
+        return "The selected fixture is no longer available. Select a row again."
+    fixture_row = {
+        "module": fixture.module,
+        "repo_name": fixture.repo_name,
+        "intermediate_hash": fixture.intermediate_hash,
+    }
+    try:
+        details = testdata.row_details(
+            testdata.TestDataPaths(data_dir=snapshot.test_data_root),
+            fixture_row,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        return f"Could not read fixture details: {type(exc).__name__}: {exc}"
+    detail_index = {"file": 0, "submission": 1, "parameters": 2}
+    return details[detail_index.get(active_tab, 0)]
+
+
 def _stage_heading(
     selection: dict[str, str],
     registry: list[dict[str, Any]],
@@ -249,7 +277,11 @@ def _command_detail(detail: dict[str, str]) -> html.Div:
         [
             html.H3(
                 "APB CLI command",
-                style={"fontSize": "0.9rem", "margin": "0.65rem 0 0"},
+                style={
+                    "fontSize": _TITLE_FONT_SIZE,
+                    "fontWeight": "700",
+                    "margin": "0.65rem 0 0",
+                },
             ),
             value,
         ]
@@ -329,7 +361,7 @@ def _fasta_overview(summary: Mapping[str, Any]) -> html.Div | None:
         cards.append(
             html.Div(
                 [
-                    html.Strong(level, style={"fontSize": "0.9rem"}),
+                    html.Strong(level, style={"fontSize": _TITLE_FONT_SIZE}),
                     *metrics,
                 ],
                 style=_SUMMARY_CARD_STYLE,
@@ -340,7 +372,14 @@ def _fasta_overview(summary: Mapping[str, Any]) -> html.Div | None:
         return None
     return html.Div(
         [
-            html.H3("FASTA coverage", style={"fontSize": "0.95rem", "margin": "0 0 0.5rem"}),
+            html.H3(
+                "FASTA coverage",
+                style={
+                    "fontSize": _TITLE_FONT_SIZE,
+                    "fontWeight": "700",
+                    "margin": "0 0 0.5rem",
+                },
+            ),
             html.Div(
                 cards,
                 style={"display": "flex", "flexWrap": "wrap", "gap": "0.65rem"},
@@ -371,8 +410,15 @@ def _artifact_detail(
         rendered = json.dumps(summary, indent=2, sort_keys=True)
     except Exception as exc:  # noqa: BLE001 - a corrupt artifact must not crash Dash
         return [
-            html.H2(heading, style={"fontSize": "1rem", "margin": "0"}),
-            html.Div(metadata, style={"color": "#667085", "fontSize": "0.78rem"}),
+            html.H2(
+                heading,
+                style={
+                    "fontSize": _TITLE_FONT_SIZE,
+                    "fontWeight": "700",
+                    "margin": "0",
+                },
+            ),
+            html.Div(metadata, style={"color": "#667085", "fontSize": _TEXT_FONT_SIZE}),
             _command_detail(detail),
             html.P(
                 f"Could not read this artifact summary: {type(exc).__name__}: {exc}",
@@ -380,8 +426,15 @@ def _artifact_detail(
             ),
         ]
     children: list[Any] = [
-        html.H2(heading, style={"fontSize": "1rem", "margin": "0"}),
-        html.Div(metadata, style={"color": "#667085", "fontSize": "0.78rem"}),
+        html.H2(
+            heading,
+            style={
+                "fontSize": _TITLE_FONT_SIZE,
+                "fontWeight": "700",
+                "margin": "0",
+            },
+        ),
+        html.Div(metadata, style={"color": "#667085", "fontSize": _TEXT_FONT_SIZE}),
         _command_detail(detail),
     ]
     fasta_overview = _fasta_overview(summary) if selection["stage"] == "fasta" else None
@@ -408,10 +461,9 @@ def _status_detail(
     selection: dict[str, str],
     registry: list[dict[str, Any]],
 ) -> list[Any]:
-    """Render one failed, unsupported, or blocked stage diagnostic."""
-    state = detail.get("state", "blocked")
+    """Render one failed or unsupported stage diagnostic."""
+    state = detail.get("state", "unsupported")
     label = {
-        "blocked": "BLOCKED",
         "failed": "FAILED",
         "unsupported": "UNSUPPORTED",
     }.get(state, state.upper())
@@ -420,7 +472,12 @@ def _status_detail(
     children: list[Any] = [
         html.H2(
             heading,
-            style={"color": color, "fontSize": "1rem", "margin": "0"},
+            style={
+                "color": color,
+                "fontSize": _TITLE_FONT_SIZE,
+                "fontWeight": "700",
+                "margin": "0",
+            },
         ),
         html.P(
             detail.get("error", f"Stage is {label.lower()}."),
@@ -434,7 +491,9 @@ def _status_detail(
     if not log_value:
         return children
     log_path = Path(log_value)
-    children.append(html.Div(str(log_path), style={"color": "#667085", "fontSize": "0.78rem"}))
+    children.append(
+        html.Div(str(log_path), style={"color": "#667085", "fontSize": _TEXT_FONT_SIZE})
+    )
     log_text = jobrunner.read_text_tail(log_path)
     if log_text:
         children.append(html.Pre(log_text, style=_PRE_STYLE))
@@ -450,12 +509,28 @@ def _render_stage_detail(
     state = detail.get("state")
     if state == "completed":
         return _artifact_detail(detail, selection, registry)
-    if state in {"blocked", "failed", "unsupported"}:
+    if state in {"failed", "unsupported"}:
         return _status_detail(detail, selection, registry)
+    if state == "unavailable":
+        return [
+            html.H2(
+                _stage_heading(selection, registry),
+                style={
+                    "fontSize": _TITLE_FONT_SIZE,
+                    "fontWeight": "700",
+                    "margin": "0",
+                },
+            ),
+            html.P("This stage is unavailable because conversion did not produce a usable branch."),
+        ]
     return [
         html.H2(
             _stage_heading(selection, registry),
-            style={"fontSize": "1rem", "margin": "0"},
+            style={
+                "fontSize": _TITLE_FONT_SIZE,
+                "fontWeight": "700",
+                "margin": "0",
+            },
         ),
         html.P("Pending — this stage is waiting to run or finish."),
         _command_detail(detail),
@@ -496,7 +571,7 @@ def _corpus_summary(
         if detail.get("state") == "completed" and detail.get("duration_seconds")
     ]
     state_summary = (
-        f"{completed} produced · {counts['failed']} failed · {counts['blocked']} blocked"
+        f"{completed} produced · {counts['failed']} failed"
         f" · {counts['unsupported']} unsupported · {counts['pending']} pending"
     )
     if timed:
@@ -511,7 +586,7 @@ def _corpus_summary(
         )
     else:
         timing = "No completed-stage timing yet."
-    return f"{state_summary}\n{timing}\nClick a produced stage for its APB summary and uns."
+    return f"{state_summary}\n{timing}\nClick any status for its exact diagnostic."
 
 
 def _live_log(
@@ -560,7 +635,7 @@ def _live_log(
     return "No corpus run log yet.", False, "Corpus not running"
 
 
-def create_app(  # noqa: C901 - Dash layout and callback composition root
+def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition root
     *,
     settings_path: Path | None = None,
 ) -> Dash:
@@ -581,14 +656,18 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
             dcc.Download(id="log-download"),
             html.H1(
                 "APB Studio — Corpus Runner",
-                style={"fontSize": "1.55rem", "margin": "0 0 0.75rem"},
+                style={
+                    "fontSize": _TITLE_FONT_SIZE,
+                    "fontWeight": "700",
+                    "margin": "0 0 0.75rem",
+                },
             ),
             html.Div(
                 [
                     html.Span(
                         f"Fixtures: {current_settings.test_data_root}",
                         id="source-info",
-                        style={"color": "#475467", "fontSize": "0.8rem"},
+                        style={"color": "#475467", "fontSize": _TEXT_FONT_SIZE},
                     ),
                     dcc.Input(
                         id="output-root",
@@ -598,22 +677,30 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                         style={
                             "boxSizing": "border-box",
                             "flex": "1 1 24rem",
-                            "fontSize": "0.86rem",
+                            "fontSize": _TEXT_FONT_SIZE,
                             "height": "2rem",
                             "padding": "0 0.55rem",
                         },
                     ),
-                    html.Button("Reload", id="reload", style={"height": "2rem"}),
+                    html.Button(
+                        "Reload",
+                        id="reload",
+                        style={"fontSize": _TEXT_FONT_SIZE, "height": "2rem"},
+                    ),
                     html.Button(
                         "Run corpus",
                         id="run-corpus",
-                        style={"height": "2rem", "fontWeight": "600"},
+                        style={
+                            "fontSize": _TEXT_FONT_SIZE,
+                            "fontWeight": "600",
+                            "height": "2rem",
+                        },
                     ),
                     dcc.ConfirmDialogProvider(
                         html.Button(
                             "Clear corpus…",
                             id="clear-corpus",
-                            style={"height": "2rem"},
+                            style={"fontSize": _TEXT_FONT_SIZE, "height": "2rem"},
                         ),
                         id="confirm-clear-corpus",
                         message=(
@@ -623,7 +710,7 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                     ),
                     html.Span(
                         id="run-status",
-                        style={"color": "#475467", "fontSize": "0.82rem"},
+                        style={"color": "#475467", "fontSize": _TEXT_FONT_SIZE},
                     ),
                 ],
                 style={
@@ -637,7 +724,7 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                 id="error",
                 style={
                     "color": "#b42318",
-                    "fontSize": "0.84rem",
+                    "fontSize": _TEXT_FONT_SIZE,
                     "marginTop": "0.5rem",
                     "whiteSpace": "pre-wrap",
                 },
@@ -653,24 +740,34 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                 },
                 dashGridOptions={
                     "animateRows": False,
-                    "headerHeight": 34,
-                    "pagination": True,
-                    "paginationPageSize": 25,
+                    "alwaysShowVerticalScroll": True,
+                    "headerHeight": 30,
+                    "pagination": False,
                     "rowSelection": {
                         "mode": "singleRow",
                         "checkboxes": False,
                         "enableClickSelection": True,
                     },
-                    "rowHeight": 32,
+                    "rowHeight": 27,
                 },
                 getRowId="params.data._row_id",
-                style={"height": "560px", "marginTop": "0.75rem"},
+                style={
+                    "height": "570px",
+                    "fontSize": _TEXT_FONT_SIZE,
+                    "marginTop": "0.75rem",
+                    "--ag-font-size": _TEXT_FONT_SIZE,
+                    "--ag-grid-size": "3px",
+                },
             ),
             html.Section(
                 [
                     html.H2(
                         "Corpus summary",
-                        style={"fontSize": "1rem", "margin": "0"},
+                        style={
+                            "fontSize": _TITLE_FONT_SIZE,
+                            "fontWeight": "700",
+                            "margin": "0",
+                        },
                     ),
                     html.Div(
                         id="corpus-summary",
@@ -686,13 +783,20 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                         [
                             html.H2(
                                 "Artifact summary or status",
-                                style={"fontSize": "1rem", "margin": "0"},
+                                style={
+                                    "fontSize": _TITLE_FONT_SIZE,
+                                    "fontWeight": "700",
+                                    "margin": "0",
+                                },
                             ),
                             html.Button(
                                 "Download log",
                                 id="download-log",
                                 disabled=True,
-                                style={"height": "1.8rem"},
+                                style={
+                                    "fontSize": _TEXT_FONT_SIZE,
+                                    "height": "1.8rem",
+                                },
                             ),
                         ],
                         style={
@@ -708,6 +812,11 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                             dcc.Tab(
                                 label=_stage_tab_label(stage),
                                 value=str(stage["name"]),
+                                style={"fontSize": _TEXT_FONT_SIZE},
+                                selected_style={
+                                    "fontSize": _TEXT_FONT_SIZE,
+                                    "fontWeight": "600",
+                                },
                             )
                             for stage in registry
                         ],
@@ -718,6 +827,50 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                         id="stage-detail",
                         style={"marginTop": "0.5rem"},
                     ),
+                    dcc.Tabs(
+                        id="fixture-detail-tabs",
+                        value="file",
+                        children=[
+                            dcc.Tab(
+                                label="File",
+                                value="file",
+                                style={"fontSize": _TEXT_FONT_SIZE},
+                                selected_style={
+                                    "fontSize": _TEXT_FONT_SIZE,
+                                    "fontWeight": "600",
+                                },
+                            ),
+                            dcc.Tab(
+                                label="Submission JSON",
+                                value="submission",
+                                style={"fontSize": _TEXT_FONT_SIZE},
+                                selected_style={
+                                    "fontSize": _TEXT_FONT_SIZE,
+                                    "fontWeight": "600",
+                                },
+                            ),
+                            dcc.Tab(
+                                label="Parameters",
+                                value="parameters",
+                                style={"fontSize": _TEXT_FONT_SIZE},
+                                selected_style={
+                                    "fontSize": _TEXT_FONT_SIZE,
+                                    "fontWeight": "600",
+                                },
+                            ),
+                        ],
+                        style={"marginTop": "0.75rem"},
+                    ),
+                    html.Pre(
+                        "Select a row.",
+                        id="fixture-detail",
+                        style={
+                            **_PRE_STYLE,
+                            "borderTop": "0",
+                            "margin": "0",
+                            "maxHeight": "260px",
+                        },
+                    ),
                 ],
                 id="stage-detail-panel",
                 style=_PANEL_STYLE,
@@ -726,7 +879,11 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
                 [
                     html.H2(
                         "Snakemake log",
-                        style={"fontSize": "1rem", "margin": "0"},
+                        style={
+                            "fontSize": _TITLE_FONT_SIZE,
+                            "fontWeight": "700",
+                            "margin": "0",
+                        },
                     ),
                     html.Pre(id="global-log", style=_PRE_STYLE),
                 ],
@@ -737,7 +894,7 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         style={
             "color": "#101828",
             "fontFamily": "Inter, system-ui, sans-serif",
-            "fontSize": "0.88rem",
+            "fontSize": _TEXT_FONT_SIZE,
             "margin": "1rem auto",
             "maxWidth": "1500px",
             "padding": "0 1rem 1rem",
@@ -905,6 +1062,31 @@ def create_app(  # noqa: C901 - Dash layout and callback composition root
         )
 
     @app.callback(
+        Output("fixture-detail", "children"),
+        Input("selected-row", "data"),
+        Input("fixture-detail-tabs", "value"),
+        Input("grid-revision", "data"),
+        State("active-job-id", "data"),
+        prevent_initial_call=True,
+    )
+    def _show_fixture_detail(
+        selected_row: dict[str, str] | None,
+        active_tab: str,
+        _grid_revision: int,
+        job_id: str | None,
+    ) -> str:
+        """Show Fixture Manager source details for the selected corpus fixture."""
+        if selected_row is None:
+            return "Select a row."
+        _rows, snapshot, error = _load_dashboard_rows(
+            job_id,
+            settings_path=settings_path,
+        )
+        if error is not None:
+            return error
+        return _fixture_detail_text(snapshot, selected_row, active_tab)
+
+    @app.callback(
         Output("log-download", "data"),
         Input("download-log", "n_clicks"),
         State("selected-row", "data"),
@@ -939,7 +1121,11 @@ app = create_app()
 
 def main() -> None:
     """Run the corpus dashboard development server."""
-    app.run(debug=True, port=int(os.environ.get("APB_STUDIO_PORT", "8051")))
+    app.run(
+        debug=True,
+        port=int(os.environ.get("APB_STUDIO_PORT", "8051")),
+        use_reloader=False,
+    )
 
 
 if __name__ == "__main__":
