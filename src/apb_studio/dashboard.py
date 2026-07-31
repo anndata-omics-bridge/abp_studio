@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import dash_ag_grid as dag
-from anndata_proteomics.readers.summary import describe_path
+from anndata_proteomics.adapters.anndata.description import describe_path
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 
 from apb_studio import execution, jobrunner, pipeline, settings, testdata

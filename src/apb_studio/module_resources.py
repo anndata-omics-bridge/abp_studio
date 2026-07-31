@@ -11,7 +11,12 @@ from typing import Any
 
 from anndata_proteomics.annotation.loader import ANNOTATION_SUFFIXES, load_annotation
 from anndata_proteomics.fasta.parser import iter_fasta
-from anndata_proteomics.test_data import find_annotation, find_fasta
+from anndata_proteomics.test_data import (
+    AnnotationUnavailable,
+    FastaUnavailable,
+    find_annotation,
+    find_fasta_for_module,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from apb_studio.disk import atomic_write_text
@@ -97,11 +102,15 @@ def load_module_resources(
     catalog_modules = {fixture_identity(row)[0] for row in read_csv_rows(paths.catalog_csv)}
     for module in sorted(catalog_modules):
         existing = by_module.get(module)
-        managed_annotation = find_annotation(
+        annotation_lookup = find_annotation(
             module=module,
             test_data_dir=paths.data_dir,
         )
-        managed_fasta = find_fasta(module=module, test_data_dir=paths.data_dir)
+        fasta_lookup = find_fasta_for_module(module, test_data_dir=paths.data_dir)
+        managed_annotation = (
+            None if isinstance(annotation_lookup, AnnotationUnavailable) else annotation_lookup
+        )
+        managed_fasta = None if isinstance(fasta_lookup, FastaUnavailable) else fasta_lookup
         annotation_path = managed_annotation or (
             existing.annotation_path if existing is not None else None
         )
@@ -197,7 +206,7 @@ def sync_fasta_resources(
         assigned_fasta = (
             existing.fasta_path
             if existing is not None and existing.fasta_path is not None
-            else find_fasta(module=module, test_data_dir=paths.data_dir)
+            else _managed_fasta_path(module, paths.data_dir)
         )
         if annotation is not None or assigned_fasta is not None:
             by_module[module] = ModuleResource(
@@ -211,6 +220,12 @@ def sync_fasta_resources(
         paths,
         ModuleResourceInventory(resources=tuple(by_module.values())),
     )
+
+
+def _managed_fasta_path(module: str, test_data_dir: Path) -> Path | None:
+    """Resolve APB's managed FASTA lookup to Studio's nullable storage field."""
+    lookup = find_fasta_for_module(module, test_data_dir=test_data_dir)
+    return None if isinstance(lookup, FastaUnavailable) else lookup
 
 
 def resource_rows(

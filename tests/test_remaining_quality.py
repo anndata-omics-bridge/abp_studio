@@ -271,8 +271,16 @@ def test_module_resource_edge_paths(
         "module,repo_name,intermediate_hash\ndda,repo,abc\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(module_resources, "find_annotation", lambda **_kwargs: None)
-    monkeypatch.setattr(module_resources, "find_fasta", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        module_resources,
+        "find_annotation",
+        lambda **_kwargs: module_resources.AnnotationUnavailable("dda"),
+    )
+    monkeypatch.setattr(
+        module_resources,
+        "find_fasta_for_module",
+        lambda *_args, **_kwargs: module_resources.FastaUnavailable("dda"),
+    )
     assert module_resources.load_module_resources(tmp_path).resources == ()
 
     managed = module_resources.ModuleResource(

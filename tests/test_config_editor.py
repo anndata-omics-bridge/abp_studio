@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from anndata_proteomics.rules.registry import find_rule, iter_packaged_documents
+from anndata_proteomics.rules.registry import (
+    find_rule,
+    find_rule_for_version,
+    iter_packaged_documents,
+)
 
 from apb_studio import config_editor
 from apb_studio.config_panel import configuration_panel
@@ -35,7 +39,7 @@ def test_catalog_lists_one_row_per_software_version_document() -> None:
 
 
 def test_load_document_exposes_base_and_raw_level_sections() -> None:
-    path = find_rule("diann", "protein", "1.9.2").path
+    path = find_rule_for_version("diann", "protein", "1.9.2").path
     loaded = config_editor.load_document(path)
     assert loaded["section_order"] == ["base", "ion", "fragment", "protein"]
     assert json.loads(loaded["sections"]["base"])["input_shape"] == "long"
@@ -70,11 +74,12 @@ def test_invalid_level_reports_effective_pydantic_error(tmp_path: Path) -> None:
         document_source=loaded["source"],
     )
     assert report["valid"] is False
+    assert report["issues"][0]["path"] == "$.axis.x_layer"
     assert any("x_layer" in issue["message"] for issue in report["issues"])
 
 
 def test_candidate_base_validates_every_level() -> None:
-    path = find_rule("diann", "ion", "1.9.2").path
+    path = find_rule_for_version("diann", "ion", "1.9.2").path
     loaded = config_editor.load_document(path)
     base = json.loads(loaded["sections"]["base"])
     base.pop("input_shape")

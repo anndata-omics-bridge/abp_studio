@@ -1,5 +1,24 @@
 # Changes
 
+- 2026-07-31: Add `make corpus-run` / `make corpus-check` so the corpus gate is reachable without
+  the Dash app. There was a target to *start* Corpus Runner and one to *clean* the corpus, but none
+  to run it, which is why verification kept meaning "open the UI and launch the whole catalogue".
+  `scripts/run_corpus.py` mirrors the existing `clean_corpus.py` composition (`prepare_run` +
+  `snakemake_argv`) and defaults to ten fixtures — ~88 stages, minutes — with `--fixtures 0` for the
+  whole 965-job selection and `--dry-run` for the zero-pending-jobs check. The run snapshot still
+  describes the complete inventory; only the requested Snakemake targets are narrowed, which is the
+  same mechanism `launch_corpus` already uses, so the whole-corpus product boundary is untouched.
+  `sample_fixture_targets` picks fixtures round-robin by vendor, so a ten-fixture gate exercises ten
+  parsers instead of ten submissions from one tool, and sorts within each fixture so the selection is
+  independent of input order.
+
+- 2026-07-31: Record the corpus verification scope in `AGENTS.md`: the routine check after a
+  refactor is roughly ten fixtures (~88 jobs, minutes), not the full 241-fixture selection
+  (965 jobs, ~1 hour at `--cores 10`). Corpus size is a property of the selected fixture set
+  rather than a run option, because Corpus Runner deliberately exposes whole-corpus run and
+  clean only — so the small gate is reached by selecting fewer fixtures, never by adding a
+  scoped Run control that the product boundary forbids. A full-catalogue run is now reserved
+  for release-level checks and deliberate artifact-parity diffs, run once at the end.
 - 2026-07-31: Fixture Manager: stop the one-second poll from rebuilding the tables. The
   refresh callback now emits both grids' `rowData` and the module dropdowns only when a
   content digest of the inventory actually moves, so an idle tick no longer discards the

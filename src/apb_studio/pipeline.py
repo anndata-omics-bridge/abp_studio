@@ -802,3 +802,42 @@ def reject_input_paths(paths: list[Path], input_root: Path | str) -> list[Path]:
         if in_root == resolved or in_root in resolved.parents:
             raise CleanGuardError(f"refusing to clean {p}: it is under input_root {in_root}")
     return paths
+
+
+def sample_fixture_targets(targets: list[Target], fixture_limit: int) -> list[Target]:
+    """Return every target of the first *fixture_limit* fixtures, spread across vendors.
+
+    Headless verification gates run a representative slice of the corpus rather than the
+    whole catalogue: ten fixtures take minutes where 241 take about an hour. Fixtures are
+    taken round-robin by vendor so a small sample exercises as many parsers and branches as
+    possible instead of ten submissions from one tool, and the ordering is deterministic so
+    two runs of the same limit compare directly.
+
+    This is selection for developer gates only. Corpus Runner still triggers whole-corpus
+    run and clean; do not wire this into a Dash callback.
+
+    A non-positive limit returns every target unchanged, which is the whole-corpus run.
+    """
+    if fixture_limit <= 0:
+        return list(targets)
+
+    by_fixture: dict[tuple[str, str], list[Target]] = {}
+    for target in targets:
+        by_fixture.setdefault((target.module, target.dataset), []).append(target)
+
+    by_vendor: dict[str, list[tuple[str, str]]] = {}
+    for key, group in by_fixture.items():
+        by_vendor.setdefault(group[0].vendor, []).append(key)
+
+    queues = [sorted(keys) for _, keys in sorted(by_vendor.items())]
+    ordered: list[tuple[str, str]] = []
+    while len(ordered) < fixture_limit and any(queues):
+        for queue in queues:
+            if not queue or len(ordered) >= fixture_limit:
+                continue
+            ordered.append(queue.pop(0))
+    return [
+        target
+        for key in ordered
+        for target in sorted(by_fixture[key], key=lambda target: target.output)
+    ]

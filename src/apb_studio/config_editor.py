@@ -18,9 +18,19 @@ from anndata_proteomics.rules.registry import (
     document_vendor,
     iter_packaged_documents,
 )
+from anndata_proteomics.rules.schema import RuleCompositionError
 from pydantic import ValidationError
 
 ConfigKind = Literal["rule"]
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+type JsonPath = tuple[str | int, ...]
+
+
+class _Absent:
+    """Marker for a JSON member or list item absent from one compared value."""
+
+
+_ABSENT = _Absent()
 
 
 class ConfigSaveError(ValueError):
@@ -43,13 +53,14 @@ def catalog_rows() -> list[dict[str, Any]]:
         source = path.read_text(encoding="utf-8")
         report = validate_source(path, source)
         raw = parse_rule_source(source, path=path) if report["valid"] else {}
+        levels = raw.get("levels", {})
         rows.append(
             {
                 "vendor": document_vendor(path),
                 "software_name": raw.get("software_name", document_vendor(path)),
                 "software_version": raw.get("software_version", ""),
                 "file_version": raw.get("file_version", ""),
-                "levels": list(raw.get("levels", {})),
+                "levels": list(levels) if isinstance(levels, dict) else [],
                 "valid": report["valid"],
                 "path": str(path.resolve()),
             }
@@ -64,9 +75,12 @@ def load_document(path: Path | str, *, kind: ConfigKind = "rule") -> dict[str, A
     report = validate_source(resolved, source, kind=kind)
 
     raw = parse_rule_source(source, path=resolved)
+    levels = raw.get("levels", {})
+    if not isinstance(levels, dict):
+        levels = {}
     sections = {"base": _pretty_json(raw["base"])}
-    sections.update((level, _pretty_json(fragment)) for level, fragment in raw["levels"].items())
-    labels = {"base": "Base", **{level: level.title() for level in raw["levels"]}}
+    sections.update((level, _pretty_json(fragment)) for level, fragment in levels.items())
+    labels = {"base": "Base", **{level: level.title() for level in levels}}
 
     return {
         "path": str(resolved),
@@ -108,6 +122,7 @@ def validate_section(
     """Validate one edited section in the context of its complete document."""
     resolved = Path(path).expanduser().resolve()
     affected: list[str] = []
+    edited_path: JsonPath = ()
     try:
         candidate, affected = _candidate_with_section(
             resolved,
@@ -116,12 +131,18 @@ def validate_section(
             document_source=document_source,
             kind=kind,
         )
+        edited_path = _single_edited_path(
+            resolved,
+            section,
+            section_source,
+            document_source=document_source,
+        )
         raw = parse_rule_source(candidate, path=resolved)
         validate_rule_source(raw, path=resolved)
     except ValueError as exc:
         return {
             "valid": False,
-            "issues": _issues_from_exception(exc),
+            "issues": _issues_from_exception(exc, edited_path=edited_path),
             "affected": affected,
         }
     return {"valid": True, "issues": [], "affected": affected}
@@ -216,6 +237,54 @@ def _candidate_with_section(
     return json.dumps(document), affected
 
 
+def _single_edited_path(
+    path: Path,
+    section: str,
+    section_source: str,
+    *,
+    document_source: str,
+) -> JsonPath:
+    """Return the source-local JSON path when an edit changes exactly one value."""
+    document = parse_rule_source(document_source, path=path)
+    edited = parse_rule_source(section_source, path=f"{path}#{section}")
+    levels = document.get("levels")
+    if not isinstance(levels, dict):
+        return ()
+    if section == "base":
+        original = document.get("base", _ABSENT)
+    else:
+        original = levels.get(section, _ABSENT)
+    changes = _changed_json_paths(original, edited)
+    return changes[0] if len(changes) == 1 else ()
+
+
+def _changed_json_paths(
+    original: JsonValue | _Absent,
+    edited: JsonValue | _Absent,
+    path: JsonPath = (),
+) -> list[JsonPath]:
+    """Return source-local paths whose JSON values differ."""
+    if isinstance(original, dict) and isinstance(edited, dict):
+        changes: list[JsonPath] = []
+        for key in sorted(set(original) | set(edited)):
+            changes.extend(
+                _changed_json_paths(
+                    original.get(key, _ABSENT),
+                    edited.get(key, _ABSENT),
+                    (*path, key),
+                )
+            )
+        return changes
+    if isinstance(original, list) and isinstance(edited, list):
+        changes = []
+        for index in range(max(len(original), len(edited))):
+            before = original[index] if index < len(original) else _ABSENT
+            after = edited[index] if index < len(edited) else _ABSENT
+            changes.extend(_changed_json_paths(before, after, (*path, index)))
+        return changes
+    return [] if original == edited else [path]
+
+
 def _checked_json_path(path: Path | str) -> Path:
     """Resolve an existing JSON file path or raise a user-facing error."""
     resolved = Path(path).expanduser().resolve()
@@ -226,14 +295,27 @@ def _checked_json_path(path: Path | str) -> Path:
     return resolved
 
 
-def _issues_from_exception(exc: Exception) -> list[dict[str, str]]:
+def _issues_from_exception(
+    exc: Exception,
+    *,
+    edited_path: JsonPath = (),
+) -> list[dict[str, str]]:
     """Convert syntax and Pydantic exceptions to JSON-path issues."""
     document = _exception_document(exc)
+    if isinstance(exc, RuleCompositionError):
+        return [
+            {
+                "document": document,
+                "path": _json_path(_source_diagnostic_path(exc.path, edited_path)),
+                "message": str(exc),
+                "type": type(exc).__name__,
+            }
+        ]
     if isinstance(exc, ValidationError):
         return [
             {
                 "document": document,
-                "path": _json_path(error["loc"]),
+                "path": _json_path(_source_diagnostic_path(error["loc"], edited_path)),
                 "message": error["msg"],
                 "type": error["type"],
             }
@@ -256,6 +338,19 @@ def _issues_from_exception(exc: Exception) -> list[dict[str, str]]:
             "type": type(exc).__name__,
         }
     ]
+
+
+def _source_diagnostic_path(location: JsonPath, edited_path: JsonPath) -> JsonPath:
+    """Map an effective-rule error back to its sole edited source value."""
+    if not edited_path:
+        return location
+    if not location:
+        return edited_path
+    if len(location) <= len(edited_path) and edited_path[-len(location) :] == location:
+        return edited_path
+    if len(edited_path) <= len(location) and location[-len(edited_path) :] == edited_path:
+        return edited_path
+    return location
 
 
 def _exception_document(exc: Exception) -> str:

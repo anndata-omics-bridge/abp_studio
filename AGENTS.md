@@ -101,6 +101,30 @@ The pre-commit configuration is the command source of truth for CI. Do not
 lower Ruff, strict Pyright, dependency, or coverage gates without explicit
 approval.
 
+### Corpus verification scope
+
+**The routine corpus check is roughly ten fixtures, not the whole catalogue.** Run it headlessly
+with `make corpus-run`; the Dash app still triggers whole-corpus run and clean only (see the product
+boundary above), so never add a scoped Run control to a callback.
+
+| Command | Scope | Jobs | When |
+| --- | --- | --- | --- |
+| `make corpus-run` | 10 fixtures (default) | ~88 | Default after any refactor. This is the integration gate. |
+| `make corpus-check` | same sample, `--dry-run` | — | Confirm a fresh snapshot schedules no jobs. |
+| `make corpus-run CORPUS_FIXTURES=0` | whole selection | 965 | Release-level checks and deliberate artifact-parity comparisons only (~1 hour at `--cores 10`). |
+
+`scripts/run_corpus.py` mints the run snapshot exactly as the dashboard does — the snapshot
+always describes the complete inventory — and narrows only the Snakemake targets it
+requests, which is the same mechanism `launch_corpus` uses. `sample_fixture_targets` takes
+fixtures round-robin by vendor so ten fixtures exercise ten parsers rather than ten
+submissions from one tool, and is deterministic so two runs of the same limit compare
+directly. A fixture spans several branches, so ten fixtures is ~88 stages, not ~40.
+
+Do not propose a full-catalogue run as the verification step for a refactor, and do not treat one
+as a prerequisite for merging. If a change genuinely needs the full corpus — a parsing-rule change
+touching many vendors, or an artifact-parity diff against a previous revision — say why, and run it
+once at the end rather than after each step.
+
 Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
 `apb-studio-testdata`/`apb-studio` are compatibility aliases.
 

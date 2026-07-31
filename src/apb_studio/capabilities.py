@@ -9,9 +9,11 @@ from pathlib import Path
 
 from anndata_proteomics.converters import pipeline as conversion_pipeline
 from anndata_proteomics.params import registry as parameter_registry
-from anndata_proteomics.params.model import Parameters, ParamsError
+from anndata_proteomics.params.model import ParamsError
 from anndata_proteomics.readers.dispatch import read_table_columns
 from anndata_proteomics.rules import registry as rule_registry
+from anndata_proteomics.rules.schema import QuantificationLevel
+from anndata_proteomics.workflows import conversion as conversion_workflow
 
 
 class CapabilityStatus(StrEnum):
@@ -138,8 +140,11 @@ def _cached_capability_discovery(
     """Resolve one modification-time-qualified capability lookup."""
     try:
         headers = _read_input_headers(Path(input_path))
-        slug, parameter_slug = _recognize_software(headers, software_name)
-        if parameter_slug is None:
+        slug, parameter_recognition = _recognize_software(headers, software_name)
+        if isinstance(
+            parameter_recognition,
+            parameter_registry.UnrecognizedParameterParser,
+        ):
             return CapabilityDiscovery(
                 branches=(),
                 diagnostic=(
@@ -149,39 +154,39 @@ def _cached_capability_discovery(
                 status=CapabilityStatus.UNSUPPORTED,
                 software_slug=slug,
             )
-        parameters, version, version_status = _resolve_parameters(
+        parameter_slug = parameter_recognition.slug
+        resolution, rule_version = _resolve_parameters(
             Path(parameter_path),
             parameter_slug,
             slug,
         )
         targets = _match_targets(
             slug,
-            version,
-            version_status,
             headers,
-            parameters,
+            resolution,
+            rule_version,
             parameter_slug,
         )
     except _CapabilityStepError as error:
         return error.as_discovery()
 
+    software_version = _software_version(rule_version)
     if not targets:
         return CapabilityDiscovery(
             branches=(),
             diagnostic=(
                 "No APB parsing rule matches "
-                f"software {slug!r}, version {version!r}, and the input headers."
+                f"software {slug!r}, version {software_version!r}, and the input headers."
             ),
             status=CapabilityStatus.UNSUPPORTED,
             software_slug=slug,
-            software_version=version,
+            software_version=software_version,
             parameter_software_slug=parameter_slug,
         )
-    standalone = tuple(target for target in targets if target != conversion_pipeline.MUDATA)
     return CapabilityDiscovery(
-        branches=(conversion_pipeline.MUDATA, *standalone),
+        branches=(conversion_pipeline.MUDATA, *targets),
         software_slug=slug,
-        software_version=version,
+        software_version=software_version,
         parameter_software_slug=parameter_slug,
     )
 
@@ -201,39 +206,33 @@ def _read_input_headers(input_path: Path) -> tuple[str, ...]:
 def _recognize_software(
     headers: tuple[str, ...],
     software_name: str,
-) -> tuple[str, str | None]:
+) -> tuple[str, parameter_registry.ParameterParserRecognition]:
     """Resolve input and parameter parser slugs."""
     try:
-        slug = conversion_pipeline.recognize_software(headers) or conversion_pipeline.software_slug(
-            software_name
-        )
-        parameter_slug = parameter_registry.parser_slug(software_name)
+        recognition = conversion_pipeline.recognize_software(headers)
+        parameter_recognition = parameter_registry.recognize_parser(software_name)
     except ValueError as error:
         raise _CapabilityStepError(
             error,
             action="Could not recognize the input software",
         ) from error
-    return slug, parameter_slug
+    if isinstance(recognition, conversion_pipeline.UnrecognizedSoftware):
+        return conversion_pipeline.software_slug(software_name), parameter_recognition
+    return recognition.slug, parameter_recognition
 
 
 def _resolve_parameters(
     parameter_path: Path,
     parameter_slug: str,
     software_slug: str,
-) -> tuple[Parameters, str | None, conversion_pipeline.ParameterVersionStatus]:
+) -> tuple[conversion_pipeline.ParameterResolution, conversion_pipeline.RuleVersion]:
     """Parse search parameters and select the rule-version status."""
     try:
-        parameters = parameter_registry.parse_params(
-            str(parameter_path),
-            software=parameter_slug,
+        resolution = conversion_pipeline.resolve_parameters(
+            parameter_path,
+            parameter_slug,
         )
-        resolution = conversion_pipeline.ParameterResolution(
-            source_path=parameter_path,
-            parameters=parameters,
-            version=parameters.software_version,
-            version_status=("present" if parameters.software_version is not None else "missing"),
-        )
-        version, version_status = conversion_pipeline.resolve_rule_version(
+        rule_version = conversion_pipeline.resolve_rule_version(
             resolution,
             software_slug,
         )
@@ -244,36 +243,39 @@ def _resolve_parameters(
             software_slug=software_slug,
             parameter_software_slug=parameter_slug,
         ) from error
-    return parameters, version, version_status
+    return resolution, rule_version
 
 
 def _match_targets(
     software_slug: str,
-    version: str | None,
-    version_status: conversion_pipeline.ParameterVersionStatus,
     headers: tuple[str, ...],
-    parameters: Parameters,
+    resolution: conversion_pipeline.ParameterResolution,
+    rule_version: conversion_pipeline.RuleVersion,
     parameter_slug: str,
-) -> tuple[str, ...]:
+) -> tuple[QuantificationLevel, ...]:
     """Match resolved input metadata against APB's packaged rules."""
     try:
-        return tuple(
-            conversion_pipeline.available_targets(
-                software_slug,
-                version,
-                headers,
-                version_status=version_status,
-                search_parameters=parameters,
-            )
+        selections = conversion_workflow.select_rules_from_parameters(
+            headers,
+            software_slug,
+            resolution,
         )
     except (KeyError, OSError, ValueError) as error:
         raise _CapabilityStepError(
             error,
             action="Could not match APB parsing rules",
             software_slug=software_slug,
-            software_version=version,
+            software_version=_software_version(rule_version),
             parameter_software_slug=parameter_slug,
         ) from error
+    return tuple(level for level in conversion_pipeline.LEVELS if level in selections)
+
+
+def _software_version(version: conversion_pipeline.RuleVersion) -> str | None:
+    """Return the public optional version value from APB's tagged result."""
+    if isinstance(version, conversion_pipeline.PresentRuleVersion):
+        return version.value
+    return None
 
 
 def _parsing_rule_fingerprint() -> tuple[tuple[str, int, int], ...]:

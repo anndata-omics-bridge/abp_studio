@@ -281,11 +281,11 @@ def test_sync_fasta_resources_uses_apb_resolver_for_active_root(
     fasta.write_text(">P1\nPEPTIDE\n")
     calls: list[tuple[str, Path]] = []
 
-    def fake_find_fasta(*, module: str, test_data_dir: Path) -> Path:
+    def fake_find_fasta(module: str, *, test_data_dir: Path) -> Path:
         calls.append((module, test_data_dir))
         return fasta
 
-    monkeypatch.setattr(module_resources, "find_fasta", fake_find_fasta)
+    monkeypatch.setattr(module_resources, "find_fasta_for_module", fake_find_fasta)
 
     inventory = module_resources.sync_fasta_resources(tmp_path, ["dia_aif"])
 
@@ -310,7 +310,11 @@ def test_sync_fasta_resources_preserves_explicit_fasta_assignment(
         annotation_path=None,
         fasta_path=custom,
     )
-    monkeypatch.setattr(module_resources, "find_fasta", lambda **_kwargs: managed)
+    monkeypatch.setattr(
+        module_resources,
+        "find_fasta_for_module",
+        lambda *_args, **_kwargs: managed,
+    )
 
     inventory = module_resources.sync_fasta_resources(tmp_path, ["dia_aif"])
 

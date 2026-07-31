@@ -2,7 +2,10 @@ APP_PORT ?= 8051
 CORPUS_RUNNER_PID_FILE ?= $(CURDIR)/.apb-studio-corpus-runner-$(APP_PORT).pid
 
 .DEFAULT_GOAL := help
-.PHONY: help sync corpus-runner corpus-runner-stop corpus-clean fixture-manager test lint check check-full audit package docs docs-serve
+.PHONY: help sync corpus-runner corpus-runner-stop corpus-run corpus-check corpus-clean fixture-manager test lint check check-full audit package docs docs-serve
+
+CORPUS_FIXTURES ?= 10
+CORPUS_CORES ?= 10
 
 help:                     ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -60,6 +63,14 @@ corpus-runner-stop:       ## stop the managed Corpus Runner
 			exit 1; \
 		fi; \
 		rm -f "$$pid_file"
+
+corpus-run:               ## run the corpus headlessly over CORPUS_FIXTURES fixtures (0 = all)
+	uv run --frozen python scripts/run_corpus.py \
+		--fixtures $(CORPUS_FIXTURES) --cores $(CORPUS_CORES)
+
+corpus-check:             ## dry-run the same sample: confirms a fresh snapshot schedules no jobs
+	uv run --frozen python scripts/run_corpus.py \
+		--fixtures $(CORPUS_FIXTURES) --cores $(CORPUS_CORES) --dry-run
 
 corpus-clean:             ## run the packaged Snakemake clean rule over the whole corpus
 	uv run --frozen python scripts/clean_corpus.py

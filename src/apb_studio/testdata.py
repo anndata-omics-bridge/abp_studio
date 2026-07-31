@@ -135,9 +135,7 @@ def _input_header_text(fixture: fixture_inventory.FixtureRecord) -> str:
     except (OSError, ValueError) as error:
         return f"columns: unreadable ({type(error).__name__}: {error})"
     width = len(str(len(columns)))
-    listed = "\n".join(
-        f"  {index:>{width}}  {name}" for index, name in enumerate(columns, start=1)
-    )
+    listed = "\n".join(f"  {index:>{width}}  {name}" for index, name in enumerate(columns, start=1))
     return f"columns ({len(columns)}):\n{listed}"
 
 

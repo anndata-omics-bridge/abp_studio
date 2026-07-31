@@ -11,7 +11,11 @@ import pytest
 from anndata_proteomics.converters import pipeline as conversion_pipeline
 from anndata_proteomics.converters.recognize import _expected_long_columns
 from anndata_proteomics.params.registry import parse_params
-from anndata_proteomics.rules.loader import resolve_rule_for_version
+from anndata_proteomics.rules.loader import (
+    load_packaged_rule_for_version,
+    resolve_rule_for_version,
+)
+from anndata_proteomics.rules.schema import ParseRule
 
 from apb_studio import capabilities, run_history
 from apb_studio.pipeline import (
@@ -36,11 +40,14 @@ _APB_PARAMS = _REPO_ROOT.parent / "apb" / "tests" / "params"
 
 def _long_headers(software: str, parameter_path: Path) -> tuple[str, ...]:
     """Required headers of every matching packaged long-format level rule."""
-    version = parse_params(parameter_path, software=software).software_version
+    parameters = parse_params(parameter_path, software=software)
+    if parameters.software_version is None:
+        raise AssertionError(f"{parameter_path} contains no software version")
+    version = parameters.software_version
     headers: set[str] = set()
     for level in conversion_pipeline.LEVELS:
         rule = resolve_rule_for_version(software, level, version)
-        if rule is None or rule.input_shape != "long":
+        if not isinstance(rule, ParseRule) or rule.input_shape != "long":
             continue
         headers.update(_expected_long_columns(rule))
         if rule.fragments is not None and rule.fragments.label_strategy == "column":
@@ -50,9 +57,14 @@ def _long_headers(software: str, parameter_path: Path) -> tuple[str, ...]:
 
 def _fragpipe_headers(parameter_path: Path) -> tuple[str, ...]:
     """Required FragPipe wide columns, including one sample's required intensity."""
-    version = parse_params(parameter_path, software="fragpipe").software_version
-    rule = resolve_rule_for_version("fragpipe", "ion", version)
-    assert rule is not None
+    parameters = parse_params(parameter_path, software="fragpipe")
+    if parameters.software_version is None:
+        raise AssertionError(f"{parameter_path} contains no software version")
+    rule = load_packaged_rule_for_version(
+        "fragpipe",
+        "ion",
+        parameters.software_version,
+    )
     return (*sorted(rule.columns.var.select.values()), "run1 Intensity")
 
 

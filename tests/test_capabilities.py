@@ -8,8 +8,34 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from anndata_proteomics.params.model import Parameters
+from anndata_proteomics.rules.schema import QuantificationLevel
 
 from apb_studio import capabilities
+
+
+def _resolution(
+    parameter_path: Path,
+    parameters: Parameters,
+) -> capabilities.conversion_pipeline.ParameterResolution:
+    """Build the typed APB result returned by a parameter-resolution test double."""
+    software_version = parameters.software_version
+    version: capabilities.conversion_pipeline.RuleVersion = (
+        capabilities.conversion_pipeline.MissingRuleVersion()
+        if software_version is None
+        else capabilities.conversion_pipeline.PresentRuleVersion(software_version)
+    )
+    return capabilities.conversion_pipeline.ParameterResolution(
+        source_path=parameter_path,
+        parameters=parameters,
+        version=version,
+    )
+
+
+def _selections(
+    *levels: QuantificationLevel,
+) -> dict[QuantificationLevel, object]:
+    """Return selection-shaped keys; capability discovery only consumes the keys."""
+    return {level: object() for level in levels}
 
 
 def test_discovery_reads_version_and_headers_and_puts_mudata_first(
@@ -22,29 +48,36 @@ def test_discovery_reads_version_and_headers_and_puts_mudata_first(
     parameter_path.write_text("version details\n", encoding="utf-8")
     calls: list[tuple[str, str | None, tuple[str, ...]]] = []
 
-    def fake_parse_params(path: str, *, software: str) -> Parameters:
-        assert path == str(parameter_path)
-        assert software == "diann"
-        return Parameters(software_name="DIA-NN", software_version="2.1")
-
-    def fake_available_targets(
+    def fake_resolve_parameters(
+        path: Path | str,
         slug: str,
-        version: str | None,
-        headers: tuple[str, ...],
-        **_kwargs: object,
-    ) -> list[str]:
-        calls.append((slug, version, headers))
-        return ["ion", "protein", "mudata"]
+    ) -> capabilities.conversion_pipeline.ParameterResolution:
+        assert Path(path) == parameter_path
+        assert slug == "diann"
+        return _resolution(
+            parameter_path,
+            Parameters(software_name="DIA-NN", software_version="2.1"),
+        )
 
-    monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
-        fake_parse_params,
-    )
+    def fake_select_rules(
+        headers: tuple[str, ...],
+        slug: str,
+        resolution: capabilities.conversion_pipeline.ParameterResolution,
+    ) -> dict[QuantificationLevel, object]:
+        version = capabilities.conversion_pipeline.resolve_rule_version(resolution, slug)
+        assert isinstance(version, capabilities.conversion_pipeline.PresentRuleVersion)
+        calls.append((slug, version.value, headers))
+        return _selections("ion", "protein")
+
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
-        "available_targets",
-        fake_available_targets,
+        "resolve_parameters",
+        fake_resolve_parameters,
+    )
+    monkeypatch.setattr(
+        capabilities.conversion_workflow,
+        "select_rules_from_parameters",
+        fake_select_rules,
     )
 
     first = capabilities.discover_capabilities(
@@ -80,32 +113,31 @@ def test_discovery_cache_invalidates_when_input_mtime_changes(
 
     monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
     monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
-        lambda *_args, **_kwargs: Parameters(
-            software_name="software",
-            software_version="1",
+        capabilities.conversion_pipeline,
+        "resolve_parameters",
+        lambda _path, _slug: _resolution(
+            parameter_path,
+            Parameters(software_name="software", software_version="1"),
         ),
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
-        "parser_slug",
-        lambda _name: "diann",
+        "recognize_parser",
+        lambda _name: capabilities.parameter_registry.RecognizedParameterParser("diann"),
     )
 
-    def fake_available_targets(
-        _slug: str,
-        _version: str | None,
+    def fake_select_rules(
         headers: tuple[str, ...],
-        **_kwargs: object,
-    ) -> list[str]:
+        _slug: str,
+        _resolution: capabilities.conversion_pipeline.ParameterResolution,
+    ) -> dict[QuantificationLevel, object]:
         headers_seen.append(headers)
-        return ["ion", "mudata"]
+        return _selections("ion")
 
     monkeypatch.setattr(
-        capabilities.conversion_pipeline,
-        "available_targets",
-        fake_available_targets,
+        capabilities.conversion_workflow,
+        "select_rules_from_parameters",
+        fake_select_rules,
     )
 
     capabilities.discover_capabilities(input_path, parameter_path, "software")
@@ -137,31 +169,35 @@ def test_discovery_cache_invalidates_when_packaged_rules_change(
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
         "recognize_software",
-        lambda _headers: "software",
+        lambda _headers: capabilities.conversion_pipeline.RecognizedSoftware("software"),
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
-        "parser_slug",
-        lambda _name: "diann",
+        "recognize_parser",
+        lambda _name: capabilities.parameter_registry.RecognizedParameterParser("diann"),
     )
     monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
-        lambda *_args, **_kwargs: Parameters(
-            software_name="software",
-            software_version="1",
+        capabilities.conversion_pipeline,
+        "resolve_parameters",
+        lambda _path, _slug: _resolution(
+            parameter_path,
+            Parameters(software_name="software", software_version="1"),
         ),
     )
 
-    def fake_available_targets(*_args: object, **_kwargs: object) -> list[str]:
+    def fake_select_rules(
+        _headers: tuple[str, ...],
+        _slug: str,
+        _resolution: capabilities.conversion_pipeline.ParameterResolution,
+    ) -> dict[QuantificationLevel, object]:
         nonlocal target_calls
         target_calls += 1
-        return [] if target_calls == 1 else ["ion"]
+        return {} if target_calls == 1 else _selections("ion")
 
     monkeypatch.setattr(
-        capabilities.conversion_pipeline,
-        "available_targets",
-        fake_available_targets,
+        capabilities.conversion_workflow,
+        "select_rules_from_parameters",
+        fake_select_rules,
     )
 
     first = capabilities.discover_capabilities(
@@ -196,29 +232,31 @@ def test_discovery_reads_parquet_schema_without_loading_rows(
 
     monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
     monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
-        lambda *_args, **_kwargs: Parameters(software_name="software"),
-    )
-    monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parser_slug",
-        lambda _name: "diann",
-    )
-
-    def fake_available_targets(
-        _slug: str,
-        _version: str | None,
-        headers: tuple[str, ...],
-        **_kwargs: object,
-    ) -> list[str]:
-        headers_seen.append(headers)
-        return ["protein", "mudata"]
-
-    monkeypatch.setattr(
         capabilities.conversion_pipeline,
-        "available_targets",
-        fake_available_targets,
+        "resolve_parameters",
+        lambda _path, _slug: _resolution(
+            parameter_path,
+            Parameters(software_name="software"),
+        ),
+    )
+    monkeypatch.setattr(
+        capabilities.parameter_registry,
+        "recognize_parser",
+        lambda _name: capabilities.parameter_registry.RecognizedParameterParser("diann"),
+    )
+
+    def fake_select_rules(
+        headers: tuple[str, ...],
+        _slug: str,
+        _resolution: capabilities.conversion_pipeline.ParameterResolution,
+    ) -> dict[QuantificationLevel, object]:
+        headers_seen.append(headers)
+        return _selections("protein")
+
+    monkeypatch.setattr(
+        capabilities.conversion_workflow,
+        "select_rules_from_parameters",
+        fake_select_rules,
     )
 
     result = capabilities.discover_capabilities(
@@ -244,8 +282,8 @@ def test_discovery_returns_diagnostic_instead_of_raising(
         raise ValueError("invalid parameter file")
 
     monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
+        capabilities.conversion_pipeline,
+        "resolve_parameters",
         fail_parse,
     )
 
@@ -314,7 +352,9 @@ def test_discovery_reports_software_recognition_failure(
     parameter_path = tmp_path / "param_0.txt"
     parameter_path.write_text("params\n", encoding="utf-8")
 
-    def fail_recognition(_headers: tuple[str, ...]) -> str:
+    def fail_recognition(
+        _headers: tuple[str, ...],
+    ) -> capabilities.conversion_pipeline.SoftwareRecognition:
         raise ValueError("invalid header schema")
 
     monkeypatch.setattr(
@@ -345,11 +385,11 @@ def test_discovery_reports_rule_matching_failure(
     parameter_path.write_text("params\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
-        lambda *_args, **_kwargs: Parameters(
-            software_name="DIA-NN",
-            software_version="2.1",
+        capabilities.conversion_pipeline,
+        "resolve_parameters",
+        lambda _path, _slug: _resolution(
+            parameter_path,
+            Parameters(software_name="DIA-NN", software_version="2.1"),
         ),
     )
 
@@ -357,8 +397,8 @@ def test_discovery_reports_rule_matching_failure(
         raise ValueError("invalid rule document")
 
     monkeypatch.setattr(
-        capabilities.conversion_pipeline,
-        "available_targets",
+        capabilities.conversion_workflow,
+        "select_rules_from_parameters",
         fail_matching,
     )
 
@@ -388,25 +428,25 @@ def test_discovery_explains_when_no_rule_matches(
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
         "recognize_software",
-        lambda _headers: "unknowntool",
+        lambda _headers: capabilities.conversion_pipeline.RecognizedSoftware("unknowntool"),
     )
     monkeypatch.setattr(
         capabilities.parameter_registry,
-        "parser_slug",
-        lambda _name: "diann",
-    )
-    monkeypatch.setattr(
-        capabilities.parameter_registry,
-        "parse_params",
-        lambda *_args, **_kwargs: Parameters(
-            software_name="Unknown Tool",
-            software_version="3",
-        ),
+        "recognize_parser",
+        lambda _name: capabilities.parameter_registry.RecognizedParameterParser("diann"),
     )
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
-        "available_targets",
-        lambda *_args, **_kwargs: [],
+        "resolve_parameters",
+        lambda _path, _slug: _resolution(
+            parameter_path,
+            Parameters(software_name="Unknown Tool", software_version="3"),
+        ),
+    )
+    monkeypatch.setattr(
+        capabilities.conversion_workflow,
+        "select_rules_from_parameters",
+        lambda *_args, **_kwargs: {},
     )
 
     result = capabilities.discover_capabilities(
@@ -443,7 +483,11 @@ def test_discovery_marks_software_without_rules_unsupported_before_reading_files
         parse_called = True
 
     monkeypatch.setattr(capabilities, "read_table_columns", unexpected_header_read)
-    monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
+    monkeypatch.setattr(
+        capabilities.conversion_pipeline,
+        "resolve_parameters",
+        unexpected_parse,
+    )
 
     result = capabilities.discover_capabilities(
         input_path,
@@ -494,7 +538,11 @@ def test_discovery_reports_a_malformed_supported_input_as_failed(
         nonlocal parse_called
         parse_called = True
 
-    monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
+    monkeypatch.setattr(
+        capabilities.conversion_pipeline,
+        "resolve_parameters",
+        unexpected_parse,
+    )
 
     result = capabilities.discover_capabilities(
         input_path,
@@ -525,8 +573,16 @@ def test_discovery_treats_missing_parameter_parser_as_unsupported(
         parse_called = True
 
     monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
-    monkeypatch.setattr(capabilities.parameter_registry, "parser_slug", lambda _name: None)
-    monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
+    monkeypatch.setattr(
+        capabilities.parameter_registry,
+        "recognize_parser",
+        lambda _name: capabilities.parameter_registry.UnrecognizedParameterParser(),
+    )
+    monkeypatch.setattr(
+        capabilities.conversion_pipeline,
+        "resolve_parameters",
+        unexpected_parse,
+    )
 
     result = capabilities.discover_capabilities(
         input_path,
@@ -555,23 +611,33 @@ def test_discovery_separates_compound_parameter_and_rule_software(
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
         "recognize_software",
-        lambda _headers: "diann",
+        lambda _headers: capabilities.conversion_pipeline.RecognizedSoftware("diann"),
     )
 
-    def fake_parse(_path: str, *, software: str) -> Parameters:
-        parsed_with.append(software)
-        return Parameters(
-            software_name="FragPipe",
-            software_version="24.0",
-            quantification_software="DIA-NN",
-            quantification_software_version="1.8.2 beta 8",
+    def fake_resolve_parameters(
+        path: Path | str,
+        slug: str,
+    ) -> capabilities.conversion_pipeline.ParameterResolution:
+        parsed_with.append(slug)
+        return _resolution(
+            Path(path),
+            Parameters(
+                software_name="FragPipe",
+                software_version="24.0",
+                quantification_software="DIA-NN",
+                quantification_software_version="1.8.2 beta 8",
+            ),
         )
 
-    monkeypatch.setattr(capabilities.parameter_registry, "parse_params", fake_parse)
     monkeypatch.setattr(
         capabilities.conversion_pipeline,
-        "available_targets",
-        lambda *_args, **_kwargs: ["ion"],
+        "resolve_parameters",
+        fake_resolve_parameters,
+    )
+    monkeypatch.setattr(
+        capabilities.conversion_workflow,
+        "select_rules_from_parameters",
+        lambda *_args, **_kwargs: _selections("ion"),
     )
 
     result = capabilities.discover_capabilities(
