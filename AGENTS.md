@@ -131,11 +131,11 @@ once at the end rather than after each step.
 Preferred console scripts are `apb-studio-fixture-manager` and `apb-studio-corpus-runner`.
 `apb-studio-testdata`/`apb-studio` are compatibility aliases.
 
-See [TODO/Archive/TODO_corpus_application.md](TODO/Archive/TODO_corpus_application.md) for the
+See [../TODO/Archive/TODO_corpus_application.md](../TODO/Archive/TODO_corpus_application.md) for the
 implemented migration history and
-[TODO/Archive/TODO_workflow_dashboard_plan.md](TODO/Archive/TODO_workflow_dashboard_plan.md) for
+[../TODO/Archive/TODO_workflow_dashboard_plan.md](../TODO/Archive/TODO_workflow_dashboard_plan.md) for
 the original dashboard design. The current observer/operator boundary is recorded in
-[TODO/Archive/TODO_corpus_runner_alignment.md](TODO/Archive/TODO_corpus_runner_alignment.md).
+[../TODO/Archive/TODO_corpus_runner_alignment.md](../TODO/Archive/TODO_corpus_runner_alignment.md).
 
 ## Scoped AGENTS.md
 
