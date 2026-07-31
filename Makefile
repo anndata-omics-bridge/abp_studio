@@ -64,7 +64,7 @@ corpus-runner-stop:       ## stop the managed Corpus Runner
 		fi; \
 		rm -f "$$pid_file"
 
-corpus-run:               ## run the corpus headlessly over CORPUS_FIXTURES fixtures (0 = all)
+corpus-run:               ## run corpus headlessly: CORPUS_FIXTURES=10 (0 = all), CORPUS_CORES=10
 	uv run --frozen python scripts/run_corpus.py \
 		--fixtures $(CORPUS_FIXTURES) --cores $(CORPUS_CORES)
 

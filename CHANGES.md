@@ -1,5 +1,9 @@
 # Changes
 
+- 2026-07-31: Name `CORPUS_CORES` in the `corpus-run` help text and `AGENTS.md`. Both corpus targets
+  already passed `--cores $(CORPUS_CORES)`, but only `CORPUS_FIXTURES` was mentioned, so the core
+  count looked hardcoded at 10.
+
 - 2026-07-31: Add `make corpus-run` / `make corpus-check` so the corpus gate is reachable without
   the Dash app. There was a target to *start* Corpus Runner and one to *clean* the corpus, but none
   to run it, which is why verification kept meaning "open the UI and launch the whole catalogue".

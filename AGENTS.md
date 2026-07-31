@@ -113,6 +113,9 @@ boundary above), so never add a scoped Run control to a callback.
 | `make corpus-check` | same sample, `--dry-run` | — | Confirm a fresh snapshot schedules no jobs. |
 | `make corpus-run CORPUS_FIXTURES=0` | whole selection | 965 | Release-level checks and deliberate artifact-parity comparisons only (~1 hour at `--cores 10`). |
 
+`CORPUS_FIXTURES` and `CORPUS_CORES` (both default 10) are Make variables set on the command
+line — `make corpus-run CORPUS_CORES=20` — and reach `run_corpus.py` as `--fixtures`/`--cores`.
+
 `scripts/run_corpus.py` mints the run snapshot exactly as the dashboard does — the snapshot
 always describes the complete inventory — and narrows only the Snakemake targets it
 requests, which is the same mechanism `launch_corpus` uses. `sample_fixture_targets` takes
