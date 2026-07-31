@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from anndata_proteomics.readers.dispatch import read_table_columns
 
 from apb_studio import fixture_inventory
 from apb_studio.jobrunner import (
@@ -112,7 +113,32 @@ def row_details(
         if parameters[0].suffix.lower() == ".json":
             parameter_text = json.dumps(json.loads(parameter_text), indent=2, sort_keys=True)
     info = "\n".join(f"{key}: {value}" for key, value in canonical_row.items())
-    return info, json_text, parameter_text
+    return f"{info}\n\n{_input_header_text(fixture)}", json_text, parameter_text
+
+
+def _input_header_text(fixture: fixture_inventory.FixtureRecord) -> str:
+    """Describe the downloaded vendor table's own header row.
+
+    Columns come from APB's reader, so the delimiter is content-detected exactly as it is
+    during conversion; a comma-delimited ``.txt`` reads as more than one column here too.
+    """
+    inputs = fixture.input_files
+    if len(inputs) != 1:
+        if not inputs:
+            return "data file: not downloaded yet"
+        listed = ", ".join(candidate.name for candidate in inputs)
+        return f"data file: ambiguous, {len(inputs)} candidates ({listed})"
+    # The path is already on the ``local_file`` line above; only the header is new here.
+    (path,) = inputs
+    try:
+        columns = read_table_columns(path)
+    except (OSError, ValueError) as error:
+        return f"columns: unreadable ({type(error).__name__}: {error})"
+    width = len(str(len(columns)))
+    listed = "\n".join(
+        f"  {index:>{width}}  {name}" for index, name in enumerate(columns, start=1)
+    )
+    return f"columns ({len(columns)}):\n{listed}"
 
 
 def _fixture_for_row(

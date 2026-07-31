@@ -107,6 +107,61 @@ def test_row_details_reads_submission_json_and_parameters(
     assert "intermediate_hash: abc" in info
     assert '"software_name": "DIA-NN"' in submission
     assert '"threads": 8' in parameters
+    assert "data file: not downloaded yet" in info
+
+
+def test_row_details_lists_the_downloaded_data_file_header(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    _write_catalog(paths)
+    cached = testdata.dataset_dir(paths, _row())
+    cached.mkdir(parents=True)
+    # A comma-delimited .txt must read as three columns, not one: the header comes from
+    # APB's reader, which content-detects the delimiter exactly as conversion does.
+    (cached / "input_file.txt").write_text(
+        "Sequence,Charge,Intensity\nPEPTIDE,2,100\n",
+        encoding="utf-8",
+    )
+    (cached / "param_0.txt").write_text("params\n", encoding="utf-8")
+
+    info = testdata.row_details(paths, _row())[0]
+
+    assert f"local_file: {cached / 'input_file.txt'}" in info
+    assert info.count(str(cached / "input_file.txt")) == 1
+    assert "columns (3):" in info
+    assert "  1  Sequence" in info
+    assert "  3  Intensity" in info
+
+
+def test_row_details_reports_an_ambiguous_data_file_instead_of_guessing(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    _write_catalog(paths)
+    cached = testdata.dataset_dir(paths, _row())
+    cached.mkdir(parents=True)
+    (cached / "input_file.tsv").write_text("A\tB\n", encoding="utf-8")
+    (cached / "input_file.csv").write_text("C,D\n", encoding="utf-8")
+
+    info = testdata.row_details(paths, _row())[0]
+
+    assert "data file: ambiguous, 2 candidates" in info
+    assert "input_file.csv" in info
+    assert "input_file.tsv" in info
+
+
+def test_row_details_reports_an_unreadable_data_file_without_raising(
+    tmp_path: Path,
+) -> None:
+    paths = _paths(tmp_path)
+    _write_catalog(paths)
+    cached = testdata.dataset_dir(paths, _row())
+    cached.mkdir(parents=True)
+    (cached / "input_file.parquet").write_text("not a parquet file", encoding="utf-8")
+    (cached / "param_0.txt").write_text("params\n", encoding="utf-8")
+
+    info = testdata.row_details(paths, _row())[0]
+
+    assert "columns: unreadable (" in info
 
 
 def test_testdata_command_uses_explicit_artifact_paths(tmp_path: Path) -> None:
@@ -353,6 +408,26 @@ def test_resource_table_marks_preview_cells_as_clickable() -> None:
     assert columns["fasta_status"]["cellStyle"]["textDecoration"] == "underline"
     assert "cellStyle" not in columns["module"]
     assert _props(tables["resource-table"])["getRowId"] == "params.data.module"
+
+
+def test_catalog_table_keys_rows_by_canonical_fixture_identity() -> None:
+    # Without a stable row id the grid rebuilds every row when rowData is replaced,
+    # dropping the user's selection and scroll offset on each poll tick.
+    app = create_app()
+    tables = {
+        _props(component)["id"]: component
+        for component in _components(app.layout)
+        if isinstance(component, testdata_app.dag.AgGrid)
+    }
+    assert _props(tables["catalog-table"])["getRowId"] == (
+        "params.data.module + '|' + params.data.repo_name + '|' + params.data.intermediate_hash"
+    )
+
+
+def test_data_tables_expose_an_inline_filter_row() -> None:
+    table = data_table("test-table")
+    assert _props(table)["defaultColDef"]["floatingFilter"] is True
+    assert all(column["filter"] for column in _props(table)["columnDefs"])
 
 
 def test_resource_preview_reads_authoritative_annotation_and_fasta_head(

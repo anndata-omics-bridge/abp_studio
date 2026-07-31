@@ -1,5 +1,8 @@
 """Plotly Dash browser for cataloging and downloading ProteoBench test data."""
 
+import hashlib
+import json
+from collections.abc import Sequence
 from functools import partial
 from itertools import islice
 from pathlib import Path
@@ -36,6 +39,8 @@ TABLE_COLUMNS = [
     "intermediate_hash",
     "download_status",
 ]
+# The canonical fixture identity: module, repository name, full intermediate hash.
+CATALOG_ROW_ID_FIELDS = ("module", "repo_name", "intermediate_hash")
 TABLE_HEADERS = {
     "download_status": "Download",
 }
@@ -104,14 +109,26 @@ PRE_STYLE = {
 }
 
 
+def _row_id_expression(row_id_fields: Sequence[str] | None) -> str | None:
+    """Render an AG Grid ``getRowId`` expression over a row's identity columns."""
+    if not row_id_fields:
+        return None
+    return " + '|' + ".join(f"params.data.{field}" for field in row_id_fields)
+
+
 def data_table(
     table_id: str,
     columns: list[str] | None = None,
     *,
     height: str = "34vh",
-    row_id_field: str | None = None,
+    row_id_fields: Sequence[str] | None = None,
 ) -> dag.AgGrid:
-    """Create a filterable single-row-select data table."""
+    """Create a filterable single-row-select data table.
+
+    ``row_id_fields`` names the columns forming a row's stable identity. With it the grid
+    applies a keyed delta when ``rowData`` is replaced, so a refresh keeps the user's
+    selection, scroll offset, sort, and filters instead of rebuilding every row.
+    """
     columns = columns or TABLE_COLUMNS
     return dag.AgGrid(
         id=table_id,
@@ -126,7 +143,7 @@ def data_table(
             for name in columns
         ],
         rowData=[],
-        getRowId=f"params.data.{row_id_field}" if row_id_field is not None else None,
+        getRowId=_row_id_expression(row_id_fields),
         dashGridOptions={
             "pagination": False,
             "alwaysShowVerticalScroll": True,
@@ -138,7 +155,13 @@ def data_table(
                 "enableClickSelection": True,
             },
         },
-        defaultColDef={"sortable": True, "resizable": True},
+        defaultColDef={
+            "sortable": True,
+            "resizable": True,
+            # Filters are per column; the floating row makes them usable without
+            # opening each header menu.
+            "floatingFilter": True,
+        },
         style={
             "height": height,
             "minHeight": "280px",
@@ -289,7 +312,11 @@ def data_panel() -> html.Div:
                 "Available fixtures",
                 style={"fontSize": "15px", "margin": "0.4rem 0"},
             ),
-            data_table("catalog-table", height="40vh"),
+            data_table(
+                "catalog-table",
+                height="40vh",
+                row_id_fields=CATALOG_ROW_ID_FIELDS,
+            ),
             detail_tabs(),
         ],
     )
@@ -395,7 +422,7 @@ def resources_panel() -> html.Div:
                 "resource-table",
                 RESOURCE_COLUMNS,
                 height="36vh",
-                row_id_field="module",
+                row_id_fields=("module",),
             ),
             html.H2(
                 "Resource preview",
@@ -533,17 +560,25 @@ def _refresh(
     _tick: int,
     data_root: str,
     job_id: str | None,
+    inventory_digest: str | None,
 ) -> tuple[
-    list[dict[str, Any]],
-    list[dict[str, Any]],
+    Any,
+    Any,
     str,
     str,
     str,
     dict[str, str],
-    list[dict[str, Any]],
-    list[dict[str, Any]],
+    Any,
+    Any,
+    Any,
 ]:
-    """Refresh the fixture catalog, job state, and resource inventory."""
+    """Refresh job state every tick, and the inventory tables only when they changed.
+
+    The poll interval exists for the live job log. Re-emitting ``rowData`` on every tick
+    would rebuild both grids a second at a time, discarding whatever the user had
+    selected, scrolled to, sorted, or filtered — so the fixture and resource tables are
+    sent only when a digest of their content actually moves.
+    """
     paths = testdata.TestDataPaths(data_dir=Path(data_root))
     catalog = testdata.catalog_rows(paths)
     modules = sorted({row["module"] for row in catalog})
@@ -556,16 +591,34 @@ def _refresh(
     )
     options = [{"label": value, "value": value} for value in modules]
     resources = module_resources.load_module_resources(paths)
+    resource_rows = module_resources.resource_rows(resources, modules)
+    digest = _inventory_digest(catalog, resource_rows, options)
+    unchanged = digest == inventory_digest
     return (
-        catalog,
-        options,
+        no_update if unchanged else catalog,
+        no_update if unchanged else options,
         message,
         log_text,
         log_label,
         {"cursor": "pointer", "fontSize": "11px", **log_style},
-        module_resources.resource_rows(resources, modules),
-        options,
+        no_update if unchanged else resource_rows,
+        no_update if unchanged else options,
+        no_update if unchanged else digest,
     )
+
+
+def _inventory_digest(
+    catalog: list[dict[str, Any]],
+    resource_rows: list[dict[str, Any]],
+    options: list[dict[str, Any]],
+) -> str:
+    """Return a stable content digest of everything the inventory tables render."""
+    payload = json.dumps(
+        [catalog, resource_rows, options],
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
 def _show_module_resource(
@@ -696,9 +749,11 @@ def _register_testdata_callbacks(
         Output("job-log-summary", "style"),
         Output("resource-table", "rowData"),
         Output("resource-module", "options"),
+        Output("inventory-digest", "data"),
         Input("poll", "n_intervals"),
         Input("storage-root", "data"),
         State("job-id", "data"),
+        State("inventory-digest", "data"),
     )(_refresh)
     app.callback(
         Output("resource-fasta", "value"),
@@ -765,6 +820,7 @@ def create_app(
             dcc.Interval(id="poll", interval=1000, n_intervals=0),
             dcc.Store(id="job-id"),
             dcc.Store(id="finished-job-id"),
+            dcc.Store(id="inventory-digest"),
             dcc.Store(
                 id="storage-root",
                 data=str(active_paths.data_dir),

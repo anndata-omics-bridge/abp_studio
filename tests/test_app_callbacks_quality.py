@@ -156,10 +156,21 @@ def test_catalog_and_resource_callbacks(
         "resource_rows",
         lambda _inventory, modules: [{"module": module} for module in modules],
     )
-    refreshed = callbacks["refresh"](0, str(tmp_path), None)
+    refreshed = callbacks["refresh"](0, str(tmp_path), None, None)
     assert refreshed[0] == catalog
     assert refreshed[1] == [{"label": "dda", "value": "dda"}]
     assert refreshed[5]["color"] == "red"
+
+    # A poll tick with unchanged content must leave both grids alone, or the user's
+    # selection, scroll, sort, and filters would be discarded once a second.
+    digest = refreshed[8]
+    repeated = callbacks["refresh"](1, str(tmp_path), None, digest)
+    assert repeated[0] is no_update
+    assert repeated[1] is no_update
+    assert repeated[6] is no_update
+    assert repeated[7] is no_update
+    assert repeated[8] is no_update
+    assert repeated[5]["color"] == "red"
 
     assert callbacks["resource"](None, str(tmp_path)) == ""
     assert callbacks["resource"]("dda", str(tmp_path)) == ""

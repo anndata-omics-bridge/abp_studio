@@ -1,5 +1,35 @@
 # Changes
 
+- 2026-07-31: Fixture Manager: stop the one-second poll from rebuilding the tables. The
+  refresh callback now emits both grids' `rowData` and the module dropdowns only when a
+  content digest of the inventory actually moves, so an idle tick no longer discards the
+  user's selection, scroll offset, sort, or filters; the job log and status still update
+  every tick, which is what the poll exists for. The fixture table is also keyed on the
+  canonical `(module, repo_name, intermediate_hash)` identity, so a real data change
+  applies as a keyed delta rather than a full rebuild. Per-column filters were already
+  enabled but reachable only through each header menu — `floatingFilter` puts an inline
+  filter row on every column of both tables.
+- 2026-07-31: Fixture Manager: the File tab lists the downloaded vendor table's own column
+  header beneath the fixture metadata. Columns come from APB's `read_table_columns`, so the
+  delimiter is content-detected exactly as during conversion and a comma-delimited `.txt`
+  reads as more than one column here too. Absent, ambiguous, and unreadable inputs each
+  report their own state instead of guessing a file.
+- 2026-07-31: Lower the coverage gate from 100% to 90% at the owner's request.
+
+- 2026-07-31: Implement the APB Studio findings from the verified 2026-07-30 review.
+  Delete the retired dict-based corpus model (expander, baskets, problems, descendants,
+  and the `branch_rows` compatibility branch), leaving only the resolved-fixture path and
+  the full blocked-stage topology. `apb_studio.provenance` moves to Cyclopts and Loguru,
+  keeping its `--run`/`--output` spelling. The Snakefile now prefers packages already
+  resolved by the active environment and appends a source-checkout fallback only for
+  packages that are otherwise unavailable, so an installed `apb` can no longer be shadowed
+  by a sibling checkout; the provenance subprocess inherits the same resolution order and
+  receives the run path through the environment, so a fresh run ID no longer invalidates
+  unchanged targets. `latest_persisted_run` logs each rejected snapshot instead of skipping
+  it silently, and `terminate_job` returns `True` only for a confirmed process exit.
+  Dash callbacks move to module-level functions bound with `functools.partial`, and broad
+  `except Exception` boundaries narrow to the exceptions their callees actually raise.
+
 - 2026-07-30: Upgrade to pandas 3.0.5 and anndata 0.13.2 (also mudata 0.3.10, numpy
   2.5.1) to match APB, which needed the upgrade to pick up an anndata fix. No source
   changes were required. Outputs under `apb_outputs/` predating this were produced on
