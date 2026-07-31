@@ -34,41 +34,34 @@ class Process(Protocol):
 class PopenFactory(Protocol):
     """Typed constructor surface injected by process-runner tests."""
 
-    def __call__(  # noqa: PLR0913 - mirrors subprocess construction
-        self,
-        command: list[str],
-        *,
-        stdout: TextIO,
-        stderr: int,
-        text: Literal[True],
-        cwd: str | None,
-        env: Mapping[str, str],
-        creationflags: int = 0,
-        start_new_session: bool = False,
-    ) -> Process: ...
+    def __call__(self, request: PopenRequest) -> Process: ...
 
 
-def _popen(  # noqa: PLR0913 - mirrors subprocess construction
-    command: list[str],
-    *,
-    stdout: TextIO,
-    stderr: int,
-    text: Literal[True],
-    cwd: str | None,
-    env: Mapping[str, str],
-    creationflags: int = 0,
-    start_new_session: bool = False,
-) -> Process:
+@dataclass(frozen=True, slots=True)
+class PopenRequest:
+    """Complete subprocess construction request used at the injection boundary."""
+
+    command: list[str]
+    stdout: TextIO
+    stderr: int
+    text: Literal[True]
+    cwd: str | None
+    env: Mapping[str, str]
+    creationflags: int = 0
+    start_new_session: bool = False
+
+
+def _popen(request: PopenRequest) -> Process:
     """Call the standard-library subprocess constructor through the typed surface."""
     return subprocess.Popen(
-        command,
-        stdout=stdout,
-        stderr=stderr,
-        text=text,
-        cwd=cwd,
-        env=env,
-        creationflags=creationflags,
-        start_new_session=start_new_session,
+        request.command,
+        stdout=request.stdout,
+        stderr=request.stderr,
+        text=request.text,
+        cwd=request.cwd,
+        env=request.env,
+        creationflags=request.creationflags,
+        start_new_session=request.start_new_session,
     )
 
 
@@ -126,8 +119,8 @@ def start_job(
         handle.write("$ " + shlex.join(command) + "\n\n")  # faithful, copy-pasteable header
         handle.flush()
         if os.name == "nt":
-            process = popen(
-                list(command),
+            request = PopenRequest(
+                command=list(command),
                 stdout=handle,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -136,8 +129,8 @@ def start_job(
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             )
         else:
-            process = popen(
-                list(command),
+            request = PopenRequest(
+                command=list(command),
                 stdout=handle,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -145,6 +138,7 @@ def start_job(
                 env=process_env,
                 start_new_session=True,
             )
+        process = popen(request)
     return Job(command=command, process=process, log_file=log_path)
 
 
@@ -171,7 +165,7 @@ def inspect_job(job: Job, *, max_log_chars: int = 40000) -> JobStatus:
     )
 
 
-def _signal_group(  # noqa: PLR0911 - platform-specific signal fallbacks
+def _signal_group(
     process: Process,
     *,
     force: bool,
@@ -180,16 +174,24 @@ def _signal_group(  # noqa: PLR0911 - platform-specific signal fallbacks
     if not isinstance(pid, int):
         return False
     if os.name == "nt":
-        args = (
-            ["taskkill", "/F", "/T", "/PID", str(pid)]
-            if force
-            else ["taskkill", "/T", "/PID", str(pid)]
-        )
-        try:
-            subprocess.run(args, capture_output=True, check=False)
-            return True
-        except OSError:
-            return False
+        return _signal_windows_group(pid, force=force)
+    return _signal_posix_group(pid, force=force)
+
+
+def _signal_windows_group(pid: int, *, force: bool) -> bool:
+    args = (
+        ["taskkill", "/F", "/T", "/PID", str(pid)]
+        if force
+        else ["taskkill", "/T", "/PID", str(pid)]
+    )
+    try:
+        subprocess.run(args, capture_output=True, check=False)
+        return True
+    except OSError:
+        return False
+
+
+def _signal_posix_group(pid: int, *, force: bool) -> bool:
     try:
         pgid = os.getpgid(pid)
     except OSError:
@@ -204,7 +206,11 @@ def _signal_group(  # noqa: PLR0911 - platform-specific signal fallbacks
 
 
 def terminate_job(job: Job | None, timeout: float = 5.0) -> bool:
-    """Terminate a still-running job and its child tree. No-op (False) if already done/None."""
+    """Terminate a running job tree and report whether process exit was confirmed.
+
+    ``False`` means there was no running job to terminate or the process was still running after
+    both the graceful and forced waits. A signal request alone is not reported as termination.
+    """
     if job is None or job.process.poll() is not None:
         return False
     proc = job.process
@@ -212,11 +218,12 @@ def terminate_job(job: Job | None, timeout: float = 5.0) -> bool:
         proc.terminate()
     try:
         proc.wait(timeout=timeout)
+        return True
     except subprocess.TimeoutExpired:
         if not _signal_group(proc, force=True):
             proc.kill()
         try:
             proc.wait(timeout=timeout)
+            return True
         except subprocess.TimeoutExpired:
-            pass
-    return True
+            return proc.poll() is not None

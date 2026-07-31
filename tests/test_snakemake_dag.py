@@ -4,6 +4,7 @@ import os
 import shlex
 import shutil
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from apb_studio.pipeline import (
     benchmark_path,
     expand_resolved_targets,
     failure_marker_path,
+    load_run_snapshot,
     write_run_snapshot,
 )
 from apb_studio.registry import REGISTRY_PATH, load_registry
@@ -372,6 +374,54 @@ def test_successful_rule_writes_elapsed_time_benchmark(tmp_path: Path) -> None:
     header, values = benchmark.read_text(encoding="utf-8").splitlines()
     elapsed = dict(zip(header.split("\t"), values.split("\t"), strict=True))["s"]
     assert float(elapsed) >= 0
+
+
+@pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
+def test_new_run_snapshot_does_not_invalidate_unchanged_artifact(tmp_path: Path) -> None:
+    """A new run ID is provenance context, not a changed analysis parameter."""
+    output = tmp_path / "out/module/fixture/ion.h5ad"
+    command = [
+        "sh",
+        "-c",
+        f"mkdir -p {shlex.quote(str(output.parent))} && touch {shlex.quote(str(output))}",
+    ]
+    first_run, resolved_output = _single_command_run(
+        tmp_path,
+        command,
+        run_id="first-run",
+    )
+    first = _run_real_target(tmp_path, first_run, resolved_output)
+    assert first.returncode == 0, first.stdout + first.stderr
+
+    second_run = tmp_path / "second-run.json"
+    write_run_snapshot(
+        replace(load_run_snapshot(first_run), run_id="second-run"),
+        second_run,
+    )
+    assert _SNAKEMAKE is not None
+    second = subprocess.run(
+        [
+            _SNAKEMAKE,
+            "-s",
+            str(_SNAKEFILE),
+            "--configfile",
+            str(second_run),
+            "-n",
+            "--cores",
+            "1",
+            "--runtime-source-cache-path",
+            str(tmp_path / "runtime-source-cache"),
+            str(resolved_output),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        env=_snakemake_env(tmp_path),
+    )
+
+    output_text = second.stdout + second.stderr
+    assert second.returncode == 0, output_text
+    assert "Nothing to be done" in output_text
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")

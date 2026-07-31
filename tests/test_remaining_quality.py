@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import builtins
 import csv
 import json
 import subprocess
-from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from dash.exceptions import PreventUpdate
@@ -481,30 +479,13 @@ def test_provenance_fallbacks_and_sidecar_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import importlib.metadata
-
-    original_import = builtins.__import__
-
-    def import_without_metadata(
-        name: str,
-        globals_: Mapping[str, object] | None = None,
-        locals_: Mapping[str, object] | None = None,
-        fromlist: Sequence[str] = (),
-        level: int = 0,
-    ) -> Any:
-        if name == "importlib.metadata":
-            raise RuntimeError("metadata unavailable")
-        return original_import(name, globals_, locals_, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", import_without_metadata)
-    monkeypatch.setattr(provenance.shutil, "which", lambda _name: None)
-    assert provenance.apb_version() is None
-    monkeypatch.setattr(builtins, "__import__", original_import)
     monkeypatch.setattr(
-        importlib.metadata,
+        provenance,
         "version",
         lambda _name: (_ for _ in ()).throw(PackageNotFoundError),
     )
+    monkeypatch.setattr(provenance.shutil, "which", lambda _name: None)
+    assert provenance.apb_version() is None
     monkeypatch.setattr(provenance.shutil, "which", lambda _name: "/bin/apb")
     monkeypatch.setattr(
         provenance.subprocess,
@@ -515,7 +496,7 @@ def test_provenance_fallbacks_and_sidecar_errors(
     monkeypatch.setattr(
         provenance.subprocess,
         "run",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("missing")),
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1, "", "failed"),
     )
     assert provenance.apb_version() is None
     monkeypatch.setattr(provenance.shutil, "which", lambda _name: None)
@@ -527,32 +508,6 @@ def test_provenance_fallbacks_and_sidecar_errors(
     assert record["fixture_identity"] == ["dda", "repo", "abc123"]
     other = replace(snapshot, fixtures=())
     assert "fixture_identity" not in provenance.record(target, timestamp="now", run=other)
-
-    corrupt = tmp_path / "artifact.h5ad"
-    corrupt.write_text("not hdf5", encoding="utf-8")
-    assert provenance.read_params_warning(corrupt) is None
-
-    import h5py
-
-    nested = tmp_path / "nested.h5ad"
-    with h5py.File(nested, "w") as handle:
-        handle.create_group("anndata_proteomics/search_parameters_error")
-    assert provenance.read_params_warning(nested) is None
-
-    def import_without_h5py(
-        name: str,
-        globals_: Mapping[str, object] | None = None,
-        locals_: Mapping[str, object] | None = None,
-        fromlist: Sequence[str] = (),
-        level: int = 0,
-    ) -> Any:
-        if name == "h5py":
-            raise ImportError("optional")
-        return original_import(name, globals_, locals_, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", import_without_h5py)
-    assert provenance.read_params_warning(corrupt) is None
-    monkeypatch.setattr(builtins, "__import__", original_import)
 
     sidecar = provenance.sidecar_path(target.output)
     provenance._preserve_corrupt_sidecar(sidecar)

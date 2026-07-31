@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
@@ -247,12 +249,11 @@ def _section_tabs(
     ]
 
 
-def register_configuration_callbacks(  # noqa: C901 - Dash callback registration graph
+def register_configuration_callbacks(
     app: Dash,
 ) -> None:
     """Register load, section-navigation, edit, validation, and save callbacks."""
-
-    @app.callback(
+    app.callback(
         Output("config-section-editor", "value"),
         Output("config-section-editor", "readOnly"),
         Output("config-state", "data"),
@@ -276,132 +277,8 @@ def register_configuration_callbacks(  # noqa: C901 - Dash callback registration
         State("config-path", "value"),
         State("config-kind", "value"),
         prevent_initial_call=True,
-    )
-    def _operate_document(  # noqa: C901, PLR0911, PLR0912 - Dash event dispatcher
-        document_clicks: list[int],
-        _load: int | None,
-        _edit: int | None,
-        _cancel: int | None,
-        _format: int | None,
-        _save: int | None,
-        active: str | None,
-        editor_source: str,
-        state: dict[str, Any] | None,
-        path: str | None,
-        kind: config_editor.ConfigKind,
-    ) -> tuple[Any, ...]:
-        """Handle document loading and the explicit per-section edit lifecycle."""
-        trigger = ctx.triggered_id
-        try:
-            if isinstance(trigger, dict) and trigger.get("type") == "config-document":
-                if not any(document_clicks):
-                    raise PreventUpdate
-                return _loaded_result(
-                    config_editor.load_document(trigger["path"]),
-                    operation="Loaded packaged rule document.",
-                )
-            if trigger == "config-load":
-                if not path:
-                    raise ValueError("Enter a JSON configuration path.")
-                return _loaded_result(
-                    config_editor.load_document(path, kind=kind),
-                    operation="Loaded configuration.",
-                )
-            if not state or not active:
-                raise PreventUpdate
-            if trigger == "config-section-tabs":
-                if state.get("editing"):
-                    raise PreventUpdate
-                return (
-                    state["sections"][active],
-                    True,
-                    state,
-                    "Viewing raw section.",
-                    no_update,
-                    no_update,
-                    no_update,
-                    no_update,
-                    False,
-                    True,
-                    True,
-                )
-            if trigger == "config-edit":
-                edited = {**state, "editing": True, "active": active}
-                return (
-                    editor_source,
-                    False,
-                    edited,
-                    f"Editing {state['section_labels'][active]}.",
-                    no_update,
-                    no_update,
-                    _section_tabs(edited, active, editing=True),
-                    no_update,
-                    True,
-                    False,
-                    False,
-                )
-            if trigger == "config-cancel":
-                viewed = {**state, "editing": False, "active": active}
-                return (
-                    state["sections"][active],
-                    True,
-                    viewed,
-                    "Discarded in-memory changes.",
-                    no_update,
-                    no_update,
-                    _section_tabs(viewed, active, editing=False),
-                    no_update,
-                    False,
-                    True,
-                    True,
-                )
-            if trigger == "config-format":
-                return (
-                    config_editor.format_section_source(editor_source),
-                    False,
-                    state,
-                    "Formatted in memory.",
-                    no_update,
-                    no_update,
-                    no_update,
-                    no_update,
-                    True,
-                    False,
-                    False,
-                )
-            if trigger == "config-save":
-                loaded = config_editor.save_section(
-                    state["path"],
-                    active,
-                    editor_source,
-                    document_source=state["source"],
-                    expected_hash=state["content_hash"],
-                    kind=state["kind"],
-                )
-                return _loaded_result(
-                    loaded,
-                    operation="Saved complete document atomically.",
-                    active=active,
-                )
-        except PreventUpdate:
-            raise
-        except Exception as exc:  # noqa: BLE001 - render config/filesystem errors in app
-            return (
-                no_update,
-                no_update,
-                no_update,
-                f"Error: {exc}",
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-                no_update,
-            )
-        raise PreventUpdate
-
-    @app.callback(
+    )(_operate_document)
+    app.callback(
         Output("config-status", "children"),
         Output("config-status", "style"),
         Output("config-issues", "children"),
@@ -409,54 +286,243 @@ def register_configuration_callbacks(  # noqa: C901 - Dash callback registration
         Input("config-section-editor", "value"),
         Input("config-state", "data"),
         Input("config-section-tabs", "value"),
+    )(_validate_editor)
+
+
+@dataclass(frozen=True, slots=True)
+class _EditorRequest:
+    document_clicks: list[int]
+    active: str | None
+    editor_source: str
+    state: dict[str, Any] | None
+    path: str | None
+    kind: config_editor.ConfigKind
+
+
+type _EditorResult = tuple[object, ...]
+type _EditorOperation = Callable[[_EditorRequest], _EditorResult]
+
+
+def _operate_document(
+    document_clicks: list[int],
+    _load: int | None,
+    _edit: int | None,
+    _cancel: int | None,
+    _format: int | None,
+    _save: int | None,
+    active: str | None,
+    editor_source: str,
+    state: dict[str, Any] | None,
+    path: str | None,
+    kind: config_editor.ConfigKind,
+) -> _EditorResult:
+    """Handle document loading and the explicit per-section edit lifecycle."""
+    request = _EditorRequest(
+        document_clicks=document_clicks,
+        active=active,
+        editor_source=editor_source,
+        state=state,
+        path=path,
+        kind=kind,
     )
-    def _validate_editor(
-        editor_source: str,
-        state: dict[str, Any] | None,
-        active: str | None,
-    ) -> tuple[str, dict[str, str], str, bool]:
-        """Continuously validate the selected raw section in document context."""
-        if not state or not active:
-            return "No document loaded", {"fontSize": "11px"}, "", True
-        if not state.get("editing"):
-            valid = state["valid"]
-            issues = "\n".join(
-                f"{issue['document'] + ': ' if issue['document'] else ''}"
-                f"{issue['path']}: {issue['message']} ({issue['type']})"
-                for issue in state["issues"]
-            )
-            return (
-                f"{'valid' if valid else 'invalid'} · read-only",
-                {
-                    "fontSize": "11px",
-                    "color": "#18794e" if valid else "#b42318",
-                },
-                issues,
-                True,
-            )
-        report = config_editor.validate_section(
-            state["path"],
-            active,
-            editor_source,
-            document_source=state["source"],
-            kind=state["kind"],
+    try:
+        return _dispatch_editor_operation(ctx.triggered_id, request)
+    except PreventUpdate:
+        raise
+    except (KeyError, OSError, UnicodeDecodeError, ValueError) as error:
+        return _editor_error_result(error)
+
+
+def _dispatch_editor_operation(trigger: object, request: _EditorRequest) -> _EditorResult:
+    if isinstance(trigger, dict) and trigger.get("type") == "config-document":
+        if not any(request.document_clicks):
+            raise PreventUpdate
+        return _loaded_result(
+            config_editor.load_document(trigger["path"]),
+            operation="Loaded packaged rule document.",
         )
-        dirty = editor_source != state["sections"][active]
-        valid = report["valid"]
-        label = f"{'valid' if valid else 'invalid'} · {'dirty' if dirty else 'saved'}"
-        if valid:
-            label += f" · checks {', '.join(report['affected'])}"
-        issues = "\n".join(
-            f"{issue['document'] + ': ' if issue['document'] else ''}"
-            f"{issue['path']}: {issue['message']} ({issue['type']})"
-            for issue in report["issues"]
-        )
+    operation = _EDITOR_OPERATIONS.get(trigger) if isinstance(trigger, str) else None
+    if operation is None:
+        raise PreventUpdate
+    return operation(request)
+
+
+def _load_editor_path(request: _EditorRequest) -> _EditorResult:
+    if not request.path:
+        raise ValueError("Enter a JSON configuration path.")
+    return _loaded_result(
+        config_editor.load_document(request.path, kind=request.kind),
+        operation="Loaded configuration.",
+    )
+
+
+def _active_editor(request: _EditorRequest) -> tuple[dict[str, Any], str]:
+    if not request.state or not request.active:
+        raise PreventUpdate
+    return request.state, request.active
+
+
+def _view_editor_section(request: _EditorRequest) -> _EditorResult:
+    state, active = _active_editor(request)
+    if state.get("editing"):
+        raise PreventUpdate
+    return (
+        state["sections"][active],
+        True,
+        state,
+        "Viewing raw section.",
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        False,
+        True,
+        True,
+    )
+
+
+def _edit_editor_section(request: _EditorRequest) -> _EditorResult:
+    state, active = _active_editor(request)
+    edited = {**state, "editing": True, "active": active}
+    return (
+        request.editor_source,
+        False,
+        edited,
+        f"Editing {state['section_labels'][active]}.",
+        no_update,
+        no_update,
+        _section_tabs(edited, active, editing=True),
+        no_update,
+        True,
+        False,
+        False,
+    )
+
+
+def _cancel_editor_section(request: _EditorRequest) -> _EditorResult:
+    state, active = _active_editor(request)
+    viewed = {**state, "editing": False, "active": active}
+    return (
+        state["sections"][active],
+        True,
+        viewed,
+        "Discarded in-memory changes.",
+        no_update,
+        no_update,
+        _section_tabs(viewed, active, editing=False),
+        no_update,
+        False,
+        True,
+        True,
+    )
+
+
+def _format_editor_section(request: _EditorRequest) -> _EditorResult:
+    state, _active = _active_editor(request)
+    return (
+        config_editor.format_section_source(request.editor_source),
+        False,
+        state,
+        "Formatted in memory.",
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        True,
+        False,
+        False,
+    )
+
+
+def _save_editor_section(request: _EditorRequest) -> _EditorResult:
+    state, active = _active_editor(request)
+    loaded = config_editor.save_section(
+        state["path"],
+        active,
+        request.editor_source,
+        document_source=state["source"],
+        expected_hash=state["content_hash"],
+        kind=state["kind"],
+    )
+    return _loaded_result(
+        loaded,
+        operation="Saved complete document atomically.",
+        active=active,
+    )
+
+
+_EDITOR_OPERATIONS: dict[str, _EditorOperation] = {
+    "config-load": _load_editor_path,
+    "config-section-tabs": _view_editor_section,
+    "config-edit": _edit_editor_section,
+    "config-cancel": _cancel_editor_section,
+    "config-format": _format_editor_section,
+    "config-save": _save_editor_section,
+}
+
+
+def _editor_error_result(error: Exception) -> _EditorResult:
+    return (
+        no_update,
+        no_update,
+        no_update,
+        f"Error: {error}",
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+    )
+
+
+def _validate_editor(
+    editor_source: str,
+    state: dict[str, Any] | None,
+    active: str | None,
+) -> tuple[str, dict[str, str], str, bool]:
+    """Continuously validate the selected raw section in document context."""
+    if not state or not active:
+        return "No document loaded", {"fontSize": "11px"}, "", True
+    if not state.get("editing"):
+        valid = state["valid"]
+        issues = _format_issues(state["issues"])
         return (
-            label,
-            {"fontSize": "11px", "color": "#18794e" if valid else "#b42318"},
+            f"{'valid' if valid else 'invalid'} · read-only",
+            {
+                "fontSize": "11px",
+                "color": "#18794e" if valid else "#b42318",
+            },
             issues,
-            not (valid and dirty),
+            True,
         )
+    report = config_editor.validate_section(
+        state["path"],
+        active,
+        editor_source,
+        document_source=state["source"],
+        kind=state["kind"],
+    )
+    dirty = editor_source != state["sections"][active]
+    valid = report["valid"]
+    label = f"{'valid' if valid else 'invalid'} · {'dirty' if dirty else 'saved'}"
+    if valid:
+        label += f" · checks {', '.join(report['affected'])}"
+    return (
+        label,
+        {"fontSize": "11px", "color": "#18794e" if valid else "#b42318"},
+        _format_issues(report["issues"]),
+        not (valid and dirty),
+    )
+
+
+def _format_issues(issues: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        f"{issue['document'] + ': ' if issue['document'] else ''}"
+        f"{issue['path']}: {issue['message']} ({issue['type']})"
+        for issue in issues
+    )
 
 
 def _loaded_result(

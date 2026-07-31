@@ -180,17 +180,20 @@ def test_fasta_artifact_surfaces_coverage_before_full_json(
         lambda _path: {
             "modalities": {
                 "ion": {
-                    "fasta": {
-                        "feature_count": 18_182,
-                        "matched_feature_count": 18_182,
-                        "proteotypic_feature_count": 16_334,
-                    }
+                    "quantification": {"n_features": 18_182},
+                    "annotations": {
+                        "var": [
+                            {
+                                "source": "fasta_validation",
+                                "n_features": 18_182,
+                                "n_matched_features": 18_182,
+                            }
+                        ]
+                    },
                 },
                 "protein": {
-                    "fasta": {
-                        "feature_count": 3_754,
-                        "annotated_feature_count": 3_754,
-                    }
+                    "quantification": {"n_features": 3_754},
+                    "annotations": {"var": [{"source": "fasta", "n_var_matched": 3_754}]},
                 },
             }
         },
@@ -211,7 +214,7 @@ def test_fasta_artifact_surfaces_coverage_before_full_json(
     cards = overview.children[1].children
     ion_metrics = [metric.children[1].children for metric in cards[0].children[1:]]
     protein_metrics = [metric.children[1].children for metric in cards[1].children[1:]]
-    assert ion_metrics == ["18,182", "18,182 / 18,182", "16,334 / 18,182"]
+    assert ion_metrics == ["18,182", "18,182 / 18,182"]
     assert protein_metrics == ["3,754", "3,754 / 3,754"]
     assert children[4].children[0].children == "Full APB summary (JSON)"
 
@@ -220,9 +223,14 @@ def test_fasta_overview_handles_standalone_and_missing_components() -> None:
     overview = dashboard._fasta_overview(
         {
             "quantification": {"level": "peptide"},
-            "fasta": {
-                "feature_count": 10,
-                "matched_feature_count": 8,
+            "annotations": {
+                "var": [
+                    {
+                        "source": "fasta_validation",
+                        "n_features": 10,
+                        "n_matched_features": 8,
+                    }
+                ]
             },
         }
     )
@@ -236,8 +244,17 @@ def test_fasta_overview_handles_standalone_and_missing_components() -> None:
         )
         is None
     )
-    assert dashboard._fasta_overview({"fasta": {"feature_count": True}}) is None
-    assert dashboard._fasta_overview({"fasta": {"feature_count": "unknown"}}) is None
+    assert dashboard._fasta_overview({"annotations": {"var": "invalid"}}) is None
+    assert (
+        dashboard._fasta_overview({"annotations": {"var": [{"source": "unrelated_annotation"}]}})
+        is None
+    )
+    assert (
+        dashboard._fasta_overview(
+            {"annotations": {"var": [{"source": "fasta_validation", "n_features": True}]}}
+        )
+        is None
+    )
 
 
 def test_unsupported_detail_has_no_rule_log() -> None:

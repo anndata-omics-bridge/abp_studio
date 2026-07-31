@@ -265,7 +265,7 @@ def _validate_annotation(value: str | Path | None) -> Path | None:
         raise ValueError(f"Annotation must be an existing supported table ({formats}): {path}")
     try:
         _cached_load_annotation(*_file_signature(path))
-    except Exception as error:
+    except (OSError, ValueError) as error:
         raise ValueError(
             f"Annotation must be a readable sample table: {path}: {type(error).__name__}: {error}"
         ) from error
@@ -283,7 +283,7 @@ def _validate_fasta(value: str | Path | None) -> Path | None:
         raise ValueError(f"FASTA must be an existing .fa/.fas/.fasta file: {path}")
     try:
         _cached_validate_fasta(*_file_signature(path))
-    except Exception as error:
+    except (OSError, ValueError) as error:
         raise ValueError(
             f"FASTA must be a valid FASTA file: {path}: {type(error).__name__}: {error}"
         ) from error
@@ -319,7 +319,7 @@ def _resource_error(kind: str, path: Path | None) -> str | None:
             _cached_load_annotation(*signature)
         else:
             _cached_validate_fasta(*signature)
-    except Exception as error:
+    except (OSError, ValueError) as error:
         return f"Invalid {kind} resource {path}: {type(error).__name__}: {error}"
     return None
 

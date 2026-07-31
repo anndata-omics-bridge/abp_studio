@@ -297,16 +297,12 @@ def test_clear_callback_refreshes_status_and_reports_errors(
     assert "Could not launch corpus clean: clean failed" in result[1]
 
 
-def test_dashboard_callbacks_and_main(  # noqa: PLR0915 - exercises one callback family
+def test_dashboard_refresh_callback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app = dashboard.create_app(settings_path=tmp_path / "settings.json")
     refresh = _callback(app, "corpus-grid.rowData")
-    select = _callback(app, "selected-row.data")
-    show = _callback(app, "stage-detail.children")
-    fixture_detail = _callback(app, "fixture-detail.children")
-    download = _callback(app, "log-download.data")
     row = _row(tmp_path)
     snapshot = SimpleNamespace(fixtures=(1, 2))
 
@@ -368,6 +364,24 @@ def test_dashboard_callbacks_and_main(  # noqa: PLR0915 - exercises one callback
             None,
             0,
         )[1]
+    )
+
+
+def test_dashboard_selection_detail_download_and_main(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = dashboard.create_app(settings_path=tmp_path / "settings.json")
+    select = _callback(app, "selected-row.data")
+    show = _callback(app, "stage-detail.children")
+    fixture_detail = _callback(app, "fixture-detail.children")
+    download = _callback(app, "log-download.data")
+    row = _row(tmp_path)
+    snapshot = SimpleNamespace(fixtures=(1, 2))
+    monkeypatch.setattr(
+        dashboard,
+        "_load_dashboard_rows",
+        lambda *_args, **_kwargs: ([row], snapshot, None),
     )
 
     selection = _selection(row)

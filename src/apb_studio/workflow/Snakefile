@@ -10,21 +10,30 @@
 #   output_root/<module>/<dataset>/<branch>.fasta.{h5mu,h5ad}
 #   output_root/<module>/<dataset>/<branch>.proteobench.{h5mu,h5ad}
 
+import os
 import shlex
 import sys
-import os
-import shutil
+from importlib.util import find_spec
 from pathlib import Path
 
-# Make both workspace packages importable from a plain checkout. Installed packages are already on
-# sys.path; the sibling APB source path is only used when this workflow runs from the workspace.
+# Prefer packages already resolved by the active Python environment. A plain source checkout gets
+# an explicit fallback only for packages that are otherwise unavailable; appending keeps an
+# installed package ahead of a sibling checkout.
 _PACKAGE_ROOT = Path(workflow.basedir).parent
 _SRC_ROOT = _PACKAGE_ROOT.parent
 _WORKSPACE_ROOT = _SRC_ROOT.parent.parent
-_SRC_PATHS = [_SRC_ROOT, _WORKSPACE_ROOT / "apb" / "src"]
-for source_path in _SRC_PATHS:
-    if source_path.exists():
-        sys.path.insert(0, str(source_path))
+_SOURCE_FALLBACKS = []
+
+
+def _append_source_fallback(import_name, source_path):
+    if find_spec(import_name) is None and source_path.is_dir():
+        sys.path.append(str(source_path))
+        _SOURCE_FALLBACKS.append(source_path)
+
+
+_append_source_fallback("apb_studio", _SRC_ROOT)
+_append_source_fallback("anndata_proteomics", _WORKSPACE_ROOT / "apb" / "src")
+
 from apb_studio.execution import clean_targets
 from apb_studio.pipeline import (
     ANNOTATE_ARTIFACT_RE,
@@ -41,6 +50,10 @@ from apb_studio.run_history import mark_operation
 _RUN_PATH = str(workflow.configfiles[-1]) if workflow.configfiles else ""
 if not _RUN_PATH:
     raise ValueError("apb_studio: Corpus Runner must pass its generated run.json")
+_RUN_PATH_ENV = "APB_STUDIO_RUN_PATH"
+# The snapshot path identifies this invocation, not artifact content. Pass it to provenance through
+# the process environment so a fresh run ID does not invalidate every otherwise unchanged target.
+os.environ[_RUN_PATH_ENV] = _RUN_PATH
 
 RUN = load_run_snapshot(_RUN_PATH)
 OUTPUT_ROOT = RUN.output_root
@@ -53,17 +66,19 @@ BY_OUTPUT = {str(t.output): t for t in TARGETS}
 DEFAULT_TARGETS = [str(t.output) for t in runnable_targets(TARGETS)]
 BENCHMARK_PATTERN = str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".benchmark.tsv"
 
-# For the per-rule provenance hook (decision 17): the run we were invoked with, this venv's
-# python, and the src dir so the subprocess can import apb_studio without an install.
-_PYTHONPATH = os.pathsep.join(str(path) for path in _SRC_PATHS if path.exists())
-_LOCAL_APB = Path(sys.executable).with_name("apb")
-_APB_EXECUTABLE = (
-    str(_LOCAL_APB) if _LOCAL_APB.is_file() else shutil.which("apb")
+# For the per-rule provenance hook (decision 17): use this interpreter and pass on only source
+# fallbacks that this process actually needed. The inherited PYTHONPATH stays ahead of appended
+# fallbacks, matching this process's resolution order.
+_INHERITED_PYTHONPATH = os.environ.get("PYTHONPATH", "")
+_SUBPROCESS_PYTHONPATH = os.pathsep.join(
+    [path for path in [_INHERITED_PYTHONPATH, *(str(p) for p in _SOURCE_FALLBACKS)] if path]
 )
-if _APB_EXECUTABLE is None:
-    raise ValueError(
-        "apb_studio: APB executable is absent from the Snakemake environment"
-    )
+_LOCAL_APB = Path(sys.executable).with_name("apb")
+_APB_COMMAND = (
+    [str(_LOCAL_APB)]
+    if _LOCAL_APB.is_file()
+    else [sys.executable, "-m", "anndata_proteomics.scripts.cli"]
+)
 
 
 onstart:
@@ -87,14 +102,31 @@ def _inputs(wildcards):
 
 
 def _command(wildcards):
-    """The apb command, then write the provenance sidecar (decision 17) — runs for CLI and GUI alike."""
+    """Render the APB command followed by its provenance hook."""
     target = _target(wildcards)
     command = list(target.command)
-    if command and command[0] == "apb":
-        command[0] = _APB_EXECUTABLE
-    prov = [sys.executable, "-m", "apb_studio.provenance",
-            "--run", _RUN_PATH, "--output", str(target.output)]
-    return shlex.join(command) + f" && PYTHONPATH={shlex.quote(_PYTHONPATH)} " + shlex.join(prov)
+    is_apb_command = bool(command and command[0] == "apb")
+    if is_apb_command:
+        command = [*_APB_COMMAND, *command[1:]]
+    provenance_prefix = shlex.join(
+        [
+            sys.executable,
+            "-m",
+            "apb_studio.provenance",
+            "--run",
+        ]
+    )
+    provenance_command = (
+        f'{provenance_prefix} "${_RUN_PATH_ENV}"'
+        f" --output {shlex.quote(str(target.output))}"
+    )
+    command_text = shlex.join(command)
+    if _SOURCE_FALLBACKS:
+        environment = f"PYTHONPATH={shlex.quote(_SUBPROCESS_PYTHONPATH)} "
+        if is_apb_command:
+            command_text = environment + command_text
+        provenance_command = environment + provenance_command
+    return command_text + " && " + provenance_command
 
 
 def _failure_marker(wildcards):

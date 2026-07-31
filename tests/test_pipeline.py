@@ -1,14 +1,11 @@
-"""Tests for branch-aware corpus target expansion and progress state."""
+"""Tests for resolved-fixture target expansion and progress state."""
 
-import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from apb_studio.capabilities import CapabilityDiscovery, CapabilityStatus
 from apb_studio.pipeline import (
     ANNOTATE_ARTIFACT_RE,
     CONVERT_ARTIFACT_RE,
@@ -21,17 +18,12 @@ from apb_studio.pipeline import (
     branch_rows,
     convert_artifact,
     coverage,
-    descendants,
     expand_resolved_targets,
-    expand_targets,
     load_run_snapshot,
-    problems,
     reject_input_paths,
     render_command,
     runnable_targets,
     stage_order,
-    target_blocker,
-    validate_dataset,
     write_run_snapshot,
 )
 from apb_studio.registry import REGISTRY_PATH, load_registry
@@ -40,79 +32,12 @@ _SNAKEFILE = REGISTRY_PATH.parent.parent / "workflow" / "Snakefile"
 _REGISTRY = load_registry()
 
 
-def _discovery(
-    *branches: str,
-    diagnostic: str | None = None,
-    status: CapabilityStatus | None = None,
-):
-    def discover(_input: Path, _params: Path, _software: str) -> CapabilityDiscovery:
-        resolved_status = status or (
-            CapabilityStatus.SUPPORTED if branches else CapabilityStatus.UNSUPPORTED
-        )
-        return CapabilityDiscovery(tuple(branches), diagnostic, resolved_status)
-
-    return discover
-
-
-def _corpus(
-    tmp_path: Path,
-    *,
-    annotation: bool = True,
-    fasta: bool = True,
-    touch_resources: bool = True,
-    level: str | None = None,
-) -> dict[str, Any]:
-    input_root = tmp_path / "in"
-    input_root.mkdir()
-    (input_root / "report.tsv").write_text("x\n")
-    (input_root / "params.txt").write_text("params\n")
-    module: dict[str, Any] = {
-        "datasets": [
-            {
-                "name": "diann-d",
-                "vendor": "diann",
-                "input": "report.tsv",
-                "params": "params.txt",
-            }
-        ]
-    }
-    if level is not None:
-        module["datasets"][0]["level"] = level
-    if annotation:
-        module["annotation"] = "annotation.toml"
-        if touch_resources:
-            (input_root / "annotation.toml").write_text(
-                '[[samples]]\nraw_file = "run1"\ncondition = "A"\n'
-            )
-    if fasta:
-        module["fasta"] = "proteome.fasta"
-        if touch_resources:
-            (input_root / "proteome.fasta").write_text(">P1\nPEPTIDE\n")
-    return {
-        "input_root": str(input_root),
-        "output_root": str(tmp_path / "out"),
-        "modules": {"m": module},
-    }
-
-
-def _expand(
-    corpus: dict[str, Any],
-    *branches: str,
-    registry: list[dict[str, Any]] | None = None,
-) -> list[Target]:
-    return expand_targets(
-        registry or _REGISTRY,
-        corpus,
-        discover=_discovery(*branches),
-    )
-
-
 def _touch(target: Target) -> None:
     target.output.parent.mkdir(parents=True, exist_ok=True)
     target.output.touch()
 
 
-def _resolved_fixture(  # noqa: PLR0913 - explicit fixture factory fields
+def _resolved_fixture(
     tmp_path: Path,
     *,
     branches: tuple[str, ...] = ("mudata",),
@@ -169,21 +94,6 @@ def test_convert_artifact_is_branch_driven() -> None:
         convert_artifact("protien")
 
 
-def test_dataset_level_is_ignored_but_manifest_fields_are_required() -> None:
-    validate_dataset(
-        "m",
-        {
-            "name": "d",
-            "vendor": "maxquant",
-            "input": "evidence.txt",
-            "params": "mqpar.xml",
-            "level": "wrong-and-ignored",
-        },
-    )
-    with pytest.raises(ValueError, match="vendor"):
-        validate_dataset("m", {"name": "d", "input": "x", "params": "params"})
-
-
 def test_render_command_substitutes_without_splitting_values() -> None:
     command = render_command(
         "apb convert {input} --software {vendor} --output {output}",
@@ -202,10 +112,20 @@ def test_render_command_substitutes_without_splitting_values() -> None:
         render_command("apb {params}", {})
 
 
-def test_expand_fans_out_every_json_supported_branch_through_all_stages(
+def test_resolved_expansion_fans_out_every_supported_branch_through_all_stages(
     tmp_path: Path,
 ) -> None:
-    targets = _expand(_corpus(tmp_path), "mudata", "ion", "fragment", "protein")
+    annotation = tmp_path / "annotation.toml"
+    fasta = tmp_path / "proteome.fasta"
+    annotation.touch()
+    fasta.touch()
+    fixture = _resolved_fixture(
+        tmp_path,
+        branches=("mudata", "ion", "fragment", "protein"),
+        annotation=annotation,
+        fasta=fasta,
+    )
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
     assert len(targets) == 16
     assert {(target.branch, target.stage) for target in targets} == {
         (branch, stage)
@@ -254,14 +174,18 @@ def test_resolved_compound_fixture_uses_separate_parameter_parser(
     assert target.command[target.command.index("--params-software") + 1] == "fragpipe"
 
 
-def test_yaml_level_never_constrains_json_branches(tmp_path: Path) -> None:
-    corpus = _corpus(tmp_path, level="protein")
-    targets = _expand(corpus, "mudata", "ion", "fragment")
-    assert {target.branch for target in targets} == {"mudata", "ion", "fragment"}
-
-
 def test_stage_edges_and_branch_suffixes_are_isolated(tmp_path: Path) -> None:
-    targets = _expand(_corpus(tmp_path), "mudata", "ion")
+    annotation = tmp_path / "annotation.toml"
+    fasta = tmp_path / "proteome.fasta"
+    annotation.touch()
+    fasta.touch()
+    fixture = _resolved_fixture(
+        tmp_path,
+        branches=("mudata", "ion"),
+        annotation=annotation,
+        fasta=fasta,
+    )
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
     for branch in ("mudata", "ion"):
         converted = next(
             target for target in targets if target.branch == branch and target.stage == "convert"
@@ -283,12 +207,6 @@ def test_registry_has_no_optional_stage_and_order_is_topological() -> None:
     order = stage_order(_REGISTRY)
     assert order.index("convert") < order.index("annotate") < order.index("fasta")
     assert order.index("convert") < order.index("annotate") < order.index("proteobench")
-    assert descendants(_REGISTRY, "convert") == {
-        "annotate",
-        "fasta",
-        "proteobench",
-    }
-    assert descendants(_REGISTRY, "annotate") == {"proteobench"}
 
 
 def test_artifact_regexes_are_disjoint_and_branch_qualified() -> None:
@@ -302,51 +220,6 @@ def test_artifact_regexes_are_disjoint_and_branch_qualified() -> None:
     assert re.fullmatch(PROTEOBENCH_ARTIFACT_RE, "protein.proteobench.h5ad")
     assert not re.fullmatch(PROTEOBENCH_ARTIFACT_RE, "proteobench.h5ad")
     assert not re.fullmatch(ANNOTATE_ARTIFACT_RE, "annotated.h5ad")
-
-
-def test_missing_module_resources_leave_converts_and_failed_stage_cells(
-    tmp_path: Path,
-) -> None:
-    corpus = _corpus(tmp_path, annotation=False, fasta=False)
-    targets = _expand(corpus, "mudata", "ion")
-    assert {target.stage for target in targets} == {"convert"}
-
-    rows = branch_rows(
-        corpus,
-        targets,
-        registry=_REGISTRY,
-        discover=_discovery("mudata", "ion"),
-    )
-    assert len(rows) == 2
-    assert {row["convert"] for row in rows} == {""}
-    assert {row["annotate"] for row in rows} == {"UNSUPPORTED"}
-    assert {row["fasta"] for row in rows} == {"UNSUPPORTED"}
-    assert "unavailable" in rows[0]["_stage_details"]["annotate"]["error"]
-
-
-def test_missing_declared_resource_blocks_only_affected_targets(tmp_path: Path) -> None:
-    corpus = _corpus(tmp_path, touch_resources=False)
-    targets = _expand(corpus, "mudata", "ion")
-    runnable = runnable_targets(targets)
-    assert {(target.branch, target.stage) for target in runnable} == {
-        ("mudata", "convert"),
-        ("ion", "convert"),
-    }
-    annotated = next(target for target in targets if target.stage == "annotate")
-    assert "annotation.toml" in (target_blocker(annotated, targets) or "")
-
-    rows = branch_rows(
-        corpus,
-        targets,
-        registry=_REGISTRY,
-        discover=_discovery("mudata", "ion"),
-    )
-    assert {row["annotate"] for row in rows} == {"UNSUPPORTED"}
-    assert {row["fasta"] for row in rows} == {"UNSUPPORTED"}
-
-    for target in targets:
-        _touch(target)
-    assert {target.stage for target in runnable_targets(targets)} == {"convert"}
 
 
 def test_resolved_expansion_keeps_blocked_descendants_without_suppressing_convert(
@@ -397,7 +270,12 @@ def test_invalid_capability_is_failed_and_leaves_downstream_blank(
 def test_runnable_targets_keep_existing_outputs_for_snakemake_staleness(
     tmp_path: Path,
 ) -> None:
-    targets = _expand(_corpus(tmp_path), "mudata")
+    annotation = tmp_path / "annotation.toml"
+    fasta = tmp_path / "proteome.fasta"
+    annotation.touch()
+    fasta.touch()
+    fixture = _resolved_fixture(tmp_path, annotation=annotation, fasta=fasta)
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
     for target in targets:
         _touch(target)
 
@@ -405,14 +283,14 @@ def test_runnable_targets_keep_existing_outputs_for_snakemake_staleness(
 
 
 def test_unresolved_capability_is_retained_as_unsupported_row(tmp_path: Path) -> None:
-    corpus = _corpus(tmp_path)
     diagnostic = "No APB parsing rule matches this input"
-    rows = branch_rows(
-        corpus,
-        [],
-        registry=_REGISTRY,
-        discover=_discovery(diagnostic=diagnostic),
+    fixture = _resolved_fixture(
+        tmp_path,
+        branches=(),
+        capability_status="unsupported",
+        diagnostic=diagnostic,
     )
+    rows = branch_rows(_run_snapshot(tmp_path, fixture, []), [])
     assert len(rows) == 1
     assert rows[0]["level"] == "Unresolved"
     assert rows[0]["convert"] == "UNSUPPORTED"
@@ -423,9 +301,12 @@ def test_unresolved_capability_is_retained_as_unsupported_row(tmp_path: Path) ->
 
 
 def test_rows_update_from_pending_to_completed_and_failed(tmp_path: Path) -> None:
-    corpus = _corpus(tmp_path)
-    discover = _discovery("mudata")
-    targets = expand_targets(_REGISTRY, corpus, discover=discover)
+    annotation = tmp_path / "annotation.toml"
+    fasta = tmp_path / "proteome.fasta"
+    annotation.touch()
+    fasta.touch()
+    fixture = _resolved_fixture(tmp_path, annotation=annotation, fasta=fasta)
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
     converted = next(target for target in targets if target.stage == "convert")
     annotated = next(target for target in targets if target.stage == "annotate")
     _touch(converted)
@@ -433,12 +314,7 @@ def test_rows_update_from_pending_to_completed_and_failed(tmp_path: Path) -> Non
     Path(f"{annotated.output}.log").write_text("Traceback\nValueError: annotation group mismatch\n")
     Path(f"{annotated.output}.failed").write_text("exit 1\n")
 
-    row = branch_rows(
-        corpus,
-        targets,
-        registry=_REGISTRY,
-        discover=discover,
-    )[0]
+    row = branch_rows(_run_snapshot(tmp_path, fixture, targets), targets)[0]
     assert row["convert"] == "DONE"
     assert row["annotate"] == "FAILED"
     assert row["fasta"] == ""
@@ -474,36 +350,35 @@ def test_proteobench_uses_annotation_on_every_annotated_branch(tmp_path: Path) -
 def test_growing_rule_log_is_pending_until_failure_marker_exists(
     tmp_path: Path,
 ) -> None:
-    corpus = _corpus(tmp_path)
-    discover = _discovery("mudata")
-    targets = expand_targets(_REGISTRY, corpus, discover=discover)
+    fixture = _resolved_fixture(tmp_path)
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
     converted = next(target for target in targets if target.stage == "convert")
     converted.output.parent.mkdir(parents=True, exist_ok=True)
     Path(f"{converted.output}.log").write_text("Reading input table...\n")
 
-    row = branch_rows(corpus, targets, registry=_REGISTRY, discover=discover)[0]
+    row = branch_rows(_run_snapshot(tmp_path, fixture, targets), targets)[0]
 
     assert row["convert"] == ""
     assert row["_stage_details"]["convert"]["state"] == "pending"
 
 
 def test_existing_artifact_wins_over_failure_marker(tmp_path: Path) -> None:
-    corpus = _corpus(tmp_path)
-    discover = _discovery("mudata")
-    targets = expand_targets(_REGISTRY, corpus, discover=discover)
+    fixture = _resolved_fixture(tmp_path)
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
     converted = next(target for target in targets if target.stage == "convert")
     _touch(converted)
     Path(f"{converted.output}.log").write_text("ValueError: old failure\n")
     Path(f"{converted.output}.failed").write_text("exit 1\n")
 
-    row = branch_rows(corpus, targets, registry=_REGISTRY, discover=discover)[0]
+    row = branch_rows(_run_snapshot(tmp_path, fixture, targets), targets)[0]
 
     assert row["convert"] == "DONE"
     assert row["_stage_details"]["convert"]["state"] == "completed"
 
 
 def test_coverage_includes_branch_and_flips_on_artifact(tmp_path: Path) -> None:
-    targets = _expand(_corpus(tmp_path), "mudata")
+    fixture = _resolved_fixture(tmp_path)
+    targets = expand_resolved_targets(_REGISTRY, (fixture,), tmp_path / "out")
     converted = next(target for target in targets if target.stage == "convert")
     _touch(converted)
     rows = coverage(targets)
@@ -534,24 +409,6 @@ def test_run_snapshot_round_trip_is_create_only(tmp_path: Path) -> None:
         write_run_snapshot(snapshot, path)
 
 
-def test_problems_read_artifact_provenance_warning(tmp_path: Path) -> None:
-    corpus = _corpus(tmp_path)
-    targets = _expand(corpus, "mudata")
-    converted = next(target for target in targets if target.stage == "convert")
-    _touch(converted)
-    Path(f"{converted.output}.provenance.json").write_text(
-        json.dumps(
-            {
-                "stage": "convert",
-                "artifact": converted.output.name,
-                "warning": "parameter metadata incomplete",
-            }
-        )
-    )
-    found = problems(corpus, targets)
-    assert "parameter metadata incomplete" in "; ".join(found[("m", "diann-d")])
-
-
 def test_clean_guard_survives_python_optimized_mode() -> None:
     code = (
         "from pathlib import Path\n"
@@ -574,4 +431,11 @@ def test_snakefile_lets_snakemake_assess_expanded_runnable_targets() -> None:
     assert "load_run_snapshot" in snakefile
     assert "runnable_targets" in snakefile
     assert "corpus.yaml" not in snakefile
+    assert "find_spec" in snakefile
+    assert "sys.path.append" in snakefile
+    assert "sys.path.insert(0" not in snakefile
+    assert "command_text = environment + command_text" in snakefile
+    assert "provenance_command = environment + provenance_command" in snakefile
+    assert "os.environ[_RUN_PATH_ENV] = _RUN_PATH" in snakefile
+    assert '"${_RUN_PATH_ENV}"' in snakefile
     assert "--keep-going" not in snakefile  # execution owns the invocation flag

@@ -12,25 +12,17 @@ import json
 import math
 import re
 import shlex
-from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from anndata_proteomics.converters import pipeline as conversion_pipeline
 
-from apb_studio import capabilities
-from apb_studio.registry import load_registry  # noqa: F401 (re-exported for callers)
+from apb_studio.registry import load_registry
 
 MUDATA = conversion_pipeline.MUDATA
 LEVELS = tuple(conversion_pipeline.LEVELS)
 BRANCHES = (MUDATA, *LEVELS)
-CapabilityResolver = Callable[[Path, Path, str], capabilities.CapabilityDiscovery]
-
-# The basket a dataset sits in before any stage has run (the DAG source). Kept here so the
-# dashboard and baskets() agree on the label without hardcoding it in the GUI.
-INPUTS_BASKET = "inputs"
 
 # Wildcard-constraint regexes the Snakefile uses to route one `{artifact}` wildcard to the right
 # stage rule (the four are disjoint, so there is no ambiguity).
@@ -282,20 +274,12 @@ def stage_artifact(stage: dict[str, Any], branch: str) -> str:
     return f"{branch}.{stage['artifact']}{convert_suffix(branch)}"
 
 
-def validate_dataset(module: str, dataset_cfg: dict[str, Any]) -> None:
-    """Validate the corpus-manifest fields needed for capability discovery."""
-    name = dataset_cfg.get("name", "?")
-    for field_name in ("name", "vendor", "input", "params"):
-        if not dataset_cfg.get(field_name):
-            raise ValueError(f"{module}/{name}: missing required {field_name!r}")
-
-
 def render_command(template: str, ctx: dict[str, Any]) -> list[str]:
     """Substitute `{placeholder}`s in a registry command template → an argv list.
 
     Plain per-token substitution (so a value with spaces stays one argv element); raises on any
     unfilled `{placeholder}`. There is no optional-group grammar — `--level` is appended by
-    `expand_targets`, not encoded in the template (§7.2).
+    `expand_resolved_targets`, not encoded in the template.
     """
     missing = sorted({m.group(1) for m in _PLACEHOLDER.finditer(template)} - set(ctx))
     if missing:
@@ -326,41 +310,8 @@ def stage_order(registry: list[dict[str, Any]]) -> list[str]:
 
 
 def basket_label(stage: dict[str, Any]) -> str:
-    """The kanban basket a dataset reaches after this stage (the registry `basket` field)."""
+    """Return the compact dashboard label for a registry stage."""
     return stage.get("basket", stage["name"])
-
-
-def basket_names(registry: list[dict[str, Any]]) -> list[str]:
-    """Order flow-strip basket labels as inputs, then one per stage (§8.3)."""
-    by_name = {s["name"]: s for s in registry}
-    return [INPUTS_BASKET] + [basket_label(by_name[name]) for name in stage_order(registry)]
-
-
-def stage_by_basket(registry: list[dict[str, Any]]) -> dict[str, str]:
-    """Map each non-`inputs` basket label back to the stage that defines it (for Clean, §8.3)."""
-    return {basket_label(s): s["name"] for s in registry}
-
-
-def descendants(registry: list[dict[str, Any]], stage: str) -> set[str]:
-    """Return stages that transitively depend on ``stage`` in the registry DAG."""
-    children: dict[str, set[str]] = defaultdict(set)
-    for s in registry:
-        for dep in s.get("depends_on") or []:
-            children[dep].add(s["name"])
-    out: set[str] = set()
-    stack = [stage]
-    while stack:
-        for child in children.get(stack.pop(), ()):
-            if child not in out:
-                out.add(child)
-                stack.append(child)
-    return out
-
-
-def _resolve(value: str, base: Path) -> Path:
-    """Resolve a config path: absolute as-is, else relative to `base`."""
-    p = Path(value)
-    return p if p.is_absolute() else base / p
 
 
 def _resource_names(stage: dict[str, Any]) -> tuple[str, ...]:
@@ -415,116 +366,7 @@ def _emitted_ancestor(
     return None
 
 
-def discover_dataset_branches(
-    dataset_cfg: dict[str, Any],
-    input_root: Path,
-    *,
-    discover: CapabilityResolver = capabilities.discover_capabilities,
-) -> capabilities.CapabilityDiscovery:
-    """Resolve one dataset's APB branches from its input, parameters, and parsing JSONs."""
-    return discover(
-        _resolve(dataset_cfg["input"], input_root),
-        _resolve(dataset_cfg["params"], input_root),
-        dataset_cfg["vendor"],
-    )
-
-
-def expand_targets(  # noqa: C901, PLR0912 - registry-driven target graph expansion
-    registry: list[dict[str, Any]],
-    corpus: dict[str, Any],
-    output_root: Path | str | None = None,
-    input_root: Path | str | None = None,
-    *,
-    discover: CapabilityResolver = capabilities.discover_capabilities,
-) -> list[Target]:
-    """Expand the corpus's JSON-supported branches through the registry stage DAG."""
-    reg = {s["name"]: s for s in registry}
-    order = stage_order(registry)
-    out_root = Path(output_root if output_root is not None else corpus["output_root"])
-    in_root = Path(input_root if input_root is not None else corpus["input_root"])
-
-    targets: list[Target] = []
-    for module, mcfg in corpus["modules"].items():
-        for ds in mcfg["datasets"]:
-            validate_dataset(module, ds)
-            discovery = discover_dataset_branches(ds, in_root, discover=discover)
-            for branch in discovery.branches:
-                base = out_root / module / ds["name"]
-                emitted: dict[str, Path] = {}
-
-                for name in order:
-                    stage = reg[name]
-                    deps = list(stage.get("depends_on") or [])
-
-                    if not deps:
-                        output = base / stage_artifact(stage, branch)
-                        command = render_command(
-                            stage["command"],
-                            {
-                                "input": _resolve(ds["input"], in_root),
-                                "output": output.with_suffix(""),
-                                "vendor": ds["vendor"],
-                                "parameter_vendor": (
-                                    discovery.parameter_software_slug or ds["vendor"]
-                                ),
-                                "params": _resolve(ds["params"], in_root),
-                            },
-                        )
-                        if branch != MUDATA:
-                            command += ["--level", branch]
-                        inputs = [
-                            _resolve(ds["input"], in_root),
-                            _resolve(ds["params"], in_root),
-                        ]
-                    else:
-                        resource_paths: dict[str, Path] = {}
-                        missing_resource = False
-                        for resource in _resource_names(stage):
-                            config_name = (
-                                "annotation" if resource == "module_settings" else resource
-                            )
-                            raw_resource = mcfg.get(config_name)
-                            if raw_resource is None:
-                                missing_resource = True
-                                break
-                            resource_paths[resource] = _resolve(raw_resource, in_root)
-                        if missing_resource:
-                            continue
-
-                        # A required missing stage blocks its descendants. Only explicitly optional
-                        # intermediate stages may reconnect to the nearest emitted ancestor.
-                        required_missing = any(
-                            dep not in emitted and not reg.get(dep, {}).get("optional")
-                            for dep in deps
-                        )
-                        if required_missing:
-                            continue
-                        upstream = _nearest_upstream(deps, emitted, reg)
-                        output = base / stage_artifact(stage, branch)
-                        context = {"input": upstream, "output": output}
-                        context.update(resource_paths)
-                        command = render_command(stage["command"], context)
-                        inputs = [upstream]
-                        inputs.extend(resource_paths.values())
-
-                    emitted[name] = output
-                    targets.append(
-                        Target(
-                            module=module,
-                            dataset=ds["name"],
-                            stage=name,
-                            output=output,
-                            command=command,
-                            inputs=inputs,
-                            vendor=ds["vendor"],
-                            level=None if branch == MUDATA else branch,
-                            branch=branch,
-                        )
-                    )
-    return targets
-
-
-def expand_resolved_targets(  # noqa: C901, PLR0912 - registry-driven target graph expansion
+def expand_resolved_targets(
     registry: list[dict[str, Any]],
     fixtures: tuple[ResolvedFixture, ...] | list[ResolvedFixture],
     output_root: Path | str,
@@ -757,62 +599,7 @@ def _failed_rule_error(output: Path | str) -> str | None:
     return f"Rule failed{f' ({exit_status})' if exit_status else ''}"
 
 
-def _provenance_warnings(sidecar: Path) -> list[str]:
-    """Return warning fields from an artifact provenance sidecar."""
-    if not sidecar.exists():
-        return []
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(data, dict):
-        return []
-    if data.get("warning"):
-        return [f"{data.get('stage', 'artifact')}: {data['warning']}"]
-    return []
-
-
-def problems(  # noqa: C901 - diagnostic aggregation across target states
-    corpus: dict[str, Any],
-    targets: list[Target],
-) -> dict[tuple[str, str], list[str]]:
-    """Per-dataset problems to surface in the baskets (§8, review round 2).
-
-    Two sources: **static** — declared files that don't exist (a dataset's `input`/`params`, or a
-    module's `annotation:`/`fasta:` resource) — caught without running anything; and **runtime** —
-    warnings apb recorded while still producing an artifact (e.g. an unparsable params file), read
-    from each dataset's provenance.json. Keyed by (module, dataset); empty when a dataset is clean.
-    """
-    in_root = Path(corpus.get("input_root", ""))
-    out: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for module, mcfg in corpus.get("modules", {}).items():
-        ann, fasta = mcfg.get("annotation"), mcfg.get("fasta")
-        ann_missing = ann is not None and not _resolve(ann, in_root).exists()
-        fasta_missing = fasta is not None and not _resolve(fasta, in_root).exists()
-        for ds in mcfg.get("datasets", []):
-            key = (module, ds["name"])
-            if ds.get("input") and not _resolve(ds["input"], in_root).exists():
-                out[key].append(f"input file missing: {ds['input']}")
-            if ds.get("params") and not _resolve(ds["params"], in_root).exists():
-                out[key].append(f"params file missing: {ds['params']}")
-            if ann_missing:
-                out[key].append(f"annotation resource missing: {ann}")
-            if fasta_missing:
-                out[key].append(f"fasta missing: {fasta}")
-    for target in targets:
-        sidecar = Path(f"{target.output}.provenance.json")
-        out[(target.module, target.dataset)].extend(_provenance_warnings(sidecar))
-    # Runtime failures have an explicit marker written only after the rule command exits non-zero.
-    # A growing tee log without that marker belongs to a rule that may still be running.
-    for t in targets:
-        if not t.output.exists():
-            err = _failed_rule_error(t.output)
-            if err:
-                out[(t.module, t.dataset)].append(f"{t.stage} failed: {err}")
-    return {k: v for k, v in out.items() if v}
-
-
-def _terminal_blocker(  # noqa: C901 - recursive target-state evaluation
+def _terminal_blocker(
     target: Target,
     targets: list[Target],
 ) -> str | None:
@@ -820,7 +607,7 @@ def _terminal_blocker(  # noqa: C901 - recursive target-state evaluation
     by_output = {item.output: item for item in targets}
     memo: dict[Path, str | None] = {}
 
-    def visit(item: Target) -> str | None:  # noqa: PLR0911 - target-state decision table
+    def visit(item: Target) -> str | None:
         if item.output in memo:
             return memo[item.output]
         if item.output.exists():
@@ -852,7 +639,7 @@ def _terminal_blocker(  # noqa: C901 - recursive target-state evaluation
     return visit(target)
 
 
-def _stage_detail(  # noqa: PLR0911 - explicit stage-state decision table
+def _stage_detail(
     target: Target | None,
     *,
     targets: list[Target],
@@ -860,29 +647,44 @@ def _stage_detail(  # noqa: PLR0911 - explicit stage-state decision table
 ) -> dict[str, str]:
     """Build one JSON-compatible table-cell detail payload."""
     if target is None:
-        return {
-            "state": "unsupported",
-            "display": "UNSUPPORTED",
-            "error": missing_reason or "Stage target unavailable",
-        }
-
+        return _missing_stage_detail(missing_reason)
     artifact = str(target.output)
     log_path = str(Path(f"{target.output}.log"))
     base = {"artifact": artifact, "log": log_path}
     if target.command:
         base["command"] = shlex.join(target.command)
     if target.output.exists():
-        duration_seconds = _benchmark_seconds(target.output)
-        timing = (
-            {}
-            if duration_seconds is None
-            else {
-                "duration": format_duration(duration_seconds),
-                "duration_seconds": str(duration_seconds),
-            }
-        )
-        display = "DONE" if not timing else f"DONE · {timing['duration']}"
-        return {**base, **timing, "state": "completed", "display": display}
+        return _completed_stage_detail(target, base)
+    return _incomplete_stage_detail(target, targets, base)
+
+
+def _missing_stage_detail(reason: str | None) -> dict[str, str]:
+    return {
+        "state": "unsupported",
+        "display": "UNSUPPORTED",
+        "error": reason or "Stage target unavailable",
+    }
+
+
+def _completed_stage_detail(target: Target, base: dict[str, str]) -> dict[str, str]:
+    duration_seconds = _benchmark_seconds(target.output)
+    timing = (
+        {}
+        if duration_seconds is None
+        else {
+            "duration": format_duration(duration_seconds),
+            "duration_seconds": str(duration_seconds),
+        }
+    )
+    display = "DONE" if not timing else f"DONE · {timing['duration']}"
+    return {**base, **timing, "state": "completed", "display": display}
+
+
+def _incomplete_stage_detail(
+    target: Target,
+    targets: list[Target],
+    base: dict[str, str],
+) -> dict[str, str]:
     error = _failed_rule_error(target.output)
     if error is not None:
         return {**base, "state": "failed", "display": "FAILED", "error": error}
@@ -916,16 +718,13 @@ def _stage_detail(  # noqa: PLR0911 - explicit stage-state decision table
 
 
 def branch_rows(
-    run: RunSnapshot | dict[str, Any],
+    run: RunSnapshot,
     targets: list[Target],
     *,
     registry: list[dict[str, Any]] | None = None,
-    discover: CapabilityResolver = capabilities.discover_capabilities,
 ) -> list[dict[str, Any]]:
-    """Return one compact progress row per JSON-supported dataset branch."""
+    """Return one compact progress row per frozen fixture branch."""
     registry = registry or load_registry()
-    if isinstance(run, dict):
-        run = _legacy_run_snapshot(registry, run, targets, discover=discover)
 
     order = stage_order(registry)
     by_key = {
@@ -988,120 +787,6 @@ def branch_rows(
             row["_stage_details"] = details
             rows.append(row)
     return rows
-
-
-def _capability_status(discovery: capabilities.CapabilityDiscovery) -> str:
-    """Return the structured discovery status as a stable lowercase value."""
-    status = getattr(discovery, "status", None)
-    if status is None:
-        return "supported" if discovery.branches else "unsupported"
-    value = getattr(status, "value", status)
-    return str(value).lower()
-
-
-def _legacy_run_snapshot(
-    registry: list[dict[str, Any]],
-    corpus: dict[str, Any],
-    targets: list[Target],
-    *,
-    discover: CapabilityResolver,
-) -> RunSnapshot:
-    """Adapt the retired corpus mapping for compatibility with non-runtime callers."""
-    input_root = Path(corpus["input_root"])
-    fixtures: list[ResolvedFixture] = []
-    for module, module_config in corpus.get("modules", {}).items():
-        annotation = module_config.get("annotation")
-        fasta = module_config.get("fasta")
-        for dataset in module_config.get("datasets", []):
-            validate_dataset(module, dataset)
-            discovery = discover_dataset_branches(
-                dataset,
-                input_root,
-                discover=discover,
-            )
-            fixtures.append(
-                ResolvedFixture(
-                    module=module,
-                    repo_name=module,
-                    intermediate_hash=dataset["name"],
-                    dataset=dataset["name"],
-                    software=dataset["vendor"],
-                    vendor=dataset["vendor"],
-                    input_path=_resolve(dataset["input"], input_root),
-                    parameter_path=_resolve(dataset["params"], input_root),
-                    branches=tuple(discovery.branches),
-                    capability_status=_capability_status(discovery),
-                    diagnostic=discovery.diagnostic,
-                    annotation_path=(
-                        _resolve(annotation, input_root) if annotation is not None else None
-                    ),
-                    fasta_path=(_resolve(fasta, input_root) if fasta is not None else None),
-                )
-            )
-    return RunSnapshot(
-        schema_version=RUN_SNAPSHOT_SCHEMA_VERSION,
-        run_id="legacy",
-        created_at="",
-        test_data_root=input_root,
-        output_root=Path(corpus["output_root"]),
-        registry_digest="",
-        apb_version=None,
-        fixtures=tuple(fixtures),
-        targets=tuple(targets),
-    )
-
-
-def baskets(
-    targets: list[Target],
-    registry: list[dict[str, Any]],
-    problems: dict[tuple[str, str], list[str]] | None = None,
-) -> dict[str, list[dict[str, Any]]]:
-    """Group DATASETS into kanban baskets (decision 10, §8).
-
-    A dataset's basket is the furthest stage whose whole prefix (over the dataset's *applicable*
-    stages) is done — a CONTIGUOUS prefix, not the bare max-done stage — so a non-contiguous on-disk
-    state (a later artifact present while an earlier one is missing) reports the lower basket,
-    never a basket whose defining artifact is absent. `next_stage`/`runnable` are per-dataset from
-    the dataset's own Target set: `next_stage` is the first not-yet-done applicable stage (or None
-    → terminal). Returns an ordered dict keyed by basket label (empty baskets included, for the flow
-    strip). Membership is computed only from per-Target output paths, never a filename glob.
-    """
-    order = stage_order(registry)
-    labels = {s["name"]: basket_label(s) for s in registry}
-    problems = problems or {}
-    result: dict[str, list[dict[str, Any]]] = {b: [] for b in basket_names(registry)}
-
-    by_ds: dict[tuple[str, str, str], list[Target]] = defaultdict(list)
-    for t in targets:
-        by_ds[(t.module, t.dataset, t.branch)].append(t)
-
-    for (module, dataset, branch), ts in by_ds.items():
-        stages_here = {t.stage for t in ts}
-        applicable = [s for s in order if s in stages_here]  # this dataset's stages, in topo order
-        done = {t.stage: t.output.exists() for t in ts}
-
-        basket_stage: str | None = None
-        for stage in applicable:
-            if done.get(stage):
-                basket_stage = stage
-            else:
-                break
-        next_stage = next((s for s in applicable if not done.get(s)), None)
-        basket = INPUTS_BASKET if basket_stage is None else labels[basket_stage]
-
-        result[basket].append(
-            {
-                "module": module,
-                "dataset": dataset,
-                "software": ts[0].vendor,
-                "level": "MuData" if branch == MUDATA else branch,
-                "basket": basket,
-                "next_stage": next_stage,
-                "runnable": next_stage is not None,
-                "problem": "; ".join(problems.get((module, dataset), [])),
-            }
-        )
-    return result
 
 
 def reject_input_paths(paths: list[Path], input_root: Path | str) -> list[Path]:

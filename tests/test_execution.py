@@ -4,13 +4,14 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal, TextIO
+from typing import Any
 
 import pytest
 
 from apb_studio import execution, provenance, run_history, settings
 from apb_studio.capabilities import CapabilityDiscovery, CapabilityStatus
 from apb_studio.execution import (
+    PipelineLaunchOptions,
     clean_targets,
     load_overview,
     prepare_run,
@@ -18,7 +19,15 @@ from apb_studio.execution import (
     snakemake_argv,
 )
 from apb_studio.fixture_inventory import load_fixture_inventory
-from apb_studio.jobrunner import Job, Process, inspect_job, make_run_key, start_job, terminate_job
+from apb_studio.jobrunner import (
+    Job,
+    PopenRequest,
+    Process,
+    inspect_job,
+    make_run_key,
+    start_job,
+    terminate_job,
+)
 from apb_studio.pipeline import (
     CleanGuardError,
     Target,
@@ -49,19 +58,8 @@ class _CapturingPopen:
     def __init__(self) -> None:
         self.environment: Mapping[str, str] = {}
 
-    def __call__(  # noqa: PLR0913 - mirrors the injected subprocess factory
-        self,
-        command: list[str],
-        *,
-        stdout: TextIO,
-        stderr: int,
-        text: Literal[True],
-        cwd: str | None,
-        env: Mapping[str, str],
-        creationflags: int = 0,
-        start_new_session: bool = False,
-    ) -> Process:
-        self.environment = env
+    def __call__(self, request: PopenRequest) -> Process:
+        self.environment = request.env
         return _FakeProcess()
 
 
@@ -178,8 +176,10 @@ def test_run_pipeline_builds_job_via_injected_start():
         "Snakefile",
         "run.json",
         "/tmp/log",
-        targets=[Path("/out/x.h5mu")],
-        snakemake_exe="snakemake",
+        PipelineLaunchOptions(
+            targets=(Path("/out/x.h5mu"),),
+            snakemake_exe="snakemake",
+        ),
         start=fake_start,
     )
     assert job is expected
@@ -194,7 +194,7 @@ def test_run_pipeline_refuses_empty_targets():
             "Snakefile",
             "run.json",
             "/tmp/log",
-            targets=[],
+            PipelineLaunchOptions(targets=()),
             start=lambda _command, _log_file, *, cwd=None: _fake_job(),
         )
 
@@ -215,8 +215,7 @@ def test_run_pipeline_none_targets_means_default_goal():
         "Snakefile",
         "run.json",
         "/tmp/log",
-        targets=None,
-        snakemake_exe="snakemake",
+        PipelineLaunchOptions(snakemake_exe="snakemake"),
         start=fake_start,
     )
     # No target paths appended → Snakemake builds its default goal (argv ends at the flags).
@@ -252,11 +251,12 @@ def test_launch_corpus_keeps_existing_targets_for_snakemake_staleness(
     job_id = execution.launch_corpus(settings_path=settings_path)
 
     assert job_id
-    captured_targets = captured["targets"]
+    captured_options = captured["options"]
     captured_args = captured["args"]
-    assert isinstance(captured_targets, list)
+    assert isinstance(captured_options, PipelineLaunchOptions)
     assert isinstance(captured_args, tuple)
-    assert target.output in captured_targets
+    assert captured_options.targets is not None
+    assert target.output in captured_options.targets
     assert captured_args[1] == run_path
     assert execution._RUNS[job_id] == run_path
     operation = run_history.load_operation(run_path)
@@ -293,7 +293,9 @@ def test_clear_corpus_launches_packaged_snakemake_clean(
     job_id = execution.clear_corpus(settings_path=settings_path)
 
     assert job_id
-    assert captured["targets"] == [Path("clean")]
+    captured_options = captured["options"]
+    assert isinstance(captured_options, PipelineLaunchOptions)
+    assert captured_options.targets == (Path("clean"),)
     operation = run_history.load_operation(run_path)
     assert operation is not None
     assert operation.operation == "clean"

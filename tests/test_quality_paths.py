@@ -76,8 +76,13 @@ def test_jobrunner_tail_and_termination_fallbacks(
     assert jobrunner._signal_group(_Process(), force=False) is False
 
     monkeypatch.setattr(jobrunner, "_signal_group", lambda _process, *, force: False)
+    confirmed = _Process()
+    assert jobrunner.terminate_job(_job(tmp_path, confirmed), timeout=0.01) is True
+    assert confirmed.terminated is True
+    assert confirmed.killed is False
+
     process = _Process(timeouts=2)
-    assert jobrunner.terminate_job(_job(tmp_path, process), timeout=0.01) is True
+    assert jobrunner.terminate_job(_job(tmp_path, process), timeout=0.01) is False
     assert process.terminated is True
     assert process.killed is True
     assert jobrunner.terminate_job(None) is False
@@ -169,11 +174,11 @@ def test_windows_job_launch_and_successful_group_termination(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, Any] = {}
+    captured: dict[str, object] = {}
 
-    def popen(command: list[str], **kwargs: Any) -> _Process:
-        captured["command"] = command
-        captured.update(kwargs)
+    def popen(request: jobrunner.PopenRequest) -> _Process:
+        captured["command"] = request.command
+        captured["creationflags"] = request.creationflags
         return _Process()
 
     monkeypatch.setattr(jobrunner, "Path", type(tmp_path))
@@ -187,7 +192,7 @@ def test_windows_job_launch_and_successful_group_termination(
     jobrunner.start_job(
         ["apb", "convert"],
         tmp_path / "job.log",
-        popen=cast(jobrunner.PopenFactory, popen),
+        popen=popen,
     )
     assert captured["creationflags"] == 512
 

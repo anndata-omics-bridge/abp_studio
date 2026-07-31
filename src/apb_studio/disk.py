@@ -27,9 +27,8 @@ def atomic_write_text(path: Path, text: str) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, target)
-    except Exception:
+    finally:
         temporary.unlink(missing_ok=True)
-        raise
 
 
 @contextmanager

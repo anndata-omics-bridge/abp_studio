@@ -1,5 +1,6 @@
 """Plotly Dash browser for cataloging and downloading ProteoBench test data."""
 
+from functools import partial
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -448,7 +449,295 @@ def detail_tabs() -> dcc.Tabs:
     )
 
 
-def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition root
+def _run_action(
+    _catalog: int | None,
+    _select: int | None,
+    _download: int | None,
+    _annotations: int | None,
+    _fasta: int | None,
+    _clean: int | None,
+    strategy: str,
+    module: str | None,
+    data_root: str,
+    active_job_id: str | None,
+) -> str:
+    """Launch the requested fixture-management action."""
+    active_status = testdata.job_status(active_job_id)
+    if active_status is not None and active_status.running:
+        raise PreventUpdate
+    triggered_id = ctx.triggered_id
+    if not isinstance(triggered_id, str):
+        raise PreventUpdate
+    action = triggered_id.removesuffix("-button")
+    paths = testdata.TestDataPaths(data_dir=Path(data_root))
+    try:
+        return testdata.launch(action, paths, strategy=strategy, module=module)
+    except testdata.JobAlreadyRunningError as error:
+        raise PreventUpdate from error
+
+
+def _open_log_for_new_job(job_id: str | None) -> bool:
+    """Reveal command output whenever a new background job starts."""
+    return bool(job_id)
+
+
+def _apply_storage_folder(
+    _clicks: int,
+    folder: str | None,
+    job_id: str | None,
+    *,
+    settings_path: Path | None,
+) -> tuple[object, str, dict[str, str]]:
+    """Validate, create, and activate a test-data root folder."""
+    status = testdata.job_status(job_id)
+    if status is not None and status.running:
+        return (
+            no_update,
+            "Wait for the current job to finish.",
+            {"color": "#b00020", "fontSize": "11px"},
+        )
+    try:
+        paths = testdata.TestDataPaths(data_dir=Path(folder or ""))
+        paths.create()
+        settings.update_settings(
+            test_data_root=paths.data_dir,
+            path=settings_path,
+        )
+    except ValidationError as error:
+        message = str(error.errors()[0]["msg"]).removeprefix("Value error, ")
+        return (
+            no_update,
+            message,
+            {"color": "#b00020", "fontSize": "11px"},
+        )
+    except OSError as error:
+        return (
+            no_update,
+            str(error),
+            {"color": "#b00020", "fontSize": "11px"},
+        )
+    return (
+        str(paths.data_dir),
+        "Folder applied.",
+        {"color": "#16733c", "fontSize": "11px"},
+    )
+
+
+def _show_storage_paths(data_root: str) -> tuple[str, str]:
+    """Show the active root and every path derived from it."""
+    paths = testdata.TestDataPaths(data_dir=Path(data_root))
+    return str(paths.data_dir), testdata.storage_summary(paths)
+
+
+def _refresh(
+    _tick: int,
+    data_root: str,
+    job_id: str | None,
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    str,
+    str,
+    str,
+    dict[str, str],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Refresh the fixture catalog, job state, and resource inventory."""
+    paths = testdata.TestDataPaths(data_dir=Path(data_root))
+    catalog = testdata.catalog_rows(paths)
+    modules = sorted({row["module"] for row in catalog})
+    selection_count = len(testdata.read_rows(paths.selection_csv))
+    status = testdata.job_status(job_id)
+    message, log_text, log_label, log_style = testdata.job_presentation(
+        status,
+        catalog_count=len(catalog),
+        selection_count=selection_count,
+    )
+    options = [{"label": value, "value": value} for value in modules]
+    resources = module_resources.load_module_resources(paths)
+    return (
+        catalog,
+        options,
+        message,
+        log_text,
+        log_label,
+        {"cursor": "pointer", "fontSize": "11px", **log_style},
+        module_resources.resource_rows(resources, modules),
+        options,
+    )
+
+
+def _show_module_resource(
+    module: str | None,
+    data_root: str,
+) -> str:
+    """Populate the editor with the selected module's assignments."""
+    if not module:
+        return ""
+    resource = module_resources.load_module_resources(data_root).for_module(module)
+    if resource is None:
+        return ""
+    return str(resource.fasta_path) if resource.fasta_path else ""
+
+
+def _save_module_resource(
+    _clicks: int,
+    module: str | None,
+    fasta_path: str | None,
+    data_root: str,
+) -> tuple[str, dict[str, str]]:
+    """Validate and atomically save one resource assignment."""
+    if not module:
+        return "Choose a module.", {"color": "#b00020", "fontSize": "11px"}
+    try:
+        module_resources.set_module_resource(
+            data_root,
+            module,
+            annotation_path=None,
+            fasta_path=fasta_path,
+        )
+    except (OSError, ValueError, ValidationError) as error:
+        return str(error), {"color": "#b00020", "fontSize": "11px"}
+    return "Assignment saved.", {"color": "#16733c", "fontSize": "11px"}
+
+
+def _show_resource_preview(
+    cell: dict[str, Any] | None,
+    data_root: str,
+) -> str:
+    """Show the clicked server-side resource, resetting when storage changes."""
+    selected_cell = cell if ctx.triggered_id == "resource-table" else None
+    return _resource_preview(selected_cell, data_root)
+
+
+def _show_completed_job(
+    _tick: int,
+    job_id: str | None,
+    finished_job_id: str | None,
+    data_root: str,
+) -> tuple[object, object]:
+    """Show data after success and leave failed-job logs visible."""
+    if not job_id or job_id == finished_job_id:
+        return no_update, no_update
+    status = testdata.job_status(job_id)
+    if status is None or status.running:
+        return no_update, no_update
+    if not status.success:
+        return "data", job_id
+    action = status.command[1] if len(status.command) > 1 else ""
+    if action in {"annotations", "fasta"}:
+        if action == "fasta":
+            inventory = testdata.fixture_inventory.load_fixture_inventory(data_root)
+            module_resources.sync_fasta_resources(
+                data_root,
+                (fixture.module for fixture in inventory.fixtures),
+            )
+        return "resources", job_id
+    return "data", job_id
+
+
+def _show_details(
+    catalog_selected: list[dict[str, Any]] | None,
+    data_root: str,
+) -> tuple[str, str, str]:
+    """Show source details for the selected fixture row."""
+    if ctx.triggered_id == "storage-root":
+        return "Select a row.", "", ""
+    row = catalog_selected[0] if catalog_selected else None
+    paths = testdata.TestDataPaths(data_dir=Path(data_root))
+    return testdata.row_details(paths, row)
+
+
+def _register_testdata_callbacks(
+    app: Dash,
+    settings_path: Path | None,
+) -> None:
+    """Register Fixture Manager callbacks."""
+    app.callback(
+        Output("job-id", "data"),
+        Input("catalog-button", "n_clicks"),
+        Input("select-button", "n_clicks"),
+        Input("download-button", "n_clicks"),
+        Input("annotations-button", "n_clicks"),
+        Input("fasta-button", "n_clicks"),
+        Input("clean-button", "n_clicks"),
+        State("strategy", "value"),
+        State("module", "value"),
+        State("storage-root", "data"),
+        State("job-id", "data"),
+        prevent_initial_call=True,
+    )(_run_action)
+    app.callback(
+        Output("job-log-details", "open"),
+        Input("job-id", "data"),
+        prevent_initial_call=True,
+    )(_open_log_for_new_job)
+    app.callback(
+        Output("storage-root", "data"),
+        Output("storage-message", "children"),
+        Output("storage-message", "style"),
+        Input("storage-apply-button", "n_clicks"),
+        State("storage-folder", "value"),
+        State("job-id", "data"),
+        prevent_initial_call=True,
+    )(partial(_apply_storage_folder, settings_path=settings_path))
+    app.callback(
+        Output("storage-folder", "value"),
+        Output("storage-summary", "children"),
+        Input("storage-root", "data"),
+    )(_show_storage_paths)
+    app.callback(
+        Output("catalog-table", "rowData"),
+        Output("module", "options"),
+        Output("status", "children"),
+        Output("job-log", "children"),
+        Output("job-log-summary", "children"),
+        Output("job-log-summary", "style"),
+        Output("resource-table", "rowData"),
+        Output("resource-module", "options"),
+        Input("poll", "n_intervals"),
+        Input("storage-root", "data"),
+        State("job-id", "data"),
+    )(_refresh)
+    app.callback(
+        Output("resource-fasta", "value"),
+        Input("resource-module", "value"),
+        Input("storage-root", "data"),
+    )(_show_module_resource)
+    app.callback(
+        Output("resource-message", "children"),
+        Output("resource-message", "style"),
+        Input("resource-save-button", "n_clicks"),
+        State("resource-module", "value"),
+        State("resource-fasta", "value"),
+        State("storage-root", "data"),
+        prevent_initial_call=True,
+    )(_save_module_resource)
+    app.callback(
+        Output("resource-preview", "children"),
+        Input("resource-table", "cellClicked"),
+        Input("storage-root", "data"),
+    )(_show_resource_preview)
+    app.callback(
+        Output("workspace-tabs", "value"),
+        Output("finished-job-id", "data"),
+        Input("poll", "n_intervals"),
+        State("job-id", "data"),
+        State("finished-job-id", "data"),
+        State("storage-root", "data"),
+        prevent_initial_call=True,
+    )(_show_completed_job)
+    app.callback(
+        Output("file-info", "children"),
+        Output("submission-json", "children"),
+        Output("parameters", "children"),
+        Input("catalog-table", "selectedRows"),
+        Input("storage-root", "data"),
+    )(_show_details)
+
+
+def create_app(
     *,
     settings_path: Path | None = None,
 ) -> Dash:
@@ -524,272 +813,7 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
         },
     )
 
-    @app.callback(
-        Output("job-id", "data"),
-        Input("catalog-button", "n_clicks"),
-        Input("select-button", "n_clicks"),
-        Input("download-button", "n_clicks"),
-        Input("annotations-button", "n_clicks"),
-        Input("fasta-button", "n_clicks"),
-        Input("clean-button", "n_clicks"),
-        State("strategy", "value"),
-        State("module", "value"),
-        State("storage-root", "data"),
-        State("job-id", "data"),
-        prevent_initial_call=True,
-    )
-    def _run_action(
-        _catalog: int | None,
-        _select: int | None,
-        _download: int | None,
-        _annotations: int | None,
-        _fasta: int | None,
-        _clean: int | None,
-        strategy: str,
-        module: str | None,
-        data_root: str,
-        active_job_id: str | None,
-    ) -> str:
-        active_status = testdata.job_status(active_job_id)
-        if active_status is not None and active_status.running:
-            raise PreventUpdate
-        triggered_id = ctx.triggered_id
-        if not isinstance(triggered_id, str):
-            raise PreventUpdate
-        action = triggered_id.removesuffix("-button")
-        paths = testdata.TestDataPaths(data_dir=Path(data_root))
-        try:
-            return testdata.launch(action, paths, strategy=strategy, module=module)
-        except testdata.JobAlreadyRunningError as error:
-            raise PreventUpdate from error
-
-    @app.callback(
-        Output("job-log-details", "open"),
-        Input("job-id", "data"),
-        prevent_initial_call=True,
-    )
-    def _open_log_for_new_job(job_id: str | None) -> bool:
-        """Reveal command output whenever a new background job starts."""
-        return bool(job_id)
-
-    @app.callback(
-        Output("storage-root", "data"),
-        Output("storage-message", "children"),
-        Output("storage-message", "style"),
-        Input("storage-apply-button", "n_clicks"),
-        State("storage-folder", "value"),
-        State("job-id", "data"),
-        prevent_initial_call=True,
-    )
-    def _apply_storage_folder(
-        _clicks: int,
-        folder: str | None,
-        job_id: str | None,
-    ) -> tuple[object, str, dict[str, str]]:
-        """Validate, create, and activate a test-data root folder."""
-        status = testdata.job_status(job_id)
-        if status is not None and status.running:
-            return (
-                no_update,
-                "Wait for the current job to finish.",
-                {"color": "#b00020", "fontSize": "11px"},
-            )
-        try:
-            paths = testdata.TestDataPaths(data_dir=Path(folder or ""))
-            paths.create()
-            settings.update_settings(
-                test_data_root=paths.data_dir,
-                path=settings_path,
-            )
-        except ValidationError as error:
-            message = str(error.errors()[0]["msg"]).removeprefix("Value error, ")
-            return (
-                no_update,
-                message,
-                {"color": "#b00020", "fontSize": "11px"},
-            )
-        except OSError as error:
-            return (
-                no_update,
-                str(error),
-                {"color": "#b00020", "fontSize": "11px"},
-            )
-        return (
-            str(paths.data_dir),
-            "Folder applied.",
-            {"color": "#16733c", "fontSize": "11px"},
-        )
-
-    @app.callback(
-        Output("storage-folder", "value"),
-        Output("storage-summary", "children"),
-        Input("storage-root", "data"),
-    )
-    def _show_storage_paths(data_root: str) -> tuple[str, str]:
-        """Show the active root and every path derived from it."""
-        paths = testdata.TestDataPaths(data_dir=Path(data_root))
-        return str(paths.data_dir), testdata.storage_summary(paths)
-
-    @app.callback(
-        Output("catalog-table", "rowData"),
-        Output("module", "options"),
-        Output("status", "children"),
-        Output("job-log", "children"),
-        Output("job-log-summary", "children"),
-        Output("job-log-summary", "style"),
-        Output("resource-table", "rowData"),
-        Output("resource-module", "options"),
-        Input("poll", "n_intervals"),
-        Input("storage-root", "data"),
-        State("job-id", "data"),
-    )
-    def _refresh(
-        _tick: int,
-        data_root: str,
-        job_id: str | None,
-    ) -> tuple[
-        list[dict[str, Any]],
-        list[dict[str, Any]],
-        str,
-        str,
-        str,
-        dict[str, str],
-        list[dict[str, Any]],
-        list[dict[str, Any]],
-    ]:
-        paths = testdata.TestDataPaths(data_dir=Path(data_root))
-        catalog = testdata.catalog_rows(paths)
-        modules = sorted({row["module"] for row in catalog})
-        selection_count = len(testdata.read_rows(paths.selection_csv))
-        status = testdata.job_status(job_id)
-        message, log_text, log_label, log_style = testdata.job_presentation(
-            status,
-            catalog_count=len(catalog),
-            selection_count=selection_count,
-        )
-        options = [{"label": value, "value": value} for value in modules]
-        resources = module_resources.load_module_resources(paths)
-        return (
-            catalog,
-            options,
-            message,
-            log_text,
-            log_label,
-            {"cursor": "pointer", "fontSize": "11px", **log_style},
-            module_resources.resource_rows(resources, modules),
-            options,
-        )
-
-    @app.callback(
-        Output("resource-fasta", "value"),
-        Input("resource-module", "value"),
-        Input("storage-root", "data"),
-    )
-    def _show_module_resource(
-        module: str | None,
-        data_root: str,
-    ) -> str:
-        """Populate the editor with the selected module's assignments."""
-        if not module:
-            return ""
-        resource = module_resources.load_module_resources(data_root).for_module(module)
-        if resource is None:
-            return ""
-        return str(resource.fasta_path) if resource.fasta_path else ""
-
-    @app.callback(
-        Output("resource-message", "children"),
-        Output("resource-message", "style"),
-        Input("resource-save-button", "n_clicks"),
-        State("resource-module", "value"),
-        State("resource-fasta", "value"),
-        State("storage-root", "data"),
-        prevent_initial_call=True,
-    )
-    def _save_module_resource(
-        _clicks: int,
-        module: str | None,
-        fasta_path: str | None,
-        data_root: str,
-    ) -> tuple[str, dict[str, str]]:
-        """Validate and atomically save one resource assignment."""
-        if not module:
-            return "Choose a module.", {"color": "#b00020", "fontSize": "11px"}
-        try:
-            module_resources.set_module_resource(
-                data_root,
-                module,
-                annotation_path=None,
-                fasta_path=fasta_path,
-            )
-        except (OSError, ValueError, ValidationError) as error:
-            return str(error), {"color": "#b00020", "fontSize": "11px"}
-        return "Assignment saved.", {"color": "#16733c", "fontSize": "11px"}
-
-    @app.callback(
-        Output("resource-preview", "children"),
-        Input("resource-table", "cellClicked"),
-        Input("storage-root", "data"),
-    )
-    def _show_resource_preview(
-        cell: dict[str, Any] | None,
-        data_root: str,
-    ) -> str:
-        """Show the clicked server-side resource, resetting when storage changes."""
-        selected_cell = cell if ctx.triggered_id == "resource-table" else None
-        return _resource_preview(selected_cell, data_root)
-
-    @app.callback(
-        Output("workspace-tabs", "value"),
-        Output("finished-job-id", "data"),
-        Input("poll", "n_intervals"),
-        State("job-id", "data"),
-        State("finished-job-id", "data"),
-        State("storage-root", "data"),
-        prevent_initial_call=True,
-    )
-    def _show_completed_job(
-        _tick: int,
-        job_id: str | None,
-        finished_job_id: str | None,
-        data_root: str,
-    ) -> tuple[object, object]:
-        """Show data after success and leave failed-job logs visible."""
-        if not job_id or job_id == finished_job_id:
-            return no_update, no_update
-        status = testdata.job_status(job_id)
-        if status is None or status.running:
-            return no_update, no_update
-        if not status.success:
-            return "data", job_id
-        action = status.command[1] if len(status.command) > 1 else ""
-        if action in {"annotations", "fasta"}:
-            if action == "fasta":
-                inventory = testdata.fixture_inventory.load_fixture_inventory(data_root)
-                module_resources.sync_fasta_resources(
-                    data_root,
-                    (fixture.module for fixture in inventory.fixtures),
-                )
-            return "resources", job_id
-        return "data", job_id
-
-    @app.callback(
-        Output("file-info", "children"),
-        Output("submission-json", "children"),
-        Output("parameters", "children"),
-        Input("catalog-table", "selectedRows"),
-        Input("storage-root", "data"),
-    )
-    def _show_details(
-        catalog_selected: list[dict[str, Any]] | None,
-        data_root: str,
-    ) -> tuple[str, str, str]:
-        if ctx.triggered_id == "storage-root":
-            return "Select a row.", "", ""
-        row = catalog_selected[0] if catalog_selected else None
-        paths = testdata.TestDataPaths(data_dir=Path(data_root))
-        return testdata.row_details(paths, row)
-
+    _register_testdata_callbacks(app, settings_path)
     register_configuration_callbacks(app)
     return app
 

@@ -15,7 +15,6 @@ dependencies = [
     "platformdirs>=4",
     "pydantic>=2",
     "pyyaml",
-    "h5py",
     "monaco-dash-editor>=0.0.2",
 ]
 
@@ -107,7 +106,7 @@ reportMissingTypeStubs = "none"
 reportUnnecessaryTypeIgnoreComment = "error"
 reportImplicitOverride = "error"
 enableTypeIgnoreComments = false
-# Dash, PyArrow, h5py, and scientific-library stubs propagate Unknown through
+# Dash, PyArrow, and scientific-library stubs propagate Unknown through
 # otherwise fully annotated first-party code. Match APB's strict configuration:
 # retain all concrete type errors while suppressing Unknown-only diagnostics.
 reportUnknownMemberType = "none"

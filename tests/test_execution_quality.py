@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+from loguru import logger
 
 from apb_studio import (
     capabilities,
@@ -303,13 +304,20 @@ def test_latest_persisted_run_skips_invalid_and_foreign_snapshots(
     os.utime(orphan_path, (3, 3))
     os.utime(invalid, (4, 4))
 
-    persisted = execution.latest_persisted_run(output_root)
+    messages: list[str] = []
+    sink = logger.add(messages.append, format="{message}")
+    try:
+        persisted = execution.latest_persisted_run(output_root)
+    finally:
+        logger.remove(sink)
 
     assert persisted is not None
     assert persisted.snapshot == snapshot
     assert persisted.log_path.read_text(encoding="utf-8") == "persisted log"
     assert persisted.operation is not None
     assert persisted.operation.status == "succeeded"
+    assert any(str(invalid) in message and "invalid" in message.lower() for message in messages)
+    assert any(str(foreign_path) in message and "output root" in message for message in messages)
     assert execution.latest_persisted_run(tmp_path / "missing") is None
     empty_runs = tmp_path / "empty/.apb_studio/runs"
     empty_runs.mkdir(parents=True)

@@ -525,6 +525,7 @@ def test_discovery_treats_missing_parameter_parser_as_unsupported(
         parse_called = True
 
     monkeypatch.setattr(capabilities, "_has_packaged_rule_document", lambda _name: True)
+    monkeypatch.setattr(capabilities.parameter_registry, "parser_slug", lambda _name: None)
     monkeypatch.setattr(capabilities.parameter_registry, "parse_params", unexpected_parse)
 
     result = capabilities.discover_capabilities(

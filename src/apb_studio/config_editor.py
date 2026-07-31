@@ -42,10 +42,7 @@ def catalog_rows() -> list[dict[str, Any]]:
     for path in iter_packaged_documents():
         source = path.read_text(encoding="utf-8")
         report = validate_source(path, source)
-        try:
-            raw = parse_rule_source(source, path=path)
-        except Exception:  # noqa: BLE001 - invalid documents remain visible in catalog
-            raw = {}
+        raw = parse_rule_source(source, path=path) if report["valid"] else {}
         rows.append(
             {
                 "vendor": document_vendor(path),
@@ -95,7 +92,7 @@ def validate_source(
         raw = parse_rule_source(source, path=resolved)
         document = validate_rule_source(raw, path=resolved)
         affected = list(document.levels)
-    except Exception as exc:  # noqa: BLE001 - all config errors are rendered in the UI
+    except ValueError as exc:
         return {"valid": False, "issues": _issues_from_exception(exc), "affected": []}
     return {"valid": True, "issues": [], "affected": affected}
 
@@ -121,7 +118,7 @@ def validate_section(
         )
         raw = parse_rule_source(candidate, path=resolved)
         validate_rule_source(raw, path=resolved)
-    except Exception as exc:  # noqa: BLE001 - all config errors are rendered in the UI
+    except ValueError as exc:
         return {
             "valid": False,
             "issues": _issues_from_exception(exc),
@@ -297,6 +294,5 @@ def _atomic_write(path: Path, text: str) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-    except Exception:
+    finally:
         temporary.unlink(missing_ok=True)
-        raise

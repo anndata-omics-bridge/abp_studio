@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from anndata_proteomics.converters import pipeline as conversion_pipeline
 from anndata_proteomics.proteobench.config import load_module_settings
+from loguru import logger
 
 from apb_studio import capabilities, provenance, run_history
 from apb_studio.disk import atomic_write_text
@@ -59,6 +60,19 @@ class PersistedRun:
     operation: run_history.OperationRecord | None
 
 
+@dataclass(frozen=True, slots=True)
+class PipelineLaunchOptions:
+    """Optional Snakemake launch settings kept separate from required paths."""
+
+    targets: tuple[Path, ...] | None = None
+    cores: int = 1
+    snakemake_exe: str | None = None
+    cwd: Path | str | None = None
+
+
+DEFAULT_PIPELINE_LAUNCH_OPTIONS = PipelineLaunchOptions()
+
+
 class _JobStarter(Protocol):
     def __call__(
         self,
@@ -92,7 +106,7 @@ def load_overview(
             )
         targets = list(snapshot.targets)
         return targets, coverage(targets), snapshot, None
-    except Exception as exc:  # noqa: BLE001 - callback boundary must remain readable
+    except (KeyError, OSError, RuntimeError, UnicodeDecodeError, ValueError) as exc:
         return (
             [],
             [],
@@ -141,7 +155,7 @@ def resolve_current_run(
                 # Scoring needs a readable module TOML; its declared level does not restrict which
                 # branches are scored — every annotated branch enters the ProteoBench stage.
                 load_module_settings(annotation_path)
-            except Exception as error:  # noqa: BLE001 - frozen as a resource diagnostic
+            except (OSError, ValueError) as error:
                 module_settings_error = (
                     f"Invalid ProteoBench module settings {annotation_path}: "
                     f"{type(error).__name__}: {error}"
@@ -387,15 +401,11 @@ def snakemake_argv(
     return argv
 
 
-def run_pipeline(  # noqa: PLR0913 - stable subprocess injection API
+def run_pipeline(
     snakefile: Path | str,
     run_path: Path | str,
     log_file: Path | str,
-    *,
-    targets: list[Path] | None = None,
-    cores: int = 1,
-    snakemake_exe: str | None = None,
-    cwd: Path | str | None = None,
+    options: PipelineLaunchOptions = DEFAULT_PIPELINE_LAUNCH_OPTIONS,
     start: _JobStarter = start_job,
 ) -> Job:
     """Launch Snakemake over `targets` as a background job; returns the Job (poll via inspect_job).
@@ -404,18 +414,18 @@ def run_pipeline(  # noqa: PLR0913 - stable subprocess injection API
     otherwise emit no target args and fall through to Snakemake's default goal — silently building
     the whole corpus when the caller meant "nothing is selected".
     """
-    if targets is not None and len(targets) == 0:
+    if options.targets is not None and not options.targets:
         raise ValueError(
             "no targets selected — refusing to launch (empty would build the whole corpus)"
         )
     argv = snakemake_argv(
         snakefile,
         run_path,
-        targets=targets,
-        cores=cores,
-        snakemake_exe=snakemake_exe,
+        targets=list(options.targets) if options.targets is not None else None,
+        cores=options.cores,
+        snakemake_exe=options.snakemake_exe,
     )
-    return start(argv, log_file, cwd=cwd)
+    return start(argv, log_file, cwd=options.cwd)
 
 
 def run_snapshot_path(snapshot: RunSnapshot) -> Path:
@@ -458,12 +468,28 @@ def latest_persisted_run(output_root: Path | str) -> PersistedRun | None:
         try:
             snapshot = load_run_snapshot(path)
             if snapshot.output_root.expanduser().resolve() != root:
+                logger.warning(
+                    "Ignoring persisted run snapshot {}: output root {} does not match {}",
+                    path,
+                    snapshot.output_root,
+                    root,
+                )
                 continue
             operation = run_history.reconcile_operation(path)
             log_path = path.parent / "snakemake.log"
             if operation is None and not log_path.is_file():
+                logger.debug(
+                    "Ignoring persisted run snapshot {}: no operation state or Snakemake log",
+                    path,
+                )
                 continue
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Ignoring invalid persisted run snapshot {}: {}: {}",
+                path,
+                type(exc).__name__,
+                exc,
+            )
             continue
         return PersistedRun(
             snapshot=snapshot,
@@ -516,19 +542,23 @@ def _launch_corpus_operation(
     job_id = uuid.uuid4().hex
     run_history.start_operation(path, operation)
     targets = [target.output for target in selected] if operation == "run" else [Path("clean")]
+    launched = False
     try:
         job = run_pipeline(
             SNAKEFILE,
             path,
             corpus_log_path(snapshot),
-            targets=targets,
-            cores=cores,
-            cwd=SNAKEFILE.parent,
+            options=PipelineLaunchOptions(
+                targets=tuple(targets),
+                cores=cores,
+                cwd=SNAKEFILE.parent,
+            ),
         )
         run_history.set_operation_pid(path, job.process.pid)
-    except Exception:
-        run_history.mark_operation(path, "failed")
-        raise
+        launched = True
+    finally:
+        if not launched:
+            run_history.mark_operation(path, "failed")
     _JOBS[job_id] = job
     _RUNS[job_id] = path
     return job_id
@@ -612,8 +642,7 @@ def clean_targets(targets: list[Target], *, input_root: Path | str) -> list[Path
             else:
                 target.output.unlink()
             deleted.append(target.output)
-        # Drop the per-rule log too, else a cleaned dataset (artifact gone, log lingering) would be
-        # mis-flagged as "failed" by pipeline.problems. Missing → pending, as intended.
+        # Clean the rule's managed diagnostics together with its artifact.
         log = Path(f"{target.output}.log")
         if log.exists():
             log.unlink()

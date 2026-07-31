@@ -6,6 +6,7 @@ import json
 import os
 from collections import Counter
 from collections.abc import Mapping
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -145,7 +146,7 @@ def _load_dashboard_rows(
             return [], None, "Corpus Runner could not resolve the fixture inventory."
         rows = pipeline.branch_rows(snapshot, targets)
         return [dict(row, _row_id=_row_id(row)) for row in rows], snapshot, None
-    except Exception as exc:  # noqa: BLE001 - callback boundary must remain user-facing
+    except ValueError as exc:
         return (
             [],
             snapshot,
@@ -322,18 +323,38 @@ def _summary_metric(label: str, value: str) -> html.Div:
 
 
 def _fasta_overview(summary: Mapping[str, Any]) -> html.Div | None:
-    """Render APB-owned FASTA counts prominently for each applicable level."""
+    """Render stored APB FASTA provenance prominently for each applicable level."""
     cards: list[html.Div] = []
     for level, payload in _summary_targets(summary):
-        fasta = payload.get("fasta")
-        if not isinstance(fasta, Mapping):
+        annotations = payload.get("annotations")
+        if not isinstance(annotations, Mapping):
             continue
-        feature_count = _summary_count(fasta.get("feature_count"))
+        entries = annotations.get("var")
+        if not isinstance(entries, list):
+            continue
+        fasta = next(
+            (
+                entry
+                for entry in reversed(entries)
+                if isinstance(entry, Mapping)
+                and entry.get("source") in {"fasta", "fasta_validation"}
+            ),
+            None,
+        )
+        if fasta is None:
+            continue
+        quantification = payload.get("quantification")
+        quantified_features = (
+            _summary_count(quantification.get("n_features"))
+            if isinstance(quantification, Mapping)
+            else None
+        )
+        feature_count = _summary_count(fasta.get("n_features")) or quantified_features
         if feature_count is None:
             continue
 
         metrics = [_summary_metric("Features checked", f"{feature_count:,}")]
-        matched = _summary_count(fasta.get("matched_feature_count"))
+        matched = _summary_count(fasta.get("n_matched_features"))
         if matched is not None:
             metrics.append(
                 _summary_metric(
@@ -341,15 +362,7 @@ def _fasta_overview(summary: Mapping[str, Any]) -> html.Div | None:
                     f"{matched:,} / {feature_count:,}",
                 )
             )
-        proteotypic = _summary_count(fasta.get("proteotypic_feature_count"))
-        if proteotypic is not None:
-            metrics.append(
-                _summary_metric(
-                    "Proteotypic (one protein)",
-                    f"{proteotypic:,} / {feature_count:,}",
-                )
-            )
-        annotated = _summary_count(fasta.get("annotated_feature_count"))
+        annotated = _summary_count(fasta.get("n_var_matched"))
         if annotated is not None:
             metrics.append(
                 _summary_metric(
@@ -407,8 +420,7 @@ def _artifact_detail(
         )
     try:
         summary = describe_path(artifact)
-        rendered = json.dumps(summary, indent=2, sort_keys=True)
-    except Exception as exc:  # noqa: BLE001 - a corrupt artifact must not crash Dash
+    except (OSError, ValueError) as exc:
         return [
             html.H2(
                 heading,
@@ -425,6 +437,7 @@ def _artifact_detail(
                 style={"color": "#b42318"},
             ),
         ]
+    rendered = json.dumps(summary, indent=2, sort_keys=True)
     children: list[Any] = [
         html.H2(
             heading,
@@ -635,7 +648,245 @@ def _live_log(
     return "No corpus run log yet.", False, "Corpus not running"
 
 
-def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition root
+def _refresh_corpus(
+    _reload_clicks: int | None,
+    _run_clicks: int | None,
+    _tick: int,
+    _clear_clicks: int | None,
+    output_root: str,
+    job_id: str | None,
+    grid_revision: int | None,
+    *,
+    registry: list[dict[str, Any]],
+    settings_path: Path | None,
+) -> tuple[
+    list[dict[str, Any]],
+    str,
+    str,
+    str,
+    bool,
+    bool,
+    bool,
+    str,
+    str | None,
+    str,
+    int,
+]:
+    """Launch when requested, then refresh rows and the live global log."""
+    launch_error = ""
+    job_id = execution.active_corpus_job_id() or job_id
+    if ctx.triggered_id in {
+        "reload",
+        "run-corpus",
+        "confirm-clear-corpus",
+    }:
+        try:
+            settings.update_settings(
+                output_root=output_root,
+                path=settings_path,
+            )
+            if ctx.triggered_id == "run-corpus":
+                job_id = execution.launch_corpus(
+                    cores=3,
+                    settings_path=settings_path,
+                )
+            elif ctx.triggered_id == "confirm-clear-corpus":
+                job_id = execution.clear_corpus(
+                    settings_path=settings_path,
+                )
+        except (OSError, RuntimeError, ValueError) as exc:
+            action = {
+                "run-corpus": "launch corpus run",
+                "confirm-clear-corpus": "launch corpus clean",
+            }.get(str(ctx.triggered_id), "save settings")
+            launch_error = f"Could not {action}: {exc}"
+
+    rows, snapshot, load_error = _load_dashboard_rows(
+        job_id,
+        settings_path=settings_path,
+    )
+    log_text, running, status_label = _live_log(
+        job_id,
+        settings_path=settings_path,
+    )
+    active_settings = settings.load_settings(settings_path)
+    fixture_count = len(snapshot.fixtures) if snapshot is not None else 0
+    source_label = (
+        f"Fixtures: {active_settings.test_data_root}"
+        f" · {fixture_count} complete · {len(rows)} branches"
+    )
+    errors = "\n\n".join(error for error in (load_error, launch_error) if error)
+    operation_disabled = running or load_error is not None
+    return (
+        rows,
+        errors,
+        log_text,
+        _corpus_summary(rows, registry),
+        operation_disabled,
+        operation_disabled,
+        not running,
+        status_label,
+        job_id,
+        source_label,
+        (grid_revision or 0) + 1,
+    )
+
+
+def _select_branch(
+    cell: dict[str, Any] | None,
+    job_id: str | None,
+    *,
+    registry: list[dict[str, Any]],
+    settings_path: Path | None,
+) -> tuple[object, object]:
+    """Select one authoritative branch and activate the clicked stage tab."""
+    rows, _snapshot, error = _load_dashboard_rows(
+        job_id,
+        settings_path=settings_path,
+    )
+    if error is not None:
+        return no_update, no_update
+    selection = _selection_from_click(cell, registry, rows)
+    if selection is None:
+        return no_update, no_update
+    return selection, selection["stage"]
+
+
+def _show_stage_detail(
+    selected_row: dict[str, str] | None,
+    active_stage: str,
+    _grid_revision: int,
+    job_id: str | None,
+    *,
+    registry: list[dict[str, Any]],
+    settings_path: Path | None,
+) -> tuple[object, object]:
+    """Show the selected branch's active artifact tab and refresh it while running."""
+    if selected_row is None:
+        return no_update, no_update
+    selection = {**selected_row, "stage": active_stage}
+    rows, _snapshot, error = _load_dashboard_rows(
+        job_id,
+        settings_path=settings_path,
+    )
+    if error is not None:
+        return error, True
+    detail = _find_stage_detail(rows, selection)
+    if detail is None:
+        return (
+            "The selected row is no longer available. Select a row again.",
+            True,
+        )
+    log_path = _downloadable_log(rows, selection)
+    return (
+        _render_stage_detail(detail, selection, registry),
+        log_path is None,
+    )
+
+
+def _show_fixture_detail(
+    selected_row: dict[str, str] | None,
+    active_tab: str,
+    _grid_revision: int,
+    job_id: str | None,
+    *,
+    settings_path: Path | None,
+) -> str:
+    """Show Fixture Manager source details for the selected corpus fixture."""
+    if selected_row is None:
+        return "Select a row."
+    _rows, snapshot, error = _load_dashboard_rows(
+        job_id,
+        settings_path=settings_path,
+    )
+    if error is not None:
+        return error
+    return _fixture_detail_text(snapshot, selected_row, active_tab)
+
+
+def _download_selected_log(
+    _clicks: int,
+    selected_row: dict[str, str] | None,
+    active_stage: str,
+    job_id: str | None,
+    *,
+    settings_path: Path | None,
+) -> object:
+    """Download only a currently known Target log resolved on the server."""
+    selection = None if selected_row is None else {**selected_row, "stage": active_stage}
+    rows, _snapshot, error = _load_dashboard_rows(
+        job_id,
+        settings_path=settings_path,
+    )
+    if error is not None:
+        return no_update
+    log_path = _downloadable_log(rows, selection)
+    if log_path is None:
+        return no_update
+    return dcc.send_file(str(log_path), filename=log_path.name)
+
+
+def _register_dashboard_callbacks(
+    app: Dash,
+    registry: list[dict[str, Any]],
+    settings_path: Path | None,
+) -> None:
+    """Register dashboard callbacks with their immutable app context."""
+    app.callback(
+        Output("corpus-grid", "rowData"),
+        Output("error", "children"),
+        Output("global-log", "children"),
+        Output("corpus-summary", "children"),
+        Output("run-corpus", "disabled"),
+        Output("clear-corpus", "disabled"),
+        Output("poll-corpus", "disabled"),
+        Output("run-status", "children"),
+        Output("active-job-id", "data"),
+        Output("source-info", "children"),
+        Output("grid-revision", "data"),
+        Input("reload", "n_clicks"),
+        Input("run-corpus", "n_clicks"),
+        Input("poll-corpus", "n_intervals"),
+        Input("confirm-clear-corpus", "submit_n_clicks"),
+        State("output-root", "value"),
+        State("active-job-id", "data"),
+        State("grid-revision", "data"),
+    )(partial(_refresh_corpus, registry=registry, settings_path=settings_path))
+    app.callback(
+        Output("selected-row", "data"),
+        Output("artifact-stage-tabs", "value"),
+        Input("corpus-grid", "cellClicked"),
+        State("active-job-id", "data"),
+        prevent_initial_call=True,
+    )(partial(_select_branch, registry=registry, settings_path=settings_path))
+    app.callback(
+        Output("stage-detail", "children"),
+        Output("download-log", "disabled"),
+        Input("selected-row", "data"),
+        Input("artifact-stage-tabs", "value"),
+        Input("grid-revision", "data"),
+        State("active-job-id", "data"),
+        prevent_initial_call=True,
+    )(partial(_show_stage_detail, registry=registry, settings_path=settings_path))
+    app.callback(
+        Output("fixture-detail", "children"),
+        Input("selected-row", "data"),
+        Input("fixture-detail-tabs", "value"),
+        Input("grid-revision", "data"),
+        State("active-job-id", "data"),
+        prevent_initial_call=True,
+    )(partial(_show_fixture_detail, settings_path=settings_path))
+    app.callback(
+        Output("log-download", "data"),
+        Input("download-log", "n_clicks"),
+        State("selected-row", "data"),
+        State("artifact-stage-tabs", "value"),
+        State("active-job-id", "data"),
+        prevent_initial_call=True,
+    )(partial(_download_selected_log, settings_path=settings_path))
+
+
+def create_app(
     *,
     settings_path: Path | None = None,
 ) -> Dash:
@@ -901,218 +1152,7 @@ def create_app(  # noqa: C901, PLR0915 - Dash layout and callback composition ro
         },
     )
 
-    @app.callback(
-        Output("corpus-grid", "rowData"),
-        Output("error", "children"),
-        Output("global-log", "children"),
-        Output("corpus-summary", "children"),
-        Output("run-corpus", "disabled"),
-        Output("clear-corpus", "disabled"),
-        Output("poll-corpus", "disabled"),
-        Output("run-status", "children"),
-        Output("active-job-id", "data"),
-        Output("source-info", "children"),
-        Output("grid-revision", "data"),
-        Input("reload", "n_clicks"),
-        Input("run-corpus", "n_clicks"),
-        Input("poll-corpus", "n_intervals"),
-        Input("confirm-clear-corpus", "submit_n_clicks"),
-        State("output-root", "value"),
-        State("active-job-id", "data"),
-        State("grid-revision", "data"),
-    )
-    def _refresh_corpus(
-        _reload_clicks: int | None,
-        _run_clicks: int | None,
-        _tick: int,
-        _clear_clicks: int | None,
-        output_root: str,
-        job_id: str | None,
-        grid_revision: int | None,
-    ) -> tuple[
-        list[dict[str, Any]],
-        str,
-        str,
-        str,
-        bool,
-        bool,
-        bool,
-        str,
-        str | None,
-        str,
-        int,
-    ]:
-        """Launch when requested, then refresh rows and the live global log."""
-        launch_error = ""
-        job_id = execution.active_corpus_job_id() or job_id
-        if ctx.triggered_id in {
-            "reload",
-            "run-corpus",
-            "confirm-clear-corpus",
-        }:
-            try:
-                settings.update_settings(
-                    output_root=output_root,
-                    path=settings_path,
-                )
-                if ctx.triggered_id == "run-corpus":
-                    job_id = execution.launch_corpus(
-                        cores=3,
-                        settings_path=settings_path,
-                    )
-                elif ctx.triggered_id == "confirm-clear-corpus":
-                    job_id = execution.clear_corpus(
-                        settings_path=settings_path,
-                    )
-            except (OSError, RuntimeError, ValueError) as exc:
-                action = {
-                    "run-corpus": "launch corpus run",
-                    "confirm-clear-corpus": "launch corpus clean",
-                }.get(str(ctx.triggered_id), "save settings")
-                launch_error = f"Could not {action}: {exc}"
-
-        rows, snapshot, load_error = _load_dashboard_rows(
-            job_id,
-            settings_path=settings_path,
-        )
-        log_text, running, status_label = _live_log(
-            job_id,
-            settings_path=settings_path,
-        )
-        active_settings = settings.load_settings(settings_path)
-        fixture_count = len(snapshot.fixtures) if snapshot is not None else 0
-        source_label = (
-            f"Fixtures: {active_settings.test_data_root}"
-            f" · {fixture_count} complete · {len(rows)} branches"
-        )
-        errors = "\n\n".join(error for error in (load_error, launch_error) if error)
-        operation_disabled = running or load_error is not None
-        return (
-            rows,
-            errors,
-            log_text,
-            _corpus_summary(rows, registry),
-            operation_disabled,
-            operation_disabled,
-            not running,
-            status_label,
-            job_id,
-            source_label,
-            (grid_revision or 0) + 1,
-        )
-
-    @app.callback(
-        Output("selected-row", "data"),
-        Output("artifact-stage-tabs", "value"),
-        Input("corpus-grid", "cellClicked"),
-        State("active-job-id", "data"),
-        prevent_initial_call=True,
-    )
-    def _select_branch(
-        cell: dict[str, Any] | None,
-        job_id: str | None,
-    ) -> tuple[object, object]:
-        """Select one authoritative branch and activate the clicked stage tab."""
-        rows, _snapshot, error = _load_dashboard_rows(
-            job_id,
-            settings_path=settings_path,
-        )
-        if error is not None:
-            return no_update, no_update
-        selection = _selection_from_click(cell, registry, rows)
-        if selection is None:
-            return no_update, no_update
-        return selection, selection["stage"]
-
-    @app.callback(
-        Output("stage-detail", "children"),
-        Output("download-log", "disabled"),
-        Input("selected-row", "data"),
-        Input("artifact-stage-tabs", "value"),
-        Input("grid-revision", "data"),
-        State("active-job-id", "data"),
-        prevent_initial_call=True,
-    )
-    def _show_stage_detail(
-        selected_row: dict[str, str] | None,
-        active_stage: str,
-        _grid_revision: int,
-        job_id: str | None,
-    ) -> tuple[object, object]:
-        """Show the selected branch's active artifact tab and refresh it while running."""
-        if selected_row is None:
-            return no_update, no_update
-        selection = {**selected_row, "stage": active_stage}
-        rows, _snapshot, error = _load_dashboard_rows(
-            job_id,
-            settings_path=settings_path,
-        )
-        if error is not None:
-            return error, True
-        detail = _find_stage_detail(rows, selection)
-        if detail is None:
-            return (
-                "The selected row is no longer available. Select a row again.",
-                True,
-            )
-        log_path = _downloadable_log(rows, selection)
-        return (
-            _render_stage_detail(detail, selection, registry),
-            log_path is None,
-        )
-
-    @app.callback(
-        Output("fixture-detail", "children"),
-        Input("selected-row", "data"),
-        Input("fixture-detail-tabs", "value"),
-        Input("grid-revision", "data"),
-        State("active-job-id", "data"),
-        prevent_initial_call=True,
-    )
-    def _show_fixture_detail(
-        selected_row: dict[str, str] | None,
-        active_tab: str,
-        _grid_revision: int,
-        job_id: str | None,
-    ) -> str:
-        """Show Fixture Manager source details for the selected corpus fixture."""
-        if selected_row is None:
-            return "Select a row."
-        _rows, snapshot, error = _load_dashboard_rows(
-            job_id,
-            settings_path=settings_path,
-        )
-        if error is not None:
-            return error
-        return _fixture_detail_text(snapshot, selected_row, active_tab)
-
-    @app.callback(
-        Output("log-download", "data"),
-        Input("download-log", "n_clicks"),
-        State("selected-row", "data"),
-        State("artifact-stage-tabs", "value"),
-        State("active-job-id", "data"),
-        prevent_initial_call=True,
-    )
-    def _download_selected_log(
-        _clicks: int,
-        selected_row: dict[str, str] | None,
-        active_stage: str,
-        job_id: str | None,
-    ) -> object:
-        """Download only a currently known Target log resolved on the server."""
-        selection = None if selected_row is None else {**selected_row, "stage": active_stage}
-        rows, _snapshot, error = _load_dashboard_rows(
-            job_id,
-            settings_path=settings_path,
-        )
-        if error is not None:
-            return no_update
-        log_path = _downloadable_log(rows, selection)
-        if log_path is None:
-            return no_update
-        return dcc.send_file(str(log_path), filename=log_path.name)
-
+    _register_dashboard_callbacks(app, registry, settings_path)
     return app
 
 

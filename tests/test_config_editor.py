@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from anndata_proteomics.rules.registry import find_rule
+from anndata_proteomics.rules.registry import find_rule, iter_packaged_documents
 
 from apb_studio import config_editor
 from apb_studio.config_panel import configuration_panel
@@ -24,7 +24,7 @@ def _copy_rule_document(tmp_path: Path) -> Path:
 
 def test_catalog_lists_one_row_per_software_version_document() -> None:
     rows = config_editor.catalog_rows()
-    assert len(rows) == 9
+    assert len(rows) == len(list(iter_packaged_documents()))
     assert all(row["valid"] for row in rows)
     assert sum(row["vendor"] == "diann" for row in rows) == 2
     assert next(row for row in rows if row["vendor"] == "spectronaut")["levels"] == [

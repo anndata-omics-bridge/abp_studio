@@ -14,8 +14,8 @@
 #                   omits it — pipeline.convert_artifact is authoritative for its name (decision 16).
 #   command         the `apb` CLI template the Snakemake `shell:` runs (and the GUI previews)
 #   depends_on      upstream stage names (a list); [] marks the root, which reads the raw dataset.
-#                   pipeline.expand_targets derives each stage's INPUT edge from this (decision 5) —
-#                   no hardcoded edges — and reconnects to the nearest emitted upstream (§13.1).
+#                   pipeline.expand_resolved_targets derives each stage's INPUT edge from this —
+#                   no hardcoded edges — and reconnects to the nearest emitted upstream.
 #   resource        optional fixture resource consumed by this stage.
 #   container_agnostic  operates on whatever object it's given (a level .h5ad or the .h5mu)
 #

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from apb_studio import capabilities, pipeline
+from apb_studio import pipeline
 
 
 def _target(
@@ -82,35 +81,18 @@ def test_snapshot_validation_rejects_bad_shapes_and_paths(tmp_path: Path) -> Non
         pipeline.load_run_snapshot(path)
 
 
-def test_registry_helpers_and_nearest_upstream(tmp_path: Path) -> None:
+def test_nearest_upstream_follows_registry_dependencies(tmp_path: Path) -> None:
     registry: list[dict[str, Any]] = [
         {"name": "convert", "basket": "converted", "depends_on": []},
         {"name": "optional", "depends_on": ["convert"], "optional": True},
         {"name": "finish", "depends_on": ["optional"]},
     ]
-    assert pipeline.basket_names(registry) == [
-        "inputs",
-        "converted",
-        "optional",
-        "finish",
-    ]
-    assert pipeline.stage_by_basket(registry)["converted"] == "convert"
-    assert pipeline.descendants(registry, "convert") == {"optional", "finish"}
-
     emitted = {"convert": tmp_path / "converted.h5ad"}
     by_name: dict[str, dict[str, Any]] = {cast(str, item["name"]): item for item in registry}
     assert pipeline._nearest_upstream(["optional"], emitted, by_name) == emitted["convert"]
     # A chain with no emitted stage means a malformed registry: every real chain reaches the root.
     with pytest.raises(ValueError, match="No emitted upstream stage"):
         pipeline._nearest_upstream(["missing"], emitted, by_name)
-
-    diamond: list[dict[str, Any]] = [
-        {"name": "root"},
-        {"name": "left", "depends_on": ["root"]},
-        {"name": "right", "depends_on": ["root"]},
-        {"name": "finish", "depends_on": ["left", "right"]},
-    ]
-    assert pipeline.descendants(diamond, "root") == {"left", "right", "finish"}
 
 
 def test_target_blocker_covers_existing_cycles_and_nested_failures(tmp_path: Path) -> None:
@@ -132,7 +114,7 @@ def test_target_blocker_covers_existing_cycles_and_nested_failures(tmp_path: Pat
     assert pipeline.target_blocker(first, [first, second]) is None
 
 
-def test_log_failure_and_provenance_parsers(
+def test_log_and_failure_marker_parsers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -168,17 +150,6 @@ def test_log_failure_and_provenance_parsers(
     assert pipeline._failed_rule_error(output) == "Rule failed"
     monkeypatch.setattr(Path, "read_text", original_read)
 
-    sidecar = Path(f"{output}.provenance.json")
-    assert pipeline._provenance_warnings(sidecar) == []
-    sidecar.write_text("not json", encoding="utf-8")
-    assert pipeline._provenance_warnings(sidecar) == []
-    sidecar.write_text("[]", encoding="utf-8")
-    assert pipeline._provenance_warnings(sidecar) == []
-    sidecar.write_text("{}", encoding="utf-8")
-    assert pipeline._provenance_warnings(sidecar) == []
-    sidecar.write_text('{"warning": "degraded"}', encoding="utf-8")
-    assert pipeline._provenance_warnings(sidecar) == ["artifact: degraded"]
-
 
 def test_stage_timing_parses_and_formats_snakemake_benchmarks(tmp_path: Path) -> None:
     output = tmp_path / "artifact.h5ad"
@@ -205,6 +176,19 @@ def test_stage_timing_parses_and_formats_snakemake_benchmarks(tmp_path: Path) ->
 
 
 def test_stage_detail_includes_persisted_runtime(tmp_path: Path) -> None:
+    assert pipeline._stage_detail(None, targets=[], missing_reason="not emitted") == {
+        "state": "unsupported",
+        "display": "UNSUPPORTED",
+        "error": "not emitted",
+    }
+    assert pipeline._stage_detail(None, targets=[])["error"] == "Stage target unavailable"
+
+    missing_input = tmp_path / "missing.tsv"
+    missing = _target(tmp_path, "missing-input.h5ad", inputs=[missing_input])
+    assert pipeline._stage_detail(missing, targets=[missing])["error"] == (
+        f"Missing prerequisite: {missing_input}"
+    )
+
     target = _target(tmp_path, "artifact.h5ad")
     target.output.touch()
     pipeline.benchmark_path(target.output).write_text(
@@ -223,29 +207,7 @@ def test_stage_detail_includes_persisted_runtime(tmp_path: Path) -> None:
     assert failed["display"] == "FAILED"
 
 
-def test_problem_aggregation_and_terminal_blockers(tmp_path: Path) -> None:
-    target = _target(tmp_path, "artifact.h5ad")
-    Path(f"{target.output}.failed").write_text("2", encoding="utf-8")
-    corpus = {
-        "input_root": str(tmp_path),
-        "modules": {
-            "module": {
-                "annotation": "missing.toml",
-                "fasta": "missing.fasta",
-                "datasets": [
-                    {
-                        "name": "dataset",
-                        "input": "missing.tsv",
-                        "params": "missing.txt",
-                    }
-                ],
-            }
-        },
-    }
-    messages = pipeline.problems(corpus, [target])[("module", "dataset")]
-    assert len(messages) == 5
-    assert any("convert failed" in message for message in messages)
-
+def test_terminal_blockers_follow_upstream_state(tmp_path: Path) -> None:
     existing_input = tmp_path / "input.tsv"
     existing_input.touch()
     upstream = _target(tmp_path, "upstream.h5ad", inputs=[existing_input])
@@ -280,49 +242,9 @@ def test_problem_aggregation_and_terminal_blockers(tmp_path: Path) -> None:
     assert pipeline._terminal_blocker(first, [first, second]) is None
 
 
-def test_baskets_capability_fallback_and_dataset_selection(tmp_path: Path) -> None:
-    registry = [
-        {"name": "convert", "basket": "converted", "depends_on": []},
-        {"name": "annotate", "basket": "annotated", "depends_on": ["convert"]},
-    ]
-    convert = _target(tmp_path, "convert.h5ad")
-    annotate = _target(
-        tmp_path,
-        "annotate.h5ad",
-        stage="annotate",
-        inputs=[convert.output],
-    )
-    baskets = pipeline.baskets([convert, annotate], registry)
-    assert baskets["inputs"][0]["next_stage"] == "convert"
-    convert.output.touch()
-    baskets = pipeline.baskets(
-        [convert, annotate],
-        registry,
-        {("module", "dataset"): ["warning"]},
-    )
-    assert baskets["converted"][0]["next_stage"] == "annotate"
-    assert baskets["converted"][0]["problem"] == "warning"
-    annotate.output.touch()
-    assert pipeline.baskets([convert, annotate], registry)["annotated"][0]["runnable"] is False
-
-    without_status = cast(
-        capabilities.CapabilityDiscovery,
-        SimpleNamespace(branches=("ion",)),
-    )
-    assert pipeline._capability_status(without_status) == "supported"
-    without_branches = cast(
-        capabilities.CapabilityDiscovery,
-        SimpleNamespace(branches=()),
-    )
-    assert pipeline._capability_status(without_branches) == "unsupported"
-
-
-@pytest.mark.parametrize("optional", [False, True])
-def test_legacy_expansion_handles_a_stage_skipped_for_a_missing_resource(
+def test_resolved_expansion_keeps_full_topology_for_a_missing_resource(
     tmp_path: Path,
-    optional: bool,
 ) -> None:
-    """A required skipped stage takes its descendants with it; an optional one is transparent."""
     registry: list[dict[str, Any]] = [
         {
             "name": "root",
@@ -333,7 +255,6 @@ def test_legacy_expansion_handles_a_stage_skipped_for_a_missing_resource(
             "depends_on": ["root"],
             "artifact": "middled",
             "resource": "annotation",
-            "optional": optional,
             "command": "apb annotate {input} {annotation} --output {output}",
         },
         {
@@ -343,33 +264,6 @@ def test_legacy_expansion_handles_a_stage_skipped_for_a_missing_resource(
             "command": "apb finish {input} --output {output}",
         },
     ]
-    corpus = {
-        "input_root": str(tmp_path),
-        "output_root": str(tmp_path / "out"),
-        "modules": {
-            # No `annotation` entry, so `middle` has no resource and is skipped.
-            "module": {
-                "datasets": [
-                    {
-                        "name": "dataset",
-                        "vendor": "diann",
-                        "input": "input.tsv",
-                        "params": "params.txt",
-                    }
-                ],
-            }
-        },
-    }
-
-    def discover(*_args: object) -> capabilities.CapabilityDiscovery:
-        return capabilities.CapabilityDiscovery(("ion",))
-
-    stages = [
-        target.stage for target in pipeline.expand_targets(registry, corpus, discover=discover)
-    ]
-    assert stages == ["root", "finish"] if optional else stages == ["root"]
-
-    # The resolved path emits every stage instead, and blocks only the one missing its resource.
     resolved = pipeline.expand_resolved_targets(registry, (_fixture(tmp_path),), tmp_path / "out")
     blocked = {target.stage: target.blocked_reason for target in resolved}
     assert blocked == {
@@ -377,3 +271,5 @@ def test_legacy_expansion_handles_a_stage_skipped_for_a_missing_resource(
         "middle": "Missing module resource: annotation",
         "finish": None,
     }
+    finish = next(target for target in resolved if target.stage == "finish")
+    assert pipeline.target_blocker(finish, resolved) == "Missing module resource: annotation"

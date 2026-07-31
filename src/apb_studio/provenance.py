@@ -12,37 +12,44 @@ started from the dashboard or the CLI.
 
 from __future__ import annotations
 
-import argparse
 import json
 import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
+
+from cyclopts import App
+from loguru import logger
 
 from apb_studio.pipeline import RunSnapshot, Target, load_run_snapshot
 
+app = App(
+    name="apb_studio.provenance",
+    help="Write the provenance sidecar for one artifact in a frozen APB Studio run.",
+    help_on_error=True,
+    result_action="return_value",
+)
+
 
 def apb_version(apb_exe: str | None = None) -> str | None:
-    """Best-effort apb version: installed package metadata, else ``apb --version``, else None."""
+    """Return installed APB metadata or the version reported by its executable."""
     try:
-        from importlib.metadata import PackageNotFoundError, version
-
-        try:
-            return version("anndata-proteomics")
-        except PackageNotFoundError:
-            pass
-    except Exception:  # noqa: BLE001 - metadata lookup is best-effort
+        return version("anndata-proteomics")
+    except PackageNotFoundError:
         pass
     exe = apb_exe or shutil.which("apb")
-    if exe:
-        try:
-            out = subprocess.run([exe, "--version"], capture_output=True, text=True, check=True)
-            return out.stdout.strip() or None
-        except (OSError, subprocess.CalledProcessError):
-            return None
-    return None
+    if exe is None:
+        return None
+    result = subprocess.run(
+        [exe, "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() or None if result.returncode == 0 else None
 
 
 def record(
@@ -50,16 +57,9 @@ def record(
     *,
     timestamp: str,
     version: str | None = None,
-    warning: str | None = None,
     run: RunSnapshot | None = None,
 ) -> dict[str, Any]:
-    """The provenance record for one Target (pure). The rendered command carries vendor/params.
-
-    ``warning`` carries a problem apb reported while still producing the artifact — e.g.
-    ``search_parameters_error`` when a param file could not be parsed (apb degrades rather than
-    crashing). apb_studio surfaces it per dataset (``pipeline.problems`` → the basket ``problem``
-    column) so a converted-but-degraded dataset is not shown as cleanly done.
-    """
+    """The provenance record for one Target (pure). The rendered command carries vendor/params."""
     rec: dict[str, Any] = {
         "stage": target.stage,
         "artifact": target.output.name,
@@ -68,8 +68,6 @@ def record(
         "apb_version": version,
         "timestamp": timestamp,
     }
-    if warning:
-        rec["warning"] = warning
     if run is not None:
         fixture = next(
             (
@@ -84,38 +82,6 @@ def record(
         if fixture is not None:
             rec["fixture_identity"] = list(fixture.identity)
     return rec
-
-
-def read_params_warning(output: Path) -> str | None:
-    """Read APB's search-parameter warning from AnnData or any MuData modality.
-
-    Returns a joined message, or None if absent, unreadable, or h5py is missing. Runs once per rule
-    at build time, never on a dashboard refresh.
-    """
-    try:
-        import h5py
-    except Exception:  # noqa: BLE001 - h5py optional; degrade to "no warning"
-        return None
-    try:
-        with h5py.File(output, "r") as f:
-            names: list[str] = []
-            f.visititems(
-                lambda n, o: (
-                    names.append(n)
-                    if n.endswith("anndata_proteomics/search_parameters_error")
-                    and isinstance(o, h5py.Dataset)
-                    else None
-                )
-            )
-            msgs = []
-            for n in names:
-                node = cast(h5py.Dataset, f[n])
-                v = node[()]
-                msgs.append(v.decode() if isinstance(v, (bytes, bytearray)) else str(v))
-        uniq = list(dict.fromkeys(m for m in msgs if m))
-        return "; ".join(uniq) or None
-    except Exception:  # noqa: BLE001 - a malformed/locked artifact must not break provenance
-        return None
 
 
 def _now() -> str:
@@ -152,12 +118,10 @@ def write_for_target(
     """Write the target's adjacent artifact-specific provenance and return its path."""
     path = sidecar_path(target.output)
     _preserve_corrupt_sidecar(path)
-    warning = read_params_warning(target.output) if target.output.exists() else None
     data = record(
         target,
         timestamp=timestamp or _now(),
         version=version,
-        warning=warning,
         run=run,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,37 +136,45 @@ def prune_for_target(target: Target) -> None:
         path.unlink()
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Write provenance for the target produced by the Snakefile rule."""
-    parser = argparse.ArgumentParser(prog="apb_studio.provenance")
-    parser.add_argument("--run", required=True, help="generated Corpus Runner JSON")
-    parser.add_argument("--output", required=True, help="the artifact path that was just produced")
-    args = parser.parse_args(argv)
+@app.default
+def write_provenance(
+    *,
+    run: Path,
+    output: Path,
+) -> int:
+    """Write provenance for an artifact.
 
-    run = load_run_snapshot(args.run)
-    target_path = str(Path(args.output))
+    Parameters
+    ----------
+    run
+        Generated Corpus Runner JSON.
+    output
+        Artifact path that the completed rule produced.
+    """
+    snapshot = load_run_snapshot(run)
+    target_path = str(output)
     target = next(
-        (t for t in run.targets if str(t.output) == target_path),
+        (item for item in snapshot.targets if str(item.output) == target_path),
         None,
     )
     if target is None:
-        print(
-            f"Refusing provenance for output outside this run: {target_path}",
-            file=sys.stderr,
-        )
+        logger.error(f"Refusing provenance for output outside this run: {target_path}")
         return 2
     if not target.output.is_file():
-        print(
-            f"Rule command completed without creating its artifact: {target.output}",
-            file=sys.stderr,
-        )
+        logger.error(f"Rule command completed without creating its artifact: {target.output}")
         return 1
     write_for_target(
         target,
-        version=run.apb_version or apb_version(),
-        run=run,
+        version=snapshot.apb_version or apb_version(),
+        run=snapshot,
     )
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the provenance command-line application."""
+    result = app(argv)
+    return int(result) if result is not None else 0
 
 
 if __name__ == "__main__":

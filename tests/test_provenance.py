@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from loguru import logger
+
 from apb_studio.pipeline import (
     RUN_SNAPSHOT_SCHEMA_VERSION,
     ResolvedFixture,
@@ -12,9 +14,9 @@ from apb_studio.pipeline import (
 )
 from apb_studio.provenance import (
     apb_version,
+    app,
     main,
     prune_for_target,
-    read_params_warning,
     record,
     sidecar_path,
     write_for_target,
@@ -127,9 +129,32 @@ def test_main_writes_sidecar_for_an_output(tmp_path: Path) -> None:
     assert data["fixture_identity"] == ["dda", "m", "abcdef123456"]
 
 
-def test_main_rejects_unknown_output(tmp_path: Path) -> None:
+def test_cli_preserves_run_and_output_options(tmp_path: Path) -> None:
     _snapshot, run_path = _run(tmp_path)
-    assert main(["--run", str(run_path), "--output", "/out/nope/mudata.h5mu"]) == 2
+
+    command, bound, ignored = app.parse_args(
+        ["--run", str(run_path), "--output", "/out/mudata.h5mu"],
+        exit_on_error=False,
+    )
+
+    assert command.__name__ == "write_provenance"
+    assert bound.arguments == {
+        "run": run_path,
+        "output": Path("/out/mudata.h5mu"),
+    }
+    assert ignored == {}
+
+
+def test_main_rejects_unknown_output_with_loguru_diagnostic(tmp_path: Path) -> None:
+    _snapshot, run_path = _run(tmp_path)
+    messages: list[str] = []
+    sink = logger.add(messages.append, format="{message}")
+    try:
+        assert main(["--run", str(run_path), "--output", "/out/nope/mudata.h5mu"]) == 2
+    finally:
+        logger.remove(sink)
+
+    assert any("Refusing provenance for output outside this run" in message for message in messages)
 
 
 def test_main_rejects_a_known_output_that_was_not_created(tmp_path: Path) -> None:
@@ -149,28 +174,3 @@ def test_main_rejects_a_known_output_that_was_not_created(tmp_path: Path) -> Non
 
 def test_apb_version_returns_str_or_none():
     assert apb_version() is None or isinstance(apb_version(), str)
-
-
-# --- warning capture: apb degraded (e.g. unparsable params) but still produced the artifact -------
-
-
-def test_record_includes_warning_only_when_present():
-    assert "warning" not in record(_t("/out"), timestamp="t")
-    rec = record(_t("/out"), timestamp="t", warning="ParamsError: not a DIA-NN file")
-    assert rec["warning"] == "ParamsError: not a DIA-NN file"
-
-
-def test_read_params_warning_from_artifact(tmp_path: Path) -> None:
-    import anndata as ad
-    import numpy as np
-
-    art = tmp_path / "mudata.h5mu"  # a plain AnnData written under any name (root uns)
-    adata = ad.AnnData(np.zeros((2, 2), dtype="float32"))
-    adata.uns["anndata_proteomics"] = {"search_parameters_error": "ParamsError: not a DIA-NN file"}
-    adata.write_h5ad(art)
-    assert read_params_warning(art) == "ParamsError: not a DIA-NN file"
-
-    clean = tmp_path / "clean.h5ad"
-    ad.AnnData(np.zeros((2, 2), dtype="float32")).write_h5ad(clean)
-    assert read_params_warning(clean) is None
-    assert read_params_warning(tmp_path / "does-not-exist.h5ad") is None
