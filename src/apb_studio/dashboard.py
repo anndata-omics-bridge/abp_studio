@@ -274,19 +274,17 @@ def _command_detail(detail: dict[str, str]) -> html.Div:
             "No APB CLI command was generated because this stage could not be resolved.",
             style={"color": "#667085", "margin": "0.35rem 0 0"},
         )
-    return html.Div(
-        [
-            html.H3(
-                "APB CLI command",
-                style={
-                    "fontSize": _TITLE_FONT_SIZE,
-                    "fontWeight": "700",
-                    "margin": "0.65rem 0 0",
-                },
-            ),
-            value,
-        ]
-    )
+    return html.Div([
+        html.H3(
+            "APB CLI command",
+            style={
+                "fontSize": _TITLE_FONT_SIZE,
+                "fontWeight": "700",
+                "margin": "0.65rem 0 0",
+            },
+        ),
+        value,
+    ])
 
 
 def _summary_targets(
@@ -452,18 +450,16 @@ def _artifact_detail(
     ]
     fasta_overview = _fasta_overview(summary) if selection["stage"] == "fasta" else None
     if fasta_overview is not None:
-        children.extend(
-            [
-                fasta_overview,
-                html.Details(
-                    [
-                        html.Summary("Full APB summary (JSON)"),
-                        html.Pre(rendered, style=_PRE_STYLE),
-                    ],
-                    style={"marginTop": "0.75rem"},
-                ),
-            ]
-        )
+        children.extend([
+            fasta_overview,
+            html.Details(
+                [
+                    html.Summary("Full APB summary (JSON)"),
+                    html.Pre(rendered, style=_PRE_STYLE),
+                ],
+                style={"marginTop": "0.75rem"},
+            ),
+        ])
     else:
         children.append(html.Pre(rendered, style=_PRE_STYLE))
     return children
@@ -682,7 +678,7 @@ def _refresh_corpus(
     }:
         try:
             settings.update_settings(
-                output_root=output_root,
+                output_root=Path(output_root),
                 path=settings_path,
             )
             if ctx.triggered_id == "run-corpus":

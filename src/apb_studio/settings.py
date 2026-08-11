@@ -38,11 +38,11 @@ class StudioSettings(BaseModel):
             raise ValueError(f"Unsupported settings schema version: {value}")
         return value
 
-    @field_validator("test_data_root", "output_root", mode="before")
+    @field_validator("test_data_root", "output_root")
     @classmethod
-    def validate_dedicated_root(cls, value: str | Path) -> Path:
+    def validate_dedicated_root(cls, value: Path) -> Path:
         """Resolve an absolute path while rejecting broad system roots."""
-        path = Path(value).expanduser()
+        path = value.expanduser()
         if not path.is_absolute():
             raise ValueError("Studio roots must be absolute paths.")
         resolved = path.resolve()
@@ -101,8 +101,8 @@ def _save_settings_unlocked(
 
 def update_settings(
     *,
-    test_data_root: str | Path | None = None,
-    output_root: str | Path | None = None,
+    test_data_root: Path | None = None,
+    output_root: Path | None = None,
     path: Path | None = None,
 ) -> StudioSettings:
     """Atomically save selected fields without resetting the other application."""

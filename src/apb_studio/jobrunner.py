@@ -100,14 +100,14 @@ def make_run_key(*parts: object) -> str:
 
 def start_job(
     command: Sequence[str],
-    log_file: Path | str,
+    log_file: Path,
     *,
-    cwd: Path | str | None = None,
+    cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
     popen: PopenFactory = _popen,
 ) -> Job:
     """Launch `command` in the background, streaming stdout+stderr to `log_file`."""
-    log_path = Path(log_file).expanduser().resolve()
+    log_path = log_file.expanduser().resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # Own process group/session so terminate_job can kill the whole tree (wrapper + children).
     command = tuple(str(part) for part in command)
@@ -142,9 +142,9 @@ def start_job(
     return Job(command=command, process=process, log_file=log_path)
 
 
-def read_text_tail(path: Path | str, max_log_chars: int = 40000) -> str:
+def read_text_tail(path: Path, max_log_chars: int = 40000) -> str:
     """Return the tail of a UTF-8 text file (with a truncation marker if clipped)."""
-    file_path = Path(path).expanduser()
+    file_path = path.expanduser()
     if not file_path.exists():
         return ""
     text = file_path.read_text(encoding="utf-8", errors="replace")

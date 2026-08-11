@@ -18,3 +18,6 @@ config/corpus.yaml
 /apb_outputs/
 *.h5ad
 *.h5mu
+
+# Carpet diagnostics output (make carpets)
+build/

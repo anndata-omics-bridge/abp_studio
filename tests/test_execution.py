@@ -126,7 +126,7 @@ def _supported_discovery(*_args: object) -> CapabilityDiscovery:
 
 
 def test_snakemake_argv_default_goal():
-    argv = snakemake_argv("Snakefile", "run.json", snakemake_exe="snakemake")
+    argv = snakemake_argv(Path("Snakefile"), Path("run.json"), snakemake_exe="snakemake")
     assert argv == [
         "snakemake",
         "-s",
@@ -141,13 +141,15 @@ def test_snakemake_argv_default_goal():
 
 def test_snakemake_argv_is_resilient_keep_going():
     # A corpus is many independent datasets; one failure must not abort the rest.
-    assert "--keep-going" in snakemake_argv("Snakefile", "run.json", snakemake_exe="snakemake")
+    assert "--keep-going" in snakemake_argv(
+        Path("Snakefile"), Path("run.json"), snakemake_exe="snakemake"
+    )
 
 
 def test_snakemake_argv_with_targets_and_dry_run():
     argv = snakemake_argv(
-        "Snakefile",
-        "run.json",
+        Path("Snakefile"),
+        Path("run.json"),
         targets=[Path("/out/x.h5mu")],
         dry_run=True,
         snakemake_exe="snakemake",
@@ -164,18 +166,18 @@ def test_run_pipeline_builds_job_via_injected_start():
 
     def fake_start(
         argv: Sequence[str],
-        log_file: Path | str,
+        log_file: Path,
         *,
-        cwd: Path | str | None = None,
+        cwd: Path | None = None,
     ) -> Job:
         calls["argv"] = argv
         calls["log_file"] = log_file
         return expected
 
     job = run_pipeline(
-        "Snakefile",
-        "run.json",
-        "/tmp/log",
+        Path("Snakefile"),
+        Path("run.json"),
+        Path("/tmp/log"),
         PipelineLaunchOptions(
             targets=(Path("/out/x.h5mu"),),
             snakemake_exe="snakemake",
@@ -184,16 +186,16 @@ def test_run_pipeline_builds_job_via_injected_start():
     )
     assert job is expected
     assert calls["argv"][0] == "snakemake" and "/out/x.h5mu" in calls["argv"]
-    assert calls["log_file"] == "/tmp/log"
+    assert calls["log_file"] == Path("/tmp/log")
 
 
 def test_run_pipeline_refuses_empty_targets():
     # An empty target list would fall through to Snakemake's default goal (the whole corpus).
     with pytest.raises(ValueError, match="nothing selected|whole corpus"):
         run_pipeline(
-            "Snakefile",
-            "run.json",
-            "/tmp/log",
+            Path("Snakefile"),
+            Path("run.json"),
+            Path("/tmp/log"),
             PipelineLaunchOptions(targets=()),
             start=lambda _command, _log_file, *, cwd=None: _fake_job(),
         )
@@ -204,17 +206,17 @@ def test_run_pipeline_none_targets_means_default_goal():
 
     def fake_start(
         command: Sequence[str],
-        _log_file: Path | str,
+        _log_file: Path,
         *,
-        cwd: Path | str | None = None,
+        cwd: Path | None = None,
     ) -> Job:
         calls["argv"] = list(command)
         return _fake_job(command)
 
     run_pipeline(
-        "Snakefile",
-        "run.json",
-        "/tmp/log",
+        Path("Snakefile"),
+        Path("run.json"),
+        Path("/tmp/log"),
         PipelineLaunchOptions(snakemake_exe="snakemake"),
         start=fake_start,
     )
@@ -310,7 +312,7 @@ def test_clean_targets_deletes_the_supplied_inventory(tmp_path: Path) -> None:
     for t in targets:
         t.output.parent.mkdir(parents=True, exist_ok=True)
         t.output.touch()
-    deleted = clean_targets(targets, input_root=str(tmp_path / "in"))
+    deleted = clean_targets(targets, input_root=tmp_path / "in")
     assert set(deleted) == {target.output for target in targets}
     assert not any(target.output.exists() for target in targets)
 
@@ -318,7 +320,7 @@ def test_clean_targets_deletes_the_supplied_inventory(tmp_path: Path) -> None:
 def test_clean_targets_refuses_input_root():
     bad = [Target("m", "d", "convert", Path("/in/r.tsv"), [], [])]
     with pytest.raises(CleanGuardError, match="input_root"):
-        clean_targets(bad, input_root="/in")
+        clean_targets(bad, input_root=Path("/in"))
 
 
 def test_clean_targets_removes_sidecar_log_and_failure_marker(tmp_path: Path) -> None:
@@ -331,7 +333,7 @@ def test_clean_targets_removes_sidecar_log_and_failure_marker(tmp_path: Path) ->
     Path(f"{conv.output}.log").write_text("boom")
     Path(f"{conv.output}.failed").write_text("exit 1\n")
     Path(f"{conv.output}.benchmark.tsv").write_text("s\n1.2\n")
-    clean_targets([conv], input_root=str(tmp_path / "in"))
+    clean_targets([conv], input_root=tmp_path / "in")
     assert not conv.output.exists()
     assert not Path(f"{conv.output}.log").exists()
     assert not Path(f"{conv.output}.failed").exists()
@@ -348,7 +350,7 @@ def test_clean_targets_prune_provenance(tmp_path: Path) -> None:
     provenance.write_for_target(conv, timestamp="t")
     sidecar = provenance.sidecar_path(conv.output)
     assert sidecar.exists()
-    clean_targets([conv], input_root=str(tmp_path / "in"))
+    clean_targets([conv], input_root=tmp_path / "in")
     assert not sidecar.exists()
 
 
@@ -498,25 +500,23 @@ def test_output_alias_store_rejects_two_fixtures_owning_one_alias(
     path = execution.output_alias_path(output_root)
     path.parent.mkdir(parents=True)
     path.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "aliases": [
-                    {
-                        "module": "module_a",
-                        "repo_name": "repo",
-                        "intermediate_hash": "hash_a",
-                        "output_alias": "diann-shared",
-                    },
-                    {
-                        "module": "module_b",
-                        "repo_name": "repo",
-                        "intermediate_hash": "hash_b",
-                        "output_alias": "diann-shared",
-                    },
-                ],
-            }
-        )
+        json.dumps({
+            "schema_version": 1,
+            "aliases": [
+                {
+                    "module": "module_a",
+                    "repo_name": "repo",
+                    "intermediate_hash": "hash_a",
+                    "output_alias": "diann-shared",
+                },
+                {
+                    "module": "module_b",
+                    "repo_name": "repo",
+                    "intermediate_hash": "hash_b",
+                    "output_alias": "diann-shared",
+                },
+            ],
+        })
     )
 
     with pytest.raises(ValueError, match="assigned to both"):

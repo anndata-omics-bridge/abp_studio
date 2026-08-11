@@ -324,7 +324,7 @@ def test_module_resource_edge_paths(
     empty.write_text("", encoding="utf-8")
     with pytest.raises(ValueError, match="non-empty FASTA"):
         module_resources._cached_validate_fasta(
-            str(empty),
+            empty,
             empty.stat().st_mtime_ns,
             empty.stat().st_size,
         )

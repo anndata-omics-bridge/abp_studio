@@ -47,13 +47,13 @@ from apb_studio.run_history import mark_operation
 
 # ``--configfile`` is only Snakemake's transport for the internal JSON. No default is allowed:
 # Snakemake merges defaults with an explicit config file, which would violate snapshot isolation.
-_RUN_PATH = str(workflow.configfiles[-1]) if workflow.configfiles else ""
-if not _RUN_PATH:
+if not workflow.configfiles:
     raise ValueError("apb_studio: Corpus Runner must pass its generated run.json")
+_RUN_PATH = Path(workflow.configfiles[-1])
 _RUN_PATH_ENV = "APB_STUDIO_RUN_PATH"
 # The snapshot path identifies this invocation, not artifact content. Pass it to provenance through
 # the process environment so a fresh run ID does not invalidate every otherwise unchanged target.
-os.environ[_RUN_PATH_ENV] = _RUN_PATH
+os.environ[_RUN_PATH_ENV] = str(_RUN_PATH)
 
 RUN = load_run_snapshot(_RUN_PATH)
 OUTPUT_ROOT = RUN.output_root

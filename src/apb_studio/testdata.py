@@ -37,19 +37,17 @@ class TestDataPaths(fixture_inventory.FixtureStorePaths):
 
 def storage_summary(paths: TestDataPaths) -> str:
     """Describe all generated locations shown in the Storage tab."""
-    return "\n".join(
-        [
-            f"Root folder:    {paths.data_dir}",
-            f"Catalog CSV:    {paths.catalog_csv}",
-            f"Selection CSV:  {paths.selection_csv}",
-            f"Manifest CSV:   {paths.manifest_csv}",
-            f"Metadata/raw:   {paths.cache_dir}",
-            f"Annotations:    {paths.annotation_dir}",
-            f"FASTA cache:    {paths.fasta_dir}",
-            f"Resources CSV:  {paths.resource_csv}",
-            f"Studio logs:    {paths.log_dir}",
-        ]
-    )
+    return "\n".join([
+        f"Root folder:    {paths.data_dir}",
+        f"Catalog CSV:    {paths.catalog_csv}",
+        f"Selection CSV:  {paths.selection_csv}",
+        f"Manifest CSV:   {paths.manifest_csv}",
+        f"Metadata/raw:   {paths.cache_dir}",
+        f"Annotations:    {paths.annotation_dir}",
+        f"FASTA cache:    {paths.fasta_dir}",
+        f"Resources CSV:  {paths.resource_csv}",
+        f"Studio logs:    {paths.log_dir}",
+    ])
 
 
 def read_rows(path: Path) -> list[dict[str, Any]]:

@@ -237,9 +237,9 @@ def _validate_snapshot_paths(snapshot: RunSnapshot) -> None:
             )
 
 
-def write_run_snapshot(snapshot: RunSnapshot, path: Path | str) -> Path:
+def write_run_snapshot(snapshot: RunSnapshot, path: Path) -> Path:
     """Create one run JSON exactly once and return its path."""
-    destination = Path(path)
+    destination = path
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("x", encoding="utf-8") as stream:
         json.dump(run_snapshot_data(snapshot), stream, indent=2)
@@ -247,9 +247,9 @@ def write_run_snapshot(snapshot: RunSnapshot, path: Path | str) -> Path:
     return destination
 
 
-def load_run_snapshot(path: Path | str) -> RunSnapshot:
+def load_run_snapshot(path: Path) -> RunSnapshot:
     """Load and validate a Corpus Runner-generated run JSON file."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("Run snapshot must contain one JSON object.")
     return run_snapshot_from_data(data)
@@ -369,7 +369,7 @@ def _emitted_ancestor(
 def expand_resolved_targets(
     registry: list[dict[str, Any]],
     fixtures: tuple[ResolvedFixture, ...] | list[ResolvedFixture],
-    output_root: Path | str,
+    output_root: Path,
 ) -> list[Target]:
     """Expand frozen fixture branches into concrete stage targets.
 
@@ -379,7 +379,7 @@ def expand_resolved_targets(
     """
     reg = {stage["name"]: stage for stage in registry}
     order = stage_order(registry)
-    out_root = Path(output_root)
+    out_root = output_root
     targets: list[Target] = []
 
     for fixture in fixtures:
@@ -544,17 +544,17 @@ def _log_error(logpath: Path) -> str | None:
     return lines[-1]
 
 
-def failure_marker_path(output: Path | str) -> Path:
+def failure_marker_path(output: Path) -> Path:
     """Return the marker written only after a rule command exits unsuccessfully."""
     return Path(f"{output}.failed")
 
 
-def benchmark_path(output: Path | str) -> Path:
+def benchmark_path(output: Path) -> Path:
     """Return the Snakemake benchmark file adjacent to a stage artifact."""
     return Path(f"{output}.benchmark.tsv")
 
 
-def _benchmark_seconds(output: Path | str) -> float | None:
+def _benchmark_seconds(output: Path) -> float | None:
     """Read one rule's elapsed seconds, tolerating old or partial metadata."""
     try:
         with benchmark_path(output).open(encoding="utf-8", newline="") as handle:
@@ -579,7 +579,7 @@ def format_duration(seconds: float) -> str:
     return f"{hours}h {minutes:02d}m"
 
 
-def _failed_rule_error(output: Path | str) -> str | None:
+def _failed_rule_error(output: Path) -> str | None:
     """Return a rule failure only when its authoritative failure marker exists.
 
     A rule's ``tee`` log is created and populated while that rule is still running, so log
@@ -746,15 +746,13 @@ def branch_rows(
                     "error": root_reason,
                 }
             }
-            details.update(
-                {
-                    stage_name: {
-                        "state": "unavailable",
-                        "display": "",
-                    }
-                    for stage_name in order[1:]
+            details.update({
+                stage_name: {
+                    "state": "unavailable",
+                    "display": "",
                 }
-            )
+                for stage_name in order[1:]
+            })
             row: dict[str, Any] = {
                 "module": fixture.repo_name,
                 "dataset": fixture.dataset,
@@ -789,16 +787,16 @@ def branch_rows(
     return rows
 
 
-def reject_input_paths(paths: list[Path], input_root: Path | str) -> list[Path]:
+def reject_input_paths(paths: list[Path], input_root: Path) -> list[Path]:
     """Return paths outside `input_root`; raise `CleanGuardError` for an input path.
 
     Resolves both sides, so it also catches relative paths and symlink escapes. This is a **real
     exception**, not an `assert`: `assert` is stripped by `python -O`, and a destructive-action
     guard must never be optimized away.
     """
-    in_root = Path(input_root).resolve()
+    in_root = input_root.resolve()
     for p in paths:
-        resolved = Path(p).resolve()
+        resolved = p.resolve()
         if in_root == resolved or in_root in resolved.parents:
             raise CleanGuardError(f"refusing to clean {p}: it is under input_root {in_root}")
     return paths

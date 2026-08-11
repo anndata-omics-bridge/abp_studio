@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
@@ -338,7 +339,7 @@ def _dispatch_editor_operation(trigger: object, request: _EditorRequest) -> _Edi
         if not any(request.document_clicks):
             raise PreventUpdate
         return _loaded_result(
-            config_editor.load_document(trigger["path"]),
+            config_editor.load_document(Path(trigger["path"])),
             operation="Loaded packaged rule document.",
         )
     operation = _EDITOR_OPERATIONS.get(trigger) if isinstance(trigger, str) else None
@@ -351,7 +352,7 @@ def _load_editor_path(request: _EditorRequest) -> _EditorResult:
     if not request.path:
         raise ValueError("Enter a JSON configuration path.")
     return _loaded_result(
-        config_editor.load_document(request.path, kind=request.kind),
+        config_editor.load_document(Path(request.path), kind=request.kind),
         operation="Loaded configuration.",
     )
 
@@ -437,7 +438,7 @@ def _format_editor_section(request: _EditorRequest) -> _EditorResult:
 def _save_editor_section(request: _EditorRequest) -> _EditorResult:
     state, active = _active_editor(request)
     loaded = config_editor.save_section(
-        state["path"],
+        Path(state["path"]),
         active,
         request.editor_source,
         document_source=state["source"],
@@ -498,7 +499,7 @@ def _validate_editor(
             True,
         )
     report = config_editor.validate_section(
-        state["path"],
+        Path(state["path"]),
         active,
         editor_source,
         document_source=state["source"],

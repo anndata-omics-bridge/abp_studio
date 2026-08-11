@@ -220,28 +220,26 @@ def test_fasta_artifact_surfaces_coverage_before_full_json(
 
 
 def test_fasta_overview_handles_standalone_and_missing_components() -> None:
-    overview = dashboard._fasta_overview(
-        {
-            "quantification": {"level": "peptide"},
-            "annotations": {
-                "var": [
-                    {
-                        "source": "fasta_validation",
-                        "n_features": 10,
-                        "n_matched_features": 8,
-                    }
-                ]
-            },
-        }
-    )
+    overview = dashboard._fasta_overview({
+        "quantification": {"level": "peptide"},
+        "annotations": {
+            "var": [
+                {
+                    "source": "fasta_validation",
+                    "n_features": 10,
+                    "n_matched_features": 8,
+                }
+            ]
+        },
+    })
 
     assert overview is not None
     card = cast(Any, overview).children[1].children[0]
     assert card.children[0].children == "peptide"
     assert (
-        dashboard._fasta_overview(
-            {"modalities": {"ion": {"quantification": {}}, "bad": "not a summary"}}
-        )
+        dashboard._fasta_overview({
+            "modalities": {"ion": {"quantification": {}}, "bad": "not a summary"}
+        })
         is None
     )
     assert dashboard._fasta_overview({"annotations": {"var": "invalid"}}) is None
@@ -250,9 +248,9 @@ def test_fasta_overview_handles_standalone_and_missing_components() -> None:
         is None
     )
     assert (
-        dashboard._fasta_overview(
-            {"annotations": {"var": [{"source": "fasta_validation", "n_features": True}]}}
-        )
+        dashboard._fasta_overview({
+            "annotations": {"var": [{"source": "fasta_validation", "n_features": True}]}
+        })
         is None
     )
 

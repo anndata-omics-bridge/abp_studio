@@ -1,5 +1,16 @@
 # Changes
 
+- 2026-08-11: Make filesystem paths exact typed boundaries across Studio. Services now accept
+  `Path` (or `Path | None`) rather than `Path | str`; Dash strings are converted at callback edges,
+  and Pydantic performs serialized settings/CSV conversion before path validators run. This matches
+  APB's Path-only parameter, rule, annotation, summary, and result-loading contracts.
+- 2026-08-11: Add `make carpets`, running the sibling `carpet_scan` package as a `manual`-stage,
+  non-blocking hook. **Only three of the five checks work here:** pyan3 2.6.2 raises
+  `ValueError: Unknown scope '...listcomp.0.lambda.0'` on the lambda inside a list comprehension in
+  `pipeline/render_command.py`, which kills the public-surface and call-depth tables; vulture, radon,
+  ruff and grimp still run. The bug is upstream in pyan3 — do not rewrite that lambda to please it.
+  First run: 8 vulture findings, 149 cross-module private accesses (148 `SLF001`, 1 `PLC2701`).
+  `build/` is now gitignored, since the report is written there.
 - 2026-07-31: Name `CORPUS_CORES` in the `corpus-run` help text and `AGENTS.md`. Both corpus targets
   already passed `--cores $(CORPUS_CORES)`, but only `CORPUS_FIXTURES` was mentioned, so the core
   count looked hardcoded at 10.

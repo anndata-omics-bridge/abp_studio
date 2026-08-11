@@ -30,11 +30,11 @@ class FixtureStorePaths(BaseModel):
 
     data_dir: Path = DEFAULT_TEST_DATA_ROOT
 
-    @field_validator("data_dir", mode="before")
+    @field_validator("data_dir")
     @classmethod
-    def validate_data_dir(cls, value: str | Path) -> Path:
+    def validate_data_dir(cls, value: Path) -> Path:
         """Resolve an absolute, dedicated Fixture Manager root."""
-        path = Path(value).expanduser()
+        path = value.expanduser()
         if not path.is_absolute():
             raise ValueError("Test-data folder must be an absolute path.")
         resolved = path.resolve()
@@ -138,19 +138,17 @@ class FixtureRecord(BaseModel):
     def as_catalog_row(self) -> dict[str, Any]:
         """Render legacy table fields without replacing raw catalog software."""
         row = dict(self.catalog_row)
-        row.update(
-            {
-                "module": self.module,
-                "repo_name": self.repo_name,
-                "intermediate_hash": self.intermediate_hash,
-                "software_name": self.catalog_software_name,
-                "software_version": self.catalog_software_version,
-                "download_status": _download_status(self),
-                "fixture_status": self.local_state.value.replace("_", " "),
-                "local_file": (str(self.input_files[0]) if len(self.input_files) == 1 else ""),
-                "fixture_diagnostic": self.diagnostic or "",
-            }
-        )
+        row.update({
+            "module": self.module,
+            "repo_name": self.repo_name,
+            "intermediate_hash": self.intermediate_hash,
+            "software_name": self.catalog_software_name,
+            "software_version": self.catalog_software_version,
+            "download_status": _download_status(self),
+            "fixture_status": self.local_state.value.replace("_", " "),
+            "local_file": (str(self.input_files[0]) if len(self.input_files) == 1 else ""),
+            "fixture_diagnostic": self.diagnostic or "",
+        })
         return row
 
 
@@ -179,13 +177,13 @@ class FixtureInventory(BaseModel):
 
 
 def load_fixture_inventory(
-    test_data_root: str | Path | FixtureStorePaths,
+    test_data_root: Path | FixtureStorePaths,
 ) -> FixtureInventory:
     """Combine the full catalog with selections, history, and live local files."""
     paths = (
         test_data_root
         if isinstance(test_data_root, FixtureStorePaths)
-        else FixtureStorePaths(data_dir=Path(test_data_root))
+        else FixtureStorePaths(data_dir=test_data_root)
     )
     selected = {fixture_identity(row) for row in read_csv_rows(paths.selection_csv)}
     manifest = {fixture_identity(row): row for row in read_csv_rows(paths.manifest_csv)}

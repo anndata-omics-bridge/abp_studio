@@ -96,6 +96,7 @@ unattempted descendants stay blank. Only a workflow-stage `FAILED` cell offers a
 | Full gate | `uv run pre-commit run --hook-stage pre-push --all-files` |
 | Single test | `uv run pytest tests/test_pipeline.py -q` |
 | Security audit | `uv run pre-commit run dependency-audit --hook-stage manual --all-files` |
+| Carpet diagnostics | `make carpets` — 3 of 5 checks here; pyan3 fails on this codebase |
 
 The pre-commit configuration is the command source of truth for CI. Do not
 lower Ruff, strict Pyright, dependency, or coverage gates without explicit

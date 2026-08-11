@@ -24,7 +24,7 @@ from apb_studio.provenance import (
 
 
 def _t(
-    out_dir: Path | str,
+    out_dir: Path,
     stage: str = "convert",
     name: str = "mudata.h5mu",
 ) -> Target:
@@ -61,7 +61,7 @@ def _run(tmp_path: Path, *targets: Target) -> tuple[RunSnapshot, Path]:
 
 
 def test_record_shape():
-    rec = record(_t("/out"), timestamp="2026-06-29T00:00:00+00:00", version="0.1.0")
+    rec = record(_t(Path("/out")), timestamp="2026-06-29T00:00:00+00:00", version="0.1.0")
     assert rec == {
         "stage": "convert",
         "artifact": "mudata.h5mu",

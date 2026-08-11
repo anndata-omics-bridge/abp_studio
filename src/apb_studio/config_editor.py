@@ -54,21 +54,19 @@ def catalog_rows() -> list[dict[str, Any]]:
         report = validate_source(path, source)
         raw = parse_rule_source(source, path=path) if report["valid"] else {}
         levels = raw.get("levels", {})
-        rows.append(
-            {
-                "vendor": document_vendor(path),
-                "software_name": raw.get("software_name", document_vendor(path)),
-                "software_version": raw.get("software_version", ""),
-                "file_version": raw.get("file_version", ""),
-                "levels": list(levels) if isinstance(levels, dict) else [],
-                "valid": report["valid"],
-                "path": str(path.resolve()),
-            }
-        )
+        rows.append({
+            "vendor": document_vendor(path),
+            "software_name": raw.get("software_name", document_vendor(path)),
+            "software_version": raw.get("software_version", ""),
+            "file_version": raw.get("file_version", ""),
+            "levels": list(levels) if isinstance(levels, dict) else [],
+            "valid": report["valid"],
+            "path": str(path.resolve()),
+        })
     return rows
 
 
-def load_document(path: Path | str, *, kind: ConfigKind = "rule") -> dict[str, Any]:
+def load_document(path: Path, *, kind: ConfigKind = "rule") -> dict[str, Any]:
     """Load one document as independently viewable raw JSON sections."""
     resolved = _checked_json_path(path)
     source = resolved.read_text(encoding="utf-8")
@@ -95,13 +93,13 @@ def load_document(path: Path | str, *, kind: ConfigKind = "rule") -> dict[str, A
 
 
 def validate_source(
-    path: Path | str,
+    path: Path,
     source: str,
     *,
     kind: ConfigKind = "rule",
 ) -> dict[str, Any]:
     """Validate a complete unsaved document through APB's Pydantic models."""
-    resolved = Path(path).expanduser().resolve()
+    resolved = path.expanduser().resolve()
     try:
         raw = parse_rule_source(source, path=resolved)
         document = validate_rule_source(raw, path=resolved)
@@ -112,7 +110,7 @@ def validate_source(
 
 
 def validate_section(
-    path: Path | str,
+    path: Path,
     section: str,
     section_source: str,
     *,
@@ -120,7 +118,7 @@ def validate_section(
     kind: ConfigKind = "rule",
 ) -> dict[str, Any]:
     """Validate one edited section in the context of its complete document."""
-    resolved = Path(path).expanduser().resolve()
+    resolved = path.expanduser().resolve()
     affected: list[str] = []
     edited_path: JsonPath = ()
     try:
@@ -156,12 +154,12 @@ def format_json_source(source: str, *, kind: ConfigKind) -> str:
 
 def format_section_source(source: str) -> str:
     """Format a section after requiring it to be a JSON object."""
-    data = parse_rule_source(source, path="<editor section>")
+    data = parse_rule_source(source, path=Path("<editor section>"))
     return _pretty_json(data)
 
 
 def save_section(
-    path: Path | str,
+    path: Path,
     section: str,
     section_source: str,
     *,
@@ -192,7 +190,7 @@ def save_section(
 
 
 def save_document(
-    path: Path | str,
+    path: Path,
     source: str,
     *,
     expected_hash: str,
@@ -222,7 +220,7 @@ def _candidate_with_section(
 ) -> tuple[str, list[str]]:
     """Replace one raw source section and serialize the candidate document."""
     document = parse_rule_source(document_source, path=path)
-    fragment = parse_rule_source(section_source, path=f"{path}#{section}")
+    fragment = parse_rule_source(section_source, path=Path(f"{path}#{section}"))
     levels = document.get("levels")
     if not isinstance(levels, dict):
         raise ValueError("document has no levels object")
@@ -246,7 +244,7 @@ def _single_edited_path(
 ) -> JsonPath:
     """Return the source-local JSON path when an edit changes exactly one value."""
     document = parse_rule_source(document_source, path=path)
-    edited = parse_rule_source(section_source, path=f"{path}#{section}")
+    edited = parse_rule_source(section_source, path=Path(f"{path}#{section}"))
     levels = document.get("levels")
     if not isinstance(levels, dict):
         return ()
@@ -285,9 +283,9 @@ def _changed_json_paths(
     return [] if original == edited else [path]
 
 
-def _checked_json_path(path: Path | str) -> Path:
+def _checked_json_path(path: Path) -> Path:
     """Resolve an existing JSON file path or raise a user-facing error."""
-    resolved = Path(path).expanduser().resolve()
+    resolved = path.expanduser().resolve()
     if resolved.suffix.lower() != ".json":
         raise ValueError(f"configuration must be a .json file: {resolved}")
     if not resolved.is_file():

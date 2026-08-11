@@ -9,13 +9,15 @@ from pathlib import Path
 
 import pytest
 from anndata_proteomics.converters import pipeline as conversion_pipeline
-from anndata_proteomics.converters.recognize import _expected_long_columns
+from anndata_proteomics.converters import recognize as conversion_recognize
 from anndata_proteomics.params.registry import parse_params
 from anndata_proteomics.rules.loader import (
-    load_packaged_rule_for_version,
-    resolve_rule_for_version,
+    PresentRuleVersion,
+    RuleResolutionBuilder,
+    UnparameterizedRuleEligibility,
+    load_rule,
 )
-from anndata_proteomics.rules.schema import ParseRule
+from anndata_proteomics.rules.registry import RuleLocator, find_rule_for_version
 
 from apb_studio import capabilities, run_history
 from apb_studio.pipeline import (
@@ -46,10 +48,17 @@ def _long_headers(software: str, parameter_path: Path) -> tuple[str, ...]:
     version = parameters.software_version
     headers: set[str] = set()
     for level in conversion_pipeline.LEVELS:
-        rule = resolve_rule_for_version(software, level, version)
-        if not isinstance(rule, ParseRule) or rule.input_shape != "long":
+        locator = RuleResolutionBuilder(
+            software,
+            level,
+            UnparameterizedRuleEligibility(),
+        ).resolve(PresentRuleVersion(version))
+        if not isinstance(locator, RuleLocator):
             continue
-        headers.update(_expected_long_columns(rule))
+        rule = load_rule(locator)
+        if rule.input_shape != "long":
+            continue
+        headers.update(conversion_recognize._expected_long_columns(rule))
         if rule.fragments is not None and rule.fragments.label_strategy == "column":
             headers.add(rule.fragments.label_column)
     return tuple(sorted(headers))
@@ -60,11 +69,7 @@ def _fragpipe_headers(parameter_path: Path) -> tuple[str, ...]:
     parameters = parse_params(parameter_path, software="fragpipe")
     if parameters.software_version is None:
         raise AssertionError(f"{parameter_path} contains no software version")
-    rule = load_packaged_rule_for_version(
-        "fragpipe",
-        "ion",
-        parameters.software_version,
-    )
+    rule = load_rule(find_rule_for_version("fragpipe", "ion", parameters.software_version))
     return (*sorted(rule.columns.var.select.values()), "run1 Intensity")
 
 

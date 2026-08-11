@@ -67,7 +67,7 @@ class PipelineLaunchOptions:
     targets: tuple[Path, ...] | None = None
     cores: int = 1
     snakemake_exe: str | None = None
-    cwd: Path | str | None = None
+    cwd: Path | None = None
 
 
 DEFAULT_PIPELINE_LAUNCH_OPTIONS = PipelineLaunchOptions()
@@ -77,10 +77,10 @@ class _JobStarter(Protocol):
     def __call__(
         self,
         command: Sequence[str],
-        log_file: Path | str,
+        log_file: Path,
         /,
         *,
-        cwd: Path | str | None = None,
+        cwd: Path | None = None,
     ) -> Job: ...
 
 
@@ -224,19 +224,19 @@ def _registry_digest(registry: list[dict[str, Any]]) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-def output_alias_path(output_root: Path | str) -> Path:
+def output_alias_path(output_root: Path) -> Path:
     """Return the persistent fixture-to-output-alias map."""
-    return Path(output_root) / ".apb_studio" / "output_aliases.json"
+    return output_root / ".apb_studio" / "output_aliases.json"
 
 
 def resolve_output_aliases(
     discoveries: list[tuple[FixtureRecord, capabilities.CapabilityDiscovery]],
-    output_root: Path | str,
+    output_root: Path,
     *,
     persist: bool,
 ) -> dict[tuple[str, str, str], str]:
     """Resolve stable aliases, seeding existing output directories by hash suffix."""
-    root = Path(output_root)
+    root = output_root
     stored = _load_output_aliases(root)
     resolved = dict(stored)
     used = {(identity[1], alias): identity for identity, alias in resolved.items()}
@@ -368,8 +368,8 @@ def _save_output_aliases(
 
 
 def snakemake_argv(
-    snakefile: Path | str,
-    run_path: Path | str,
+    snakefile: Path,
+    run_path: Path,
     *,
     targets: list[Path] | None = None,
     dry_run: bool = False,
@@ -402,9 +402,9 @@ def snakemake_argv(
 
 
 def run_pipeline(
-    snakefile: Path | str,
-    run_path: Path | str,
-    log_file: Path | str,
+    snakefile: Path,
+    run_path: Path,
+    log_file: Path,
     options: PipelineLaunchOptions = DEFAULT_PIPELINE_LAUNCH_OPTIONS,
     start: _JobStarter = start_job,
 ) -> Job:
@@ -453,9 +453,9 @@ def corpus_log_path(
     return output_root / ".apb_studio" / "snakemake.log"
 
 
-def latest_persisted_run(output_root: Path | str) -> PersistedRun | None:
+def latest_persisted_run(output_root: Path) -> PersistedRun | None:
     """Load the newest valid run snapshot and its persisted log/operation state."""
-    root = Path(output_root).expanduser().resolve()
+    root = output_root.expanduser().resolve()
     runs_root = root / ".apb_studio" / "runs"
     if not runs_root.is_dir():
         return None
@@ -626,7 +626,7 @@ def inspect_corpus_job(job_id: str | None) -> JobStatus | None:
     return inspect_job(_JOBS[job_id])
 
 
-def clean_targets(targets: list[Target], *, input_root: Path | str) -> list[Path]:
+def clean_targets(targets: list[Target], *, input_root: Path) -> list[Path]:
     """Delete all supplied targets and their managed rule state.
 
     The packaged Snakefile's whole-corpus ``clean`` rule supplies its frozen target inventory.

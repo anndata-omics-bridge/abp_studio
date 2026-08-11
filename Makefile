@@ -2,7 +2,7 @@ APP_PORT ?= 8051
 CORPUS_RUNNER_PID_FILE ?= $(CURDIR)/.apb-studio-corpus-runner-$(APP_PORT).pid
 
 .DEFAULT_GOAL := help
-.PHONY: help sync corpus-runner corpus-runner-stop corpus-run corpus-check corpus-clean fixture-manager test lint check check-full audit package docs docs-serve
+.PHONY: help sync corpus-runner corpus-runner-stop corpus-run corpus-check corpus-clean fixture-manager test lint check check-full audit carpets package docs docs-serve
 
 CORPUS_FIXTURES ?= 10
 CORPUS_CORES ?= 10
@@ -95,6 +95,10 @@ check-full:               ## run the push-stage quality gate
 
 audit:                    ## audit locked dependencies
 	uv run pre-commit run dependency-audit --hook-stage manual --all-files
+
+carpets:                  ## report carpet diagnostics (3 of 5 checks; pyan3 fails here)
+	uv run pre-commit run carpet-scan --hook-stage manual --all-files
+	@echo "HTML: build/carpet-report.html"
 
 package:                  ## build and inspect the wheel contract
 	uv run --frozen --extra dev python scripts/package_smoke.py

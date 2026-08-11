@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from anndata_proteomics.params.model import Parameters
+from anndata_proteomics.rules import loader as rule_loader
 from anndata_proteomics.rules.schema import QuantificationLevel
 
 from apb_studio import capabilities
@@ -19,10 +20,10 @@ def _resolution(
 ) -> capabilities.conversion_pipeline.ParameterResolution:
     """Build the typed APB result returned by a parameter-resolution test double."""
     software_version = parameters.software_version
-    version: capabilities.conversion_pipeline.RuleVersion = (
-        capabilities.conversion_pipeline.MissingRuleVersion()
+    version: rule_loader.RuleVersion = (
+        rule_loader.MissingRuleVersion()
         if software_version is None
-        else capabilities.conversion_pipeline.PresentRuleVersion(software_version)
+        else rule_loader.PresentRuleVersion(software_version)
     )
     return capabilities.conversion_pipeline.ParameterResolution(
         source_path=parameter_path,
@@ -49,10 +50,10 @@ def test_discovery_reads_version_and_headers_and_puts_mudata_first(
     calls: list[tuple[str, str | None, tuple[str, ...]]] = []
 
     def fake_resolve_parameters(
-        path: Path | str,
+        path: Path,
         slug: str,
     ) -> capabilities.conversion_pipeline.ParameterResolution:
-        assert Path(path) == parameter_path
+        assert path == parameter_path
         assert slug == "diann"
         return _resolution(
             parameter_path,
@@ -65,7 +66,7 @@ def test_discovery_reads_version_and_headers_and_puts_mudata_first(
         resolution: capabilities.conversion_pipeline.ParameterResolution,
     ) -> dict[QuantificationLevel, object]:
         version = capabilities.conversion_pipeline.resolve_rule_version(resolution, slug)
-        assert isinstance(version, capabilities.conversion_pipeline.PresentRuleVersion)
+        assert isinstance(version, rule_loader.PresentRuleVersion)
         calls.append((slug, version.value, headers))
         return _selections("ion", "protein")
 
@@ -615,7 +616,7 @@ def test_discovery_separates_compound_parameter_and_rule_software(
     )
 
     def fake_resolve_parameters(
-        path: Path | str,
+        path: Path,
         slug: str,
     ) -> capabilities.conversion_pipeline.ParameterResolution:
         parsed_with.append(slug)

@@ -20,9 +20,12 @@ dependencies = [
 
 [tool.uv.sources]
 anndata-proteomics = { path = "../apb", editable = true }
+carpet-scan = { path = "../carpet_scan" }
 
 [project.optional-dependencies]
 dev = [
+    # Carpet diagnostics; must live in Studio's own environment so grimp can import it.
+    "carpet-scan",
     "anndata",
     "deptry>=0.25.1,<0.26",
     "diff-cover>=10.4,<11",
@@ -31,6 +34,7 @@ dev = [
     "pandas-stubs",
     "pip-audit>=2.10,<3",
     "pre-commit>=4.5,<5",
+    "pylint>=4.0.6",
     "pyright>=1.1.408,<2",
     "pytest>=9,<10",
     "pytest-cov>=7,<8",
@@ -63,8 +67,10 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+preview = true
 
 [tool.ruff.lint]
+explicit-preview-rules = true
 select = [
     "A",
     "B",
@@ -77,9 +83,14 @@ select = [
     "PLR0912",
     "PLR0913",
     "PLR0915",
+    "PLC2701",
+    "SLF001",
     "UP",
     "W",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["SLF001"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

@@ -44,10 +44,12 @@ class ModuleResource(BaseModel):
 
     @field_validator("annotation_path", "fasta_path", mode="before")
     @classmethod
-    def resolve_optional_path(cls, value: str | Path | None) -> Path | None:
+    def resolve_optional_path(cls, value: object) -> Path | None:
         """Normalize assigned paths while allowing an empty CSV cell."""
-        if value is None or not str(value).strip():
+        if value is None or value == "":
             return None
+        if not isinstance(value, (str, Path)):
+            raise TypeError("Module resource paths must be paths.")
         path = Path(value).expanduser()
         if not path.is_absolute():
             raise ValueError("Module resource paths must be absolute.")
@@ -86,7 +88,7 @@ class ModuleResourceInventory(BaseModel):
 
 
 def load_module_resources(
-    test_data_root: str | Path | FixtureStorePaths,
+    test_data_root: Path | FixtureStorePaths,
 ) -> ModuleResourceInventory:
     """Load overrides and discover APB-managed annotations and FASTAs."""
     paths = _paths(test_data_root)
@@ -138,7 +140,7 @@ def load_module_resources(
 
 
 def save_module_resources(
-    test_data_root: str | Path | FixtureStorePaths,
+    test_data_root: Path | FixtureStorePaths,
     inventory: ModuleResourceInventory,
 ) -> ModuleResourceInventory:
     """Atomically persist canonical, module-sorted resource assignments."""
@@ -155,23 +157,21 @@ def save_module_resources(
         persisted_fasta = None if resource.fasta_managed else resource.fasta_path
         if persisted_annotation is None and persisted_fasta is None:
             continue
-        writer.writerow(
-            {
-                "module": resource.module,
-                "annotation_path": persisted_annotation or "",
-                "fasta_path": persisted_fasta or "",
-            }
-        )
+        writer.writerow({
+            "module": resource.module,
+            "annotation_path": persisted_annotation or "",
+            "fasta_path": persisted_fasta or "",
+        })
     atomic_write_text(paths.resource_csv, stream.getvalue())
     return validated
 
 
 def set_module_resource(
-    test_data_root: str | Path | FixtureStorePaths,
+    test_data_root: Path | FixtureStorePaths,
     module: str,
     *,
-    annotation_path: str | Path | None,
-    fasta_path: str | Path | None,
+    annotation_path: Path | None,
+    fasta_path: Path | None,
 ) -> ModuleResourceInventory:
     """Validate and replace the complete assignment for one module."""
     annotation = _validate_annotation(annotation_path)
@@ -193,7 +193,7 @@ def set_module_resource(
 
 
 def sync_fasta_resources(
-    test_data_root: str | Path | FixtureStorePaths,
+    test_data_root: Path | FixtureStorePaths,
     modules: Iterable[str],
 ) -> ModuleResourceInventory:
     """Assign APB's downloaded module FASTAs without copying its module map."""
@@ -236,42 +236,38 @@ def resource_rows(
     rows = []
     for module in sorted(set(modules)):
         resource = inventory.for_module(module)
-        rows.append(
-            {
-                "module": module,
-                "annotation_path": str(resource.annotation_path)
-                if resource and resource.annotation_path
-                else "",
-                "annotation_status": "available"
-                if resource and resource.annotation_available
-                else _unavailable_status(
-                    resource.annotation_path if resource else None,
-                    resource.annotation_error if resource else None,
-                ),
-                "fasta_path": str(resource.fasta_path) if resource and resource.fasta_path else "",
-                "fasta_status": "available"
-                if resource and resource.fasta_available
-                else _unavailable_status(
-                    resource.fasta_path if resource else None,
-                    resource.fasta_error if resource else None,
-                ),
-            }
-        )
+        rows.append({
+            "module": module,
+            "annotation_path": str(resource.annotation_path)
+            if resource and resource.annotation_path
+            else "",
+            "annotation_status": "available"
+            if resource and resource.annotation_available
+            else _unavailable_status(
+                resource.annotation_path if resource else None,
+                resource.annotation_error if resource else None,
+            ),
+            "fasta_path": str(resource.fasta_path) if resource and resource.fasta_path else "",
+            "fasta_status": "available"
+            if resource and resource.fasta_available
+            else _unavailable_status(
+                resource.fasta_path if resource else None,
+                resource.fasta_error if resource else None,
+            ),
+        })
     return rows
 
 
 def _paths(
-    value: str | Path | FixtureStorePaths,
+    value: Path | FixtureStorePaths,
 ) -> FixtureStorePaths:
-    return (
-        value if isinstance(value, FixtureStorePaths) else FixtureStorePaths(data_dir=Path(value))
-    )
+    return value if isinstance(value, FixtureStorePaths) else FixtureStorePaths(data_dir=value)
 
 
-def _validate_annotation(value: str | Path | None) -> Path | None:
-    if value is None or not str(value).strip():
+def _validate_annotation(value: Path | None) -> Path | None:
+    if value is None:
         return None
-    path = Path(value).expanduser()
+    path = value.expanduser()
     if not path.is_absolute():
         raise ValueError("Module resource paths must be absolute.")
     path = path.resolve()
@@ -287,10 +283,10 @@ def _validate_annotation(value: str | Path | None) -> Path | None:
     return path
 
 
-def _validate_fasta(value: str | Path | None) -> Path | None:
-    if value is None or not str(value).strip():
+def _validate_fasta(value: Path | None) -> Path | None:
+    if value is None:
         return None
-    path = Path(value).expanduser()
+    path = value.expanduser()
     if not path.is_absolute():
         raise ValueError("Module resource paths must be absolute.")
     path = path.resolve()
@@ -339,15 +335,15 @@ def _resource_error(kind: str, path: Path | None) -> str | None:
     return None
 
 
-def _file_signature(path: Path) -> tuple[str, int, int]:
+def _file_signature(path: Path) -> tuple[Path, int, int]:
     """Return a cache key that changes when a resource file changes."""
     stat_result = path.stat()
-    return str(path), stat_result.st_mtime_ns, stat_result.st_size
+    return path, stat_result.st_mtime_ns, stat_result.st_size
 
 
 @lru_cache(maxsize=256)
 def _cached_load_annotation(
-    path: str,
+    path: Path,
     _mtime_ns: int,
     _size: int,
 ) -> None:
@@ -357,12 +353,12 @@ def _cached_load_annotation(
 
 @lru_cache(maxsize=64)
 def _cached_validate_fasta(
-    path: str,
+    path: Path,
     _mtime_ns: int,
     _size: int,
 ) -> None:
     """Validate the first record with APB's streaming FASTA parser."""
-    first = next(iter_fasta(Path(path)), None)
+    first = next(iter_fasta(path), None)
     if first is None or not first.header.strip() or not first.sequence.strip():
         raise ValueError("expected at least one non-empty FASTA record")
 

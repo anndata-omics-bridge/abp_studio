@@ -414,7 +414,7 @@ def test_clean_guard_survives_python_optimized_mode() -> None:
         "from pathlib import Path\n"
         "from apb_studio.pipeline import reject_input_paths, CleanGuardError\n"
         "try:\n"
-        "    reject_input_paths([Path('/in/raw.tsv')], '/in'); print('NO_RAISE')\n"
+        "    reject_input_paths([Path('/in/raw.tsv')], Path('/in')); print('NO_RAISE')\n"
         "except CleanGuardError:\n"
         "    print('RAISED')\n"
     )
@@ -423,7 +423,7 @@ def test_clean_guard_survives_python_optimized_mode() -> None:
 
 
 def test_reject_input_paths_accepts_outputs_elsewhere() -> None:
-    assert reject_input_paths([Path("/out/result.h5ad")], "/in") == [Path("/out/result.h5ad")]
+    assert reject_input_paths([Path("/out/result.h5ad")], Path("/in")) == [Path("/out/result.h5ad")]
 
 
 def test_snakefile_lets_snakemake_assess_expanded_runnable_targets() -> None:
@@ -436,6 +436,6 @@ def test_snakefile_lets_snakemake_assess_expanded_runnable_targets() -> None:
     assert "sys.path.insert(0" not in snakefile
     assert "command_text = environment + command_text" in snakefile
     assert "provenance_command = environment + provenance_command" in snakefile
-    assert "os.environ[_RUN_PATH_ENV] = _RUN_PATH" in snakefile
+    assert "os.environ[_RUN_PATH_ENV] = str(_RUN_PATH)" in snakefile
     assert '"${_RUN_PATH_ENV}"' in snakefile
     assert "--keep-going" not in snakefile  # execution owns the invocation flag

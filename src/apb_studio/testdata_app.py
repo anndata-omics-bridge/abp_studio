@@ -174,90 +174,86 @@ def data_table(
 
 def download_controls() -> html.Div:
     """Build catalog, selection, and download controls."""
-    return html.Div(
-        [
-            html.Div(
-                [
-                    html.Button("Catalog", id="catalog-button", style=BUTTON_STYLE),
-                    dcc.RadioItems(
-                        id="strategy",
-                        options=STRATEGIES,
-                        value="smallest-per-software-version",
-                        inline=True,
-                        style={"fontSize": "11px", "whiteSpace": "nowrap"},
-                        labelStyle={"marginRight": "0.65rem"},
-                    ),
-                    dcc.Dropdown(
-                        id="module",
-                        placeholder="All modules",
-                        clearable=True,
-                        style={"fontSize": "11px", "minWidth": "220px"},
-                    ),
-                    html.Button(
-                        "Create selection",
-                        id="select-button",
-                        style=PRIMARY_BUTTON_STYLE,
-                    ),
-                    html.Button(
-                        "Download selected",
-                        id="download-button",
-                        style=BUTTON_STYLE,
-                    ),
-                    html.Button(
-                        "Download module + scoring settings",
-                        id="annotations-button",
-                        style=BUTTON_STYLE,
-                    ),
-                    html.Button(
-                        "Download FASTAs",
-                        id="fasta-button",
-                        style=BUTTON_STYLE,
-                    ),
-                    html.Button(
-                        "Clean generated data",
-                        id="clean-button",
-                        style=BUTTON_STYLE,
-                    ),
-                ],
-                style={
-                    "display": "flex",
-                    "flexWrap": "wrap",
-                    "gap": "0.6rem",
-                    "alignItems": "center",
-                    "padding": "0.5rem 0",
-                },
-            ),
-        ]
-    )
+    return html.Div([
+        html.Div(
+            [
+                html.Button("Catalog", id="catalog-button", style=BUTTON_STYLE),
+                dcc.RadioItems(
+                    id="strategy",
+                    options=STRATEGIES,
+                    value="smallest-per-software-version",
+                    inline=True,
+                    style={"fontSize": "11px", "whiteSpace": "nowrap"},
+                    labelStyle={"marginRight": "0.65rem"},
+                ),
+                dcc.Dropdown(
+                    id="module",
+                    placeholder="All modules",
+                    clearable=True,
+                    style={"fontSize": "11px", "minWidth": "220px"},
+                ),
+                html.Button(
+                    "Create selection",
+                    id="select-button",
+                    style=PRIMARY_BUTTON_STYLE,
+                ),
+                html.Button(
+                    "Download selected",
+                    id="download-button",
+                    style=BUTTON_STYLE,
+                ),
+                html.Button(
+                    "Download module + scoring settings",
+                    id="annotations-button",
+                    style=BUTTON_STYLE,
+                ),
+                html.Button(
+                    "Download FASTAs",
+                    id="fasta-button",
+                    style=BUTTON_STYLE,
+                ),
+                html.Button(
+                    "Clean generated data",
+                    id="clean-button",
+                    style=BUTTON_STYLE,
+                ),
+            ],
+            style={
+                "display": "flex",
+                "flexWrap": "wrap",
+                "gap": "0.6rem",
+                "alignItems": "center",
+                "padding": "0.5rem 0",
+            },
+        ),
+    ])
 
 
 def workflow_controls() -> html.Div:
     """Build download controls and the shared collapsible job log."""
-    return html.Div(
-        [
-            download_controls(),
-            html.Details(
-                [
-                    html.Summary(
-                        "Log",
-                        id="job-log-summary",
-                        style={"cursor": "pointer", "fontSize": "11px"},
-                    ),
-                    html.Pre(
-                        id="job-log",
-                        style={
-                            **PRE_STYLE,
-                            "border": "1px solid #e2e2e2",
-                            "maxHeight": "22vh",
-                            "padding": "0.5rem",
-                        },
-                    ),
-                ],
-                id="job-log-details",
-                style={"margin": "0.25rem 0"},
-            ),
-        ]
-    )
+    return html.Div([
+        download_controls(),
+        html.Details(
+            [
+                html.Summary(
+                    "Log",
+                    id="job-log-summary",
+                    style={"cursor": "pointer", "fontSize": "11px"},
+                ),
+                html.Pre(
+                    id="job-log",
+                    style={
+                        **PRE_STYLE,
+                        "border": "1px solid #e2e2e2",
+                        "maxHeight": "22vh",
+                        "padding": "0.5rem",
+                    },
+                ),
+            ],
+            id="job-log-details",
+            style={"margin": "0.25rem 0"},
+        ),
+    ])
 
 
 def _resource_selection(cell: dict[str, Any] | None) -> tuple[str, str] | None:
@@ -276,7 +272,7 @@ def _resource_preview(cell: dict[str, Any] | None, data_root: str) -> str:
     if selection is None:
         return _RESOURCE_PREVIEW_PROMPT
     module, kind = selection
-    resource = module_resources.load_module_resources(data_root).for_module(module)
+    resource = module_resources.load_module_resources(Path(data_root)).for_module(module)
     if resource is None:
         return f"No resource assignment found for module {module}."
 
@@ -379,67 +375,65 @@ def storage_panel(paths: testdata.TestDataPaths = DEFAULT_PATHS) -> html.Div:
 
 def resources_panel() -> html.Div:
     """Build managed module-settings status and optional FASTA overrides."""
-    return html.Div(
-        [
-            html.Div(
-                [
-                    dcc.Dropdown(
-                        id="resource-module",
-                        placeholder="Module",
-                        clearable=False,
-                        style={"fontSize": "11px", "minWidth": "220px"},
-                    ),
-                    html.Span(
-                        "Module settings come from ProteoBench",
-                        style={"fontSize": "11px", "color": "#555"},
-                    ),
-                    dcc.Input(
-                        id="resource-fasta",
-                        type="text",
-                        placeholder="/absolute/path/to/reference.fasta",
-                        style={
-                            "flex": "1",
-                            "fontFamily": "monospace",
-                            "fontSize": "11px",
-                            "padding": "0.35rem",
-                        },
-                    ),
-                    html.Button(
-                        "Save FASTA override",
-                        id="resource-save-button",
-                        style=PRIMARY_BUTTON_STYLE,
-                    ),
-                ],
-                style={
-                    "display": "flex",
-                    "gap": "0.6rem",
-                    "alignItems": "center",
-                    "padding": "0.65rem 0",
-                },
-            ),
-            html.Div(id="resource-message", style={"fontSize": "11px"}),
-            data_table(
-                "resource-table",
-                RESOURCE_COLUMNS,
-                height="36vh",
-                row_id_fields=("module",),
-            ),
-            html.H2(
-                "Resource preview",
-                style={"fontSize": "15px", "margin": "0.6rem 0 0.35rem"},
-            ),
-            html.Pre(
-                _RESOURCE_PREVIEW_PROMPT,
-                id="resource-preview",
-                style={
-                    **PRE_STYLE,
-                    "border": "1px solid #cfd3dc",
-                    "height": "28vh",
-                    "padding": "0.6rem",
-                },
-            ),
-        ]
-    )
+    return html.Div([
+        html.Div(
+            [
+                dcc.Dropdown(
+                    id="resource-module",
+                    placeholder="Module",
+                    clearable=False,
+                    style={"fontSize": "11px", "minWidth": "220px"},
+                ),
+                html.Span(
+                    "Module settings come from ProteoBench",
+                    style={"fontSize": "11px", "color": "#555"},
+                ),
+                dcc.Input(
+                    id="resource-fasta",
+                    type="text",
+                    placeholder="/absolute/path/to/reference.fasta",
+                    style={
+                        "flex": "1",
+                        "fontFamily": "monospace",
+                        "fontSize": "11px",
+                        "padding": "0.35rem",
+                    },
+                ),
+                html.Button(
+                    "Save FASTA override",
+                    id="resource-save-button",
+                    style=PRIMARY_BUTTON_STYLE,
+                ),
+            ],
+            style={
+                "display": "flex",
+                "gap": "0.6rem",
+                "alignItems": "center",
+                "padding": "0.65rem 0",
+            },
+        ),
+        html.Div(id="resource-message", style={"fontSize": "11px"}),
+        data_table(
+            "resource-table",
+            RESOURCE_COLUMNS,
+            height="36vh",
+            row_id_fields=("module",),
+        ),
+        html.H2(
+            "Resource preview",
+            style={"fontSize": "15px", "margin": "0.6rem 0 0.35rem"},
+        ),
+        html.Pre(
+            _RESOURCE_PREVIEW_PROMPT,
+            id="resource-preview",
+            style={
+                **PRE_STYLE,
+                "border": "1px solid #cfd3dc",
+                "height": "28vh",
+                "padding": "0.6rem",
+            },
+        ),
+    ])
 
 
 def detail_tabs() -> dcc.Tabs:
@@ -452,28 +446,26 @@ def detail_tabs() -> dcc.Tabs:
         "boxSizing": "border-box",
         "padding": "0.6rem",
     }
-    return dcc.Tabs(
-        [
-            dcc.Tab(
-                html.Pre(id="file-info", style=details_style),
-                label="File",
-                style=TAB_STYLE,
-                selected_style=SELECTED_TAB_STYLE,
-            ),
-            dcc.Tab(
-                html.Pre(id="submission-json", style=details_style),
-                label="Submission JSON",
-                style=TAB_STYLE,
-                selected_style=SELECTED_TAB_STYLE,
-            ),
-            dcc.Tab(
-                html.Pre(id="parameters", style=details_style),
-                label="Parameters",
-                style=TAB_STYLE,
-                selected_style=SELECTED_TAB_STYLE,
-            ),
-        ]
-    )
+    return dcc.Tabs([
+        dcc.Tab(
+            html.Pre(id="file-info", style=details_style),
+            label="File",
+            style=TAB_STYLE,
+            selected_style=SELECTED_TAB_STYLE,
+        ),
+        dcc.Tab(
+            html.Pre(id="submission-json", style=details_style),
+            label="Submission JSON",
+            style=TAB_STYLE,
+            selected_style=SELECTED_TAB_STYLE,
+        ),
+        dcc.Tab(
+            html.Pre(id="parameters", style=details_style),
+            label="Parameters",
+            style=TAB_STYLE,
+            selected_style=SELECTED_TAB_STYLE,
+        ),
+    ])
 
 
 def _run_action(
@@ -628,7 +620,7 @@ def _show_module_resource(
     """Populate the editor with the selected module's assignments."""
     if not module:
         return ""
-    resource = module_resources.load_module_resources(data_root).for_module(module)
+    resource = module_resources.load_module_resources(Path(data_root)).for_module(module)
     if resource is None:
         return ""
     return str(resource.fasta_path) if resource.fasta_path else ""
@@ -645,10 +637,10 @@ def _save_module_resource(
         return "Choose a module.", {"color": "#b00020", "fontSize": "11px"}
     try:
         module_resources.set_module_resource(
-            data_root,
+            Path(data_root),
             module,
             annotation_path=None,
-            fasta_path=fasta_path,
+            fasta_path=Path(fasta_path) if fasta_path else None,
         )
     except (OSError, ValueError, ValidationError) as error:
         return str(error), {"color": "#b00020", "fontSize": "11px"}
@@ -681,9 +673,9 @@ def _show_completed_job(
     action = status.command[1] if len(status.command) > 1 else ""
     if action in {"annotations", "fasta"}:
         if action == "fasta":
-            inventory = testdata.fixture_inventory.load_fixture_inventory(data_root)
+            inventory = testdata.fixture_inventory.load_fixture_inventory(Path(data_root))
             module_resources.sync_fasta_resources(
-                data_root,
+                Path(data_root),
                 (fixture.module for fixture in inventory.fixtures),
             )
         return "resources", job_id

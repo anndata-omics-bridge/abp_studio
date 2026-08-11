@@ -207,9 +207,9 @@ def test_launch_rejects_overlapping_mutating_jobs(
 
     def fake_start(
         command: Sequence[str],
-        log_file: Path | str,
+        log_file: Path,
         *,
-        cwd: Path | str | None = None,
+        cwd: Path | None = None,
     ) -> Job:
         return Job(tuple(command), _RunningProcess(), Path(log_file))
 

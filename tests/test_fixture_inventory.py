@@ -138,7 +138,7 @@ def test_settings_reject_relative_root_without_corrupting_file(tmp_path: Path) -
     saved = settings.update_settings(test_data_root=tmp_path / "fixtures", path=path)
 
     with pytest.raises(ValidationError, match="absolute paths"):
-        settings.update_settings(test_data_root="relative", path=path)
+        settings.update_settings(test_data_root=Path("relative"), path=path)
 
     assert settings.load_settings(path) == saved
 
@@ -247,7 +247,7 @@ def test_module_resource_assignment_rejects_relative_path(tmp_path: Path) -> Non
             tmp_path,
             "dia_aif",
             annotation_path=None,
-            fasta_path="reference.fasta",
+            fasta_path=Path("reference.fasta"),
         )
 
 

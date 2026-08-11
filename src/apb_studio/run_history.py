@@ -28,13 +28,13 @@ class OperationRecord:
     pid: int | None = None
 
 
-def operation_path(run_path: Path | str) -> Path:
+def operation_path(run_path: Path) -> Path:
     """Return the operation-state path adjacent to one generated ``run.json``."""
-    return Path(run_path).parent / "operation.json"
+    return run_path.parent / "operation.json"
 
 
 def start_operation(
-    run_path: Path | str,
+    run_path: Path,
     operation: OperationKind,
     *,
     started_at: str | None = None,
@@ -50,7 +50,7 @@ def start_operation(
     return record
 
 
-def set_operation_pid(run_path: Path | str, pid: int) -> OperationRecord:
+def set_operation_pid(run_path: Path, pid: int) -> OperationRecord:
     """Persist the launched Snakemake process ID without changing its status."""
     record = _required_record(run_path)
     updated = replace(record, pid=pid)
@@ -59,7 +59,7 @@ def set_operation_pid(run_path: Path | str, pid: int) -> OperationRecord:
 
 
 def mark_operation(
-    run_path: Path | str,
+    run_path: Path,
     status: OperationStatus,
     *,
     finished_at: str | None = None,
@@ -78,7 +78,7 @@ def mark_operation(
     return updated
 
 
-def load_operation(run_path: Path | str) -> OperationRecord | None:
+def load_operation(run_path: Path) -> OperationRecord | None:
     """Load and validate one operation record, returning ``None`` for legacy runs."""
     path = operation_path(run_path)
     if not path.is_file():
@@ -117,7 +117,7 @@ def load_operation(run_path: Path | str) -> OperationRecord | None:
     )
 
 
-def reconcile_operation(run_path: Path | str) -> OperationRecord | None:
+def reconcile_operation(run_path: Path) -> OperationRecord | None:
     """Mark a recorded active operation failed when its process no longer exists."""
     record = load_operation(run_path)
     if record is None or record.status not in {"starting", "running"}:
@@ -127,14 +127,14 @@ def reconcile_operation(run_path: Path | str) -> OperationRecord | None:
     return mark_operation(run_path, "failed")
 
 
-def _required_record(run_path: Path | str) -> OperationRecord:
+def _required_record(run_path: Path) -> OperationRecord:
     record = load_operation(run_path)
     if record is None:
-        raise ValueError(f"No operation record exists beside {Path(run_path)}.")
+        raise ValueError(f"No operation record exists beside {run_path}.")
     return record
 
 
-def _write_record(run_path: Path | str, record: OperationRecord) -> None:
+def _write_record(run_path: Path, record: OperationRecord) -> None:
     path = operation_path(run_path)
     source = json.dumps(asdict(record), indent=2, sort_keys=True)
     atomic_write_text(path, f"{source}\n")

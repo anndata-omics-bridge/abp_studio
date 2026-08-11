@@ -397,21 +397,19 @@ def test_configuration_callbacks_load_and_error_paths(
     result = operate(*args)
     assert result[3] == "Loaded packaged rule document."
     with pytest.raises(PreventUpdate):
-        operate(
-            *[
-                [],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                "",
-                None,
-                None,
-                "rule",
-            ]
-        )
+        operate(*[
+            [],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            "",
+            None,
+            None,
+            "rule",
+        ])
 
     monkeypatch.setattr(config_panel, "ctx", SimpleNamespace(triggered_id="config-load"))
     error = operate(*_operate_args(active=None, editor_source="", state=None, path=None))

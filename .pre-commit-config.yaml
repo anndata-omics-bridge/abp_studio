@@ -72,6 +72,29 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      # Report-only. Never blocks, never fails: a number flags a module for triage, it does not
+      # adjudicate one. Runs in Studio's own environment, not an isolated `uvx` one, because grimp
+      # resolves the target package through the Python path.
+      #
+      # Only three of the five checks are available here: pyan3 2.6.2 raises
+      # `ValueError: Unknown scope '...listcomp.0.lambda.0'` on the lambda inside a list
+      # comprehension in `pipeline/render_command.py`, which kills the public-surface and
+      # call-depth tables. Vulture, radon, ruff and grimp still run. Do not rewrite that lambda to
+      # please the tool -- that is restructuring to satisfy a diagnostic, which the workspace rules
+      # forbid; the bug is upstream.
+      - id: carpet-scan
+        name: carpet diagnostics (dead code, private access, folder depth)
+        entry: >-
+          uv run --frozen --extra dev
+          carpet-scan src --tests tests --html build/carpet-report.html
+        language: system
+        always_run: true
+        pass_filenames: false
+        # Always print the report: pre-commit hides passing hooks' output, and this hook always
+        # passes by design, so without this it would never show anything.
+        verbose: true
+        stages: [manual]
+
       - id: dependency-audit
         name: dependency vulnerability audit
         entry: >-
