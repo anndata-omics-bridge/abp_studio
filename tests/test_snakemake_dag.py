@@ -11,13 +11,8 @@ import pytest
 from anndata_proteomics.converters import pipeline as conversion_pipeline
 from anndata_proteomics.converters import recognize as conversion_recognize
 from anndata_proteomics.params.registry import parse_params
-from anndata_proteomics.rules.loader import (
-    PresentRuleVersion,
-    RuleResolutionBuilder,
-    UnparameterizedRuleEligibility,
-    load_rule,
-)
-from anndata_proteomics.rules.registry import RuleLocator, find_rule_for_version
+from anndata_proteomics.rules.loader import load_rule
+from anndata_proteomics.rules.registry import RuleNotFound, find_rule_for_version
 
 from apb_studio import capabilities, run_history
 from apb_studio.pipeline import (
@@ -48,12 +43,9 @@ def _long_headers(software: str, parameter_path: Path) -> tuple[str, ...]:
     version = parameters.software_version
     headers: set[str] = set()
     for level in conversion_pipeline.LEVELS:
-        locator = RuleResolutionBuilder(
-            software,
-            level,
-            UnparameterizedRuleEligibility(),
-        ).resolve(PresentRuleVersion(version))
-        if not isinstance(locator, RuleLocator):
+        try:
+            locator = find_rule_for_version(software, level, version)
+        except RuleNotFound:
             continue
         rule = load_rule(locator)
         if rule.input_shape != "long":
