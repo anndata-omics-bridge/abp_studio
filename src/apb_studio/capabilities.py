@@ -11,8 +11,9 @@ from anndata_proteomics.converters import pipeline as conversion_pipeline
 from anndata_proteomics.params import registry as parameter_registry
 from anndata_proteomics.params.model import ParamsError
 from anndata_proteomics.readers.dispatch import read_table_columns
+from anndata_proteomics.rules import parse_rule
 from anndata_proteomics.rules import registry as rule_registry
-from anndata_proteomics.rules.schema import QuantificationLevel
+from anndata_proteomics.rules.rule_components import QuantificationLevel
 from anndata_proteomics.workflows import conversion as conversion_workflow
 
 
@@ -225,7 +226,7 @@ def _resolve_parameters(
     parameter_path: Path,
     parameter_slug: str,
     software_slug: str,
-) -> tuple[conversion_pipeline.ParameterResolution, conversion_pipeline.RuleVersion]:
+) -> tuple[conversion_pipeline.ParameterResolution, parse_rule.RuleVersion]:
     """Parse search parameters and select the rule-version status."""
     try:
         resolution = conversion_pipeline.resolve_parameters(
@@ -250,7 +251,7 @@ def _match_targets(
     software_slug: str,
     headers: tuple[str, ...],
     resolution: conversion_pipeline.ParameterResolution,
-    rule_version: conversion_pipeline.RuleVersion,
+    rule_version: parse_rule.RuleVersion,
     parameter_slug: str,
 ) -> tuple[QuantificationLevel, ...]:
     """Match resolved input metadata against APB's packaged rules."""
@@ -271,9 +272,9 @@ def _match_targets(
     return tuple(level for level in conversion_pipeline.LEVELS if level in selections)
 
 
-def _software_version(version: conversion_pipeline.RuleVersion) -> str | None:
+def _software_version(version: parse_rule.RuleVersion) -> str | None:
     """Return the public optional version value from APB's tagged result."""
-    if isinstance(version, conversion_pipeline.PresentRuleVersion):
+    if isinstance(version, parse_rule.PresentRuleVersion):
         return version.value
     return None
 

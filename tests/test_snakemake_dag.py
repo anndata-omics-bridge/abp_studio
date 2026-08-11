@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 from anndata_proteomics.converters import pipeline as conversion_pipeline
-from anndata_proteomics.converters import recognize as conversion_recognize
 from anndata_proteomics.params.registry import parse_params
 from anndata_proteomics.rules.loader import load_rule
 from anndata_proteomics.rules.registry import RuleNotFound, find_rule_for_version
@@ -50,7 +49,7 @@ def _long_headers(software: str, parameter_path: Path) -> tuple[str, ...]:
         rule = load_rule(locator)
         if rule.input_shape != "long":
             continue
-        headers.update(conversion_recognize._expected_long_columns(rule))
+        headers.update(rule.required_long_headers())
         if rule.fragments is not None and rule.fragments.label_strategy == "column":
             headers.add(rule.fragments.label_column)
     return tuple(sorted(headers))

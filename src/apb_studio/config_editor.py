@@ -14,11 +14,11 @@ from anndata_proteomics.rules.loader import (
     parse_rule_source,
     validate_rule_source,
 )
+from anndata_proteomics.rules.parse_rule import RuleCompositionError
 from anndata_proteomics.rules.registry import (
     document_vendor,
     iter_packaged_documents,
 )
-from anndata_proteomics.rules.schema import RuleCompositionError
 from pydantic import ValidationError
 
 ConfigKind = Literal["rule"]
