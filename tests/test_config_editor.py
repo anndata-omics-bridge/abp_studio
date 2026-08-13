@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from anndata_proteomics.rules.registry import (
+from anndata_proteomics.vendor_quant_rules.registry import (
     find_rule,
     find_rule_for_version,
     iter_packaged_documents,

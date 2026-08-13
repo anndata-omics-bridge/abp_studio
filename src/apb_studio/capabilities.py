@@ -8,12 +8,12 @@ from functools import lru_cache
 from pathlib import Path
 
 from anndata_proteomics.converters import pipeline as conversion_pipeline
-from anndata_proteomics.params import registry as parameter_registry
-from anndata_proteomics.params.model import ParamsError
+from anndata_proteomics.vendor_params import registry as parameter_registry
+from anndata_proteomics.vendor_params.model import ParamsError
 from anndata_proteomics.readers.dispatch import read_table_columns
-from anndata_proteomics.rules import parse_rule
-from anndata_proteomics.rules import registry as rule_registry
-from anndata_proteomics.rules.rule_components import QuantificationLevel
+from anndata_proteomics.vendor_quant_rules import select
+from anndata_proteomics.vendor_quant_rules import registry as rule_registry
+from anndata_proteomics.vendor_quant_rules.schema.components import QuantificationLevel
 from anndata_proteomics.workflows import conversion as conversion_workflow
 
 
@@ -226,7 +226,7 @@ def _resolve_parameters(
     parameter_path: Path,
     parameter_slug: str,
     software_slug: str,
-) -> tuple[conversion_pipeline.ParameterResolution, parse_rule.RuleVersion]:
+) -> tuple[conversion_pipeline.ParameterResolution, select.RuleVersion]:
     """Parse search parameters and select the rule-version status."""
     try:
         resolution = conversion_pipeline.resolve_parameters(
@@ -251,7 +251,7 @@ def _match_targets(
     software_slug: str,
     headers: tuple[str, ...],
     resolution: conversion_pipeline.ParameterResolution,
-    rule_version: parse_rule.RuleVersion,
+    rule_version: select.RuleVersion,
     parameter_slug: str,
 ) -> tuple[QuantificationLevel, ...]:
     """Match resolved input metadata against APB's packaged rules."""
@@ -272,9 +272,9 @@ def _match_targets(
     return tuple(level for level in conversion_pipeline.LEVELS if level in selections)
 
 
-def _software_version(version: parse_rule.RuleVersion) -> str | None:
+def _software_version(version: select.RuleVersion) -> str | None:
     """Return the public optional version value from APB's tagged result."""
-    if isinstance(version, parse_rule.PresentRuleVersion):
+    if isinstance(version, select.PresentRuleVersion):
         return version.value
     return None
 

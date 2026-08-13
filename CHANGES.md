@@ -1,5 +1,8 @@
 # Changes
 
+- 2026-08-13: Follow APB's contract-folder rename in lockstep: `anndata_proteomics.rules` →
+  `.vendor_quant_rules` and `.params` → `.vendor_params` across six files. No shims — Studio is
+  APB's only consumer, so the old paths are simply gone. 228 tests pass.
 - 2026-08-11: Make filesystem paths exact typed boundaries across Studio. Services now accept
   `Path` (or `Path | None`) rather than `Path | str`; Dash strings are converted at callback edges,
   and Pydantic performs serialized settings/CSV conversion before path validators run. This matches

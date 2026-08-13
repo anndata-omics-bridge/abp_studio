@@ -10,12 +10,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
-from anndata_proteomics.rules.loader import (
+from anndata_proteomics.vendor_quant_rules.loader import (
     parse_rule_source,
     validate_rule_source,
 )
-from anndata_proteomics.rules.parse_rule import RuleCompositionError
-from anndata_proteomics.rules.registry import (
+from anndata_proteomics.vendor_quant_rules.compose import RuleCompositionError
+from anndata_proteomics.vendor_quant_rules.registry import (
     document_vendor,
     iter_packaged_documents,
 )

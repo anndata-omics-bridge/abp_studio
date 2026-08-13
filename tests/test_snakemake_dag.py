@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 from anndata_proteomics.converters import pipeline as conversion_pipeline
-from anndata_proteomics.params.registry import parse_params
-from anndata_proteomics.rules.loader import load_rule
-from anndata_proteomics.rules.registry import RuleNotFound, find_rule_for_version
+from anndata_proteomics.vendor_params.registry import parse_params
+from anndata_proteomics.vendor_quant_rules.loader import load_rule
+from anndata_proteomics.vendor_quant_rules.registry import RuleNotFound, find_rule_for_version
 
 from apb_studio import capabilities, run_history
 from apb_studio.pipeline import (

@@ -21,3 +21,4 @@ config/corpus.yaml
 
 # Carpet diagnostics output (make carpets)
 build/
+.carpet/

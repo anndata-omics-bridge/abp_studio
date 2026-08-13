@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from anndata_proteomics.rules.registry import find_rule
+from anndata_proteomics.vendor_quant_rules.registry import find_rule
 from dash.exceptions import PreventUpdate
 
 from apb_studio import config_editor, config_panel, disk, jobrunner
