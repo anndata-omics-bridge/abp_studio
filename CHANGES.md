@@ -1,5 +1,8 @@
 # Changes
 
+- 2026-08-28: Added the missing `LICENSE` file (MIT), and the `license` and `authors` fields that
+  `pyproject.toml` had never declared.
+
 - 2026-08-13: Follow APB's contract-folder rename in lockstep: `anndata_proteomics.rules` →
   `.vendor_quant_rules` and `.params` → `.vendor_params` across six files. No shims — Studio is
   APB's only consumer, so the old paths are simply gone. 228 tests pass.

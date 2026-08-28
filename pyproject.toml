@@ -4,6 +4,11 @@ version = "0.0.0"
 description = "Fixture Manager and Corpus Runner driving the anndata_proteomics (APB) CLI."
 readme = "README.md"
 requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Witold Wolski", email = "wew@fgcz.ethz.ch"}
+]
 dependencies = [
     "anndata-proteomics",
     "cyclopts",
