@@ -189,6 +189,16 @@ def _hrefs_ending_with(soup: BeautifulSoup, suffix: str) -> list[str]:
     return hrefs
 
 
+def _accept(part: Path, destination: Path) -> Path:
+    """Move a finished download into place, refusing bytes that are not a ZIP."""
+    if not part.is_file():
+        raise OSError(f"nothing downloaded: {part.name}")
+    if not zipfile.is_zipfile(part):
+        part.unlink()
+        raise OSError(f"not a ZIP archive: {part.name}")
+    return part.replace(destination)
+
+
 def _expected_total(response: Any, resumed_from: int) -> int | None:
     """Read the archive's full length from a response, ``None`` when it says nothing."""
     content_range = response.headers.get("Content-Range", "")
@@ -199,13 +209,24 @@ def _expected_total(response: Any, resumed_from: int) -> int | None:
     return resumed_from + int(length) if length.isdigit() else None
 
 
+def _is_permanent(error: Exception) -> bool:
+    """Say whether retrying an HTTP failure could ever help."""
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    return isinstance(status, int) and 400 <= status < 500 and status not in {408, 429}
+
+
 def fetch_zip(url: str, destination: Path, attempts: int = DOWNLOAD_ATTEMPTS) -> Path:
     """Download one archive, resuming a partial file and retrying a stalled transfer.
 
     Bytes accumulate in ``<destination>.part`` so an interrupted transfer is never mistaken
     for a complete archive. Each attempt asks for the remainder with a ``Range`` header; a
-    server that ignores it answers 200 and the file restarts. The archive is only moved into
-    place once its length matches what the server reports.
+    server that ignores it answers 200 and the file restarts. The archive moves into place
+    only once its length matches what the server reports and it reads as a ZIP: a remote
+    file replaced between two attempts would otherwise leave two halves spliced together.
+
+    A 4xx other than 408 or 429 is raised at once — no amount of waiting fixes a URL that
+    is not there.
     """
     part = destination.with_name(destination.name + ".part")
     destination.unlink(missing_ok=True)
@@ -223,8 +244,15 @@ def fetch_zip(url: str, destination: Path, attempts: int = DOWNLOAD_ATTEMPTS) ->
                 url, stream=True, timeout=REQUEST_TIMEOUT, headers=headers
             ) as response:
                 if response.status_code == 416:
-                    logger.info("server reports nothing left to send: {}", part.name)
-                    return part.replace(destination)
+                    # Nothing left to send — but only believe that if what is on disk is
+                    # the length the server names. A shrunken remote file lands here too.
+                    total = _expected_total(response, 0)
+                    if resumed_from and total in {None, resumed_from}:
+                        logger.info("server reports nothing left to send: {}", part.name)
+                        return _accept(part, destination)
+                    logger.warning("range refused for {} bytes; restarting", resumed_from)
+                    part.unlink(missing_ok=True)
+                    raise OSError(f"range refused: {resumed_from} bytes on disk, {total} remote")
                 if resumed_from and response.status_code != 206:
                     logger.warning("server ignored the range request; restarting {}", part.name)
                     resumed_from = 0
@@ -236,8 +264,10 @@ def fetch_zip(url: str, destination: Path, attempts: int = DOWNLOAD_ATTEMPTS) ->
             size = part.stat().st_size
             if total is not None and size != total:
                 raise OSError(f"incomplete download: {size} of {total} bytes")
-            return part.replace(destination)
+            return _accept(part, destination)
         except (requests.RequestException, OSError) as error:
+            if _is_permanent(error):
+                raise
             if attempt == attempts:
                 raise
             logger.warning(

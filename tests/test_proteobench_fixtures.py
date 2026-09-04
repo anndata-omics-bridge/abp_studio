@@ -10,7 +10,7 @@ import tomllib
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import pyarrow as pa
@@ -35,6 +35,7 @@ class _Response:
         headers: dict[str, str] | None = None,
         chunks: tuple[bytes, ...] | None = None,
         fail_after: int | None = None,
+        http_error: str = "",
     ) -> None:
         self.content = content
         self.text = text
@@ -42,10 +43,13 @@ class _Response:
         self.headers = headers if headers is not None else {"Content-Length": str(len(content))}
         self._chunks = chunks
         self._fail_after = fail_after
+        self._http_error = http_error
         self.status_checked = False
 
     def raise_for_status(self) -> None:
         self.status_checked = True
+        if self._http_error:
+            raise requests.HTTPError(self._http_error, response=cast(requests.Response, self))
 
     def iter_content(self, _size: int) -> Iterator[bytes]:
         for index, chunk in enumerate(
@@ -153,7 +157,8 @@ def test_a_stalled_archive_resumes_where_it_stopped(
 ) -> None:
     """A dead connection costs one attempt, not the bytes already on disk."""
     monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
-    payload = b"0123456789" * 4
+    payload = _zip_bytes({"input_file.tsv": b"a\tb\n1\t2\n"})
+    half = len(payload) // 2
     calls: list[dict[str, str]] = []
 
     def _get(_url: str, **kwargs: Any) -> _Response:
@@ -162,15 +167,15 @@ def test_a_stalled_archive_resumes_where_it_stopped(
         if not headers:
             # First attempt: sends half the archive, then the connection dies.
             return _Response(
-                chunks=(payload[:20], payload[20:]),
+                chunks=(payload[:half], payload[half:]),
                 fail_after=1,
                 headers={"Content-Length": str(len(payload))},
             )
-        start = int(headers["Range"].removeprefix("bytes=").rstrip("-"))
+        start_byte = int(headers["Range"].removeprefix("bytes=").rstrip("-"))
         return _Response(
-            chunks=(payload[start:],),
+            chunks=(payload[start_byte:],),
             status_code=206,
-            headers={"Content-Range": f"bytes {start}-{len(payload) - 1}/{len(payload)}"},
+            headers={"Content-Range": f"bytes {start_byte}-{len(payload) - 1}/{len(payload)}"},
         )
 
     monkeypatch.setattr(rawdb.requests, "get", _get)
@@ -179,7 +184,7 @@ def test_a_stalled_archive_resumes_where_it_stopped(
     assert rawdb.fetch_zip("https://server/archive.zip", destination) == destination
 
     assert destination.read_bytes() == payload
-    assert calls == [{}, {"Range": "bytes=20-"}], "the second attempt asks only for the rest"
+    assert calls == [{}, {"Range": f"bytes={half}-"}], "the second attempt asks for the rest"
     assert not (tmp_path / "archive.zip.part").exists()
 
 
@@ -187,13 +192,10 @@ def test_a_server_that_ignores_the_range_restarts_the_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
-    part = tmp_path / "archive.zip.part"
-    part.write_bytes(b"stale")
-    payload = b"complete"
+    (tmp_path / "archive.zip.part").write_bytes(b"stale prefix")
+    payload = _zip_bytes({"input_file.tsv": b"x\n"})
     monkeypatch.setattr(
-        rawdb.requests,
-        "get",
-        lambda _url, **_k: _Response(content=payload, status_code=200),
+        rawdb.requests, "get", lambda _url, **_k: _Response(content=payload, status_code=200)
     )
 
     rawdb.fetch_zip("https://server/archive.zip", tmp_path / "archive.zip")
@@ -218,16 +220,67 @@ def test_a_download_that_never_completes_raises(
     assert attempts == 3, "it gives up rather than retrying forever"
 
 
-def test_nothing_left_to_send_keeps_what_is_on_disk(
+def test_a_missing_url_is_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No amount of waiting turns a 404 into an archive."""
+    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    attempts = 0
+
+    def _get(_url: str, **_kwargs: Any) -> _Response:
+        nonlocal attempts
+        attempts += 1
+        return _Response(status_code=404, http_error="404 Not Found")
+
+    monkeypatch.setattr(rawdb.requests, "get", _get)
+    with pytest.raises(requests.HTTPError):
+        rawdb.fetch_zip("https://server/gone.zip", tmp_path / "a.zip")
+    assert attempts == 1, "a permanent failure is raised at once"
+
+
+def test_bytes_that_are_not_an_archive_are_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A remote file replaced mid-resume splices two halves; the result is not a ZIP."""
+    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        rawdb.requests, "get", lambda _url, **_k: _Response(content=b"an error page, not a zip")
+    )
+    with pytest.raises(OSError, match="not a ZIP archive"):
+        rawdb.fetch_zip("https://server/archive.zip", tmp_path / "a.zip", attempts=2)
+    assert not (tmp_path / "a.zip.part").exists(), "the bad bytes are discarded"
+
+
+def test_nothing_left_to_send_accepts_only_a_complete_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    payload = _zip_bytes({"input_file.tsv": b"x\n"})
     part = tmp_path / "archive.zip.part"
-    part.write_bytes(b"already complete")
-    monkeypatch.setattr(rawdb.requests, "get", lambda _url, **_k: _Response(status_code=416))
+    part.write_bytes(payload)
+    monkeypatch.setattr(
+        rawdb.requests,
+        "get",
+        lambda _url, **_k: _Response(
+            status_code=416, headers={"Content-Range": f"bytes */{len(payload)}"}
+        ),
+    )
 
     rawdb.fetch_zip("https://server/archive.zip", tmp_path / "archive.zip")
+    assert (tmp_path / "archive.zip").read_bytes() == payload
 
-    assert (tmp_path / "archive.zip").read_bytes() == b"already complete"
+    # A part longer than the remote file is not a finished download.
+    part.write_bytes(payload + b"extra")
+    attempts = 0
+
+    def _get(_url: str, **_kwargs: Any) -> _Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return _Response(status_code=416, headers={"Content-Range": f"bytes */{len(payload)}"})
+        return _Response(content=payload, status_code=200)
+
+    monkeypatch.setattr(rawdb.requests, "get", _get)
+    rawdb.fetch_zip("https://server/archive.zip", tmp_path / "archive.zip", attempts=3)
+    assert (tmp_path / "archive.zip").read_bytes() == payload, "the oversized part was dropped"
 
 
 def test_a_folder_without_a_vendor_table_is_not_a_download(tmp_path: Path) -> None:
