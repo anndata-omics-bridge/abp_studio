@@ -17,8 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from anndata_proteomics.converters import pipeline as conversion_pipeline
-from anndata_proteomics.proteobench.config import load_module_settings
+from apb2.parserV2.detect_document import software_slug
+from apb_proteobench.configuration.load import load_module
 from loguru import logger
 
 from apb_studio import capabilities, provenance, run_history
@@ -28,9 +28,11 @@ from apb_studio.jobrunner import Job, JobStatus, inspect_job, start_job
 from apb_studio.module_resources import load_module_resources
 from apb_studio.pipeline import (
     RUN_SNAPSHOT_SCHEMA_VERSION,
+    Pipeline,
     ResolvedFixture,
     RunSnapshot,
     Target,
+    UnsupportedSnapshotSchema,
     benchmark_path,
     coverage,
     expand_resolved_targets,
@@ -66,6 +68,7 @@ class PipelineLaunchOptions:
 
     targets: tuple[Path, ...] | None = None
     cores: int = 1
+    force: bool = False
     snakemake_exe: str | None = None
     cwd: Path | None = None
 
@@ -87,6 +90,7 @@ class _JobStarter(Protocol):
 def load_overview(
     job_id: str | None = None,
     *,
+    pipeline: Pipeline,
     settings_path: Path | None = None,
     discover: Callable[
         [Path, Path, str], capabilities.CapabilityDiscovery
@@ -95,12 +99,15 @@ def load_overview(
     """Load the pinned active run or resolve the current Fixture Manager inventory.
 
     The function never raises across the dashboard boundary. A known job pins its snapshot only
-    while running; after it finishes, newly downloaded fixtures enter the next overview.
+    while running; after it finishes, newly downloaded fixtures enter the next overview. A pinned
+    snapshot keeps the pipeline it was minted with — the requested one applies to the next
+    resolution, never retroactively to a run already under way.
     """
     try:
         snapshot = _running_snapshot(job_id)
         if snapshot is None:
             snapshot = resolve_current_run(
+                pipeline=pipeline,
                 settings_path=settings_path,
                 discover=discover,
             )
@@ -120,6 +127,7 @@ def load_overview(
 
 def resolve_current_run(
     *,
+    pipeline: Pipeline,
     run_id: str = "",
     settings_path: Path | None = None,
     persist_aliases: bool = False,
@@ -127,7 +135,7 @@ def resolve_current_run(
         [Path, Path, str], capabilities.CapabilityDiscovery
     ] = capabilities.discover_capabilities,
 ) -> RunSnapshot:
-    """Resolve every complete local fixture into one frozen in-memory run."""
+    """Resolve every complete local fixture into one frozen in-memory run of one pipeline."""
     settings = load_settings(settings_path)
     inventory = load_fixture_inventory(settings.test_data_root)
     resources = load_module_resources(settings.test_data_root)
@@ -154,7 +162,7 @@ def resolve_current_run(
             try:
                 # Scoring needs a readable module TOML; its declared level does not restrict which
                 # branches are scored — every annotated branch enters the ProteoBench stage.
-                load_module_settings(annotation_path)
+                load_module(annotation_path)
             except (OSError, ValueError) as error:
                 module_settings_error = (
                     f"Invalid ProteoBench module settings {annotation_path}: "
@@ -167,13 +175,10 @@ def resolve_current_run(
                 intermediate_hash=fixture.intermediate_hash,
                 dataset=aliases[fixture.identity],
                 software=fixture.catalog_software_name,
-                vendor=(
-                    discovery.software_slug
-                    or conversion_pipeline.software_slug(fixture.catalog_software_name)
-                ),
+                vendor=(discovery.software_slug or software_slug(fixture.catalog_software_name)),
                 parameter_vendor=(
                     discovery.parameter_software_slug
-                    or conversion_pipeline.software_slug(fixture.catalog_software_name)
+                    or software_slug(fixture.catalog_software_name)
                 ),
                 input_path=input_path,
                 parameter_path=parameter_path,
@@ -187,7 +192,6 @@ def resolve_current_run(
                 module_settings_error=module_settings_error,
             )
         )
-    registry = load_registry()
     resolved = tuple(fixtures)
     return RunSnapshot(
         schema_version=RUN_SNAPSHOT_SCHEMA_VERSION,
@@ -195,10 +199,11 @@ def resolve_current_run(
         created_at=datetime.now(UTC).isoformat(),
         test_data_root=settings.test_data_root,
         output_root=settings.output_root,
-        registry_digest=_registry_digest(registry),
+        registry_digest=_registry_digest(load_registry()),
         apb_version=provenance.apb_version(),
+        pipeline=pipeline,
         fixtures=resolved,
-        targets=tuple(expand_resolved_targets(registry, resolved, settings.output_root)),
+        targets=tuple(expand_resolved_targets(pipeline, resolved, settings.output_root)),
     )
 
 
@@ -247,9 +252,7 @@ def resolve_output_aliases(
         if alias is not None:
             _validate_alias(alias)
             continue
-        vendor = discovery.software_slug or conversion_pipeline.software_slug(
-            fixture.catalog_software_name
-        )
+        vendor = discovery.software_slug or software_slug(fixture.catalog_software_name)
         alias = _existing_output_alias(root, fixture)
         if alias is None or used.get((fixture.repo_name, alias), identity) != identity:
             alias = _available_output_alias(
@@ -373,6 +376,7 @@ def snakemake_argv(
     *,
     targets: list[Path] | None = None,
     dry_run: bool = False,
+    force: bool = False,
     cores: int = 1,
     snakemake_exe: str | None = None,
 ) -> list[str]:
@@ -395,6 +399,11 @@ def snakemake_argv(
     # --keep-going: a corpus is ~50 independent datasets; one bad one (e.g. an unparsable params
     # file) must not abort the whole run — the good datasets still build, failures show per dataset.
     argv.append("--keep-going")
+    if force:
+        # --forceall re-runs every job in the DAG of the requested targets, which for one
+        # pipeline is exactly that pipeline. It is how an already-converted corpus can be
+        # timed again rather than reported as nothing to do.
+        argv.append("--forceall")
     if dry_run:
         argv.append("-n")
     argv += [str(t) for t in (targets or [])]
@@ -423,6 +432,7 @@ def run_pipeline(
         run_path,
         targets=list(options.targets) if options.targets is not None else None,
         cores=options.cores,
+        force=options.force,
         snakemake_exe=options.snakemake_exe,
     )
     return start(argv, log_file, cwd=options.cwd)
@@ -483,6 +493,12 @@ def latest_persisted_run(output_root: Path) -> PersistedRun | None:
                     path,
                 )
                 continue
+        except UnsupportedSnapshotSchema as exc:
+            # Runs written before the current schema are history, not faults. Reporting each one
+            # would put a warning per stale run into every refresh of a long-lived output root.
+            # This clause precedes the general one because it is a ValueError itself.
+            logger.debug("Skipping persisted run snapshot {}: {}", path, exc)
+            continue
         except (OSError, ValueError) as exc:
             logger.warning(
                 "Ignoring invalid persisted run snapshot {}: {}: {}",
@@ -502,6 +518,7 @@ def latest_persisted_run(output_root: Path) -> PersistedRun | None:
 
 def prepare_run(
     *,
+    pipeline: Pipeline,
     operation: run_history.OperationKind = "run",
     settings_path: Path | None = None,
     discover: Callable[
@@ -510,6 +527,7 @@ def prepare_run(
 ) -> tuple[RunSnapshot, Path, list[Target]]:
     """Freeze the current inventory and select targets for one whole-corpus operation."""
     snapshot = resolve_current_run(
+        pipeline=pipeline,
         run_id=uuid.uuid4().hex,
         settings_path=settings_path,
         persist_aliases=True,
@@ -519,9 +537,9 @@ def prepare_run(
         runnable_targets(list(snapshot.targets)) if operation == "run" else list(snapshot.targets)
     )
     if not selected and operation == "run":
-        raise ValueError("Corpus has no runnable stages.")
+        raise ValueError(f"Pipeline {pipeline.name!r} has no runnable stages.")
     if not selected:
-        raise ValueError("Corpus has no managed stages to clean.")
+        raise ValueError(f"Pipeline {pipeline.name!r} has no managed stages to clean.")
     path = write_run_snapshot(snapshot, run_snapshot_path(snapshot))
     return snapshot, path, selected
 
@@ -529,13 +547,16 @@ def prepare_run(
 def _launch_corpus_operation(
     operation: run_history.OperationKind,
     *,
+    pipeline: Pipeline,
     cores: int = 3,
+    force: bool = False,
     settings_path: Path | None = None,
 ) -> str:
     """Freeze and launch one whole-corpus Snakemake operation."""
     if any(inspect_job(job).running for job in _JOBS.values()):
         raise RuntimeError("A corpus operation is already active.")
     snapshot, path, selected = prepare_run(
+        pipeline=pipeline,
         operation=operation,
         settings_path=settings_path,
     )
@@ -551,6 +572,7 @@ def _launch_corpus_operation(
             options=PipelineLaunchOptions(
                 targets=tuple(targets),
                 cores=cores,
+                force=force,
                 cwd=SNAKEFILE.parent,
             ),
         )
@@ -566,25 +588,35 @@ def _launch_corpus_operation(
 
 def launch_corpus(
     *,
+    pipeline: Pipeline,
     cores: int = 3,
+    force: bool = False,
     settings_path: Path | None = None,
 ) -> str:
-    """Freeze and launch every currently runnable corpus stage."""
+    """Freeze and launch every currently runnable stage of one pipeline.
+
+    ``force`` re-runs stages whose artifacts already exist, which is what makes a second timing
+    measurement possible without deleting the first one's output.
+    """
     return _launch_corpus_operation(
         "run",
+        pipeline=pipeline,
         cores=cores,
+        force=force,
         settings_path=settings_path,
     )
 
 
 def clear_corpus(
     *,
+    pipeline: Pipeline,
     cores: int = 1,
     settings_path: Path | None = None,
 ) -> str:
     """Freeze and launch the packaged whole-corpus Snakemake clean target."""
     return _launch_corpus_operation(
         "clean",
+        pipeline=pipeline,
         cores=cores,
         settings_path=settings_path,
     )

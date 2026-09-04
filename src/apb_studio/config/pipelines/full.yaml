@@ -1,0 +1,6 @@
+# Explicit CLI chain: APB2 conversion, FASTA sequence checking, available ion/fragment protein
+# aggregation, then ProteoBench annotation and scoring.
+name: full
+description: APB2 staged workflow — convert, FASTA-check, aggregate, ProteoBench.
+converters: [apb2]
+stages: [convert, fasta, aggregate-ion, aggregate-fragment, proteobench]

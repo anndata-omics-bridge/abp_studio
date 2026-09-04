@@ -1,0 +1,76 @@
+# What the fixture store fetches from ProteoBench.
+#
+# These change when ProteoBench adds a module, moves a results repository or revises its
+# module settings; they are not a property of this code, which is why they live here rather
+# than in proteobench_fixtures.py. Adding a module is one [[modules]] block.
+#
+# `settings_revision` pins the ProteoBench commit the module TOMLs are read from. The
+# matrix/scorer baseline predates the intermediate-format module contract: its module TOMLs
+# have neither `species_mapper` nor `[[samples]]`. This revision supplies both.
+
+schema_version = 1
+datasets_base_url = "https://proteobench.cubimed.rub.de/datasets/"
+settings_revision = "2738c47f8d621f0ee1fa4a6d3d358846f2bfa261"
+settings_root = "https://raw.githubusercontent.com/Proteobench/ProteoBench/{revision}/proteobench/io/parsing/io_parse_settings/Quant/lfq"
+
+# The reference FASTAs, fetched as ZIPs and extracted into `fasta/`.
+fasta_urls = [
+  "https://proteobench.cubimed.rub.de/fasta/ProteoBenchFASTA_MixedSpecies_HYE.zip",
+  "https://proteobench.cubimed.rub.de/fasta/ProteoBenchFASTA_MixedSpecies_HY.zip",
+]
+
+# One block per ProteoBench module.
+#
+# `settings_path` is appended to `settings_root`. `fasta` names which extracted FASTA the
+# module uses: each module ships a single species mix, see ProteoBench's per-module docs
+# under docs/available-modules/.
+
+[[modules]]
+name = "dda_qexactive"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DDA/archive/refs/heads/main.zip"
+settings_path = "DDA/ion/QExactive/module_settings.toml"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
+
+[[modules]]
+name = "dda_astral"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DDA_Astral/archive/refs/heads/main.zip"
+settings_path = "DDA/ion/Astral/module_settings.toml"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
+
+[[modules]]
+name = "dda_peptidoform"
+repo_url = "https://github.com/Proteobench/Results_quant_peptidoform_DDA/archive/refs/heads/main.zip"
+settings_path = "DDA/peptidoform/module_settings.toml"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
+
+[[modules]]
+name = "dia_astral"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_Astral/archive/refs/heads/main.zip"
+settings_path = "DIA/ion/Astral/module_settings.toml"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
+
+[[modules]]
+name = "dia_diapasef"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_diaPASEF/archive/refs/heads/main.zip"
+settings_path = "DIA/ion/diaPASEF/module_settings.toml"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
+
+[[modules]]
+name = "dia_aif"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_AIF/archive/refs/heads/main.zip"
+settings_path = "DIA/ion/AIF/module_settings.toml"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
+
+[[modules]]
+name = "dia_zenotof"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_ZenoTOF/archive/refs/heads/main.zip"
+settings_path = "DIA/ion/ZenoTOF/module_settings.toml"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
+
+# Single-cell DIA uses the HY (no E. coli) FASTA. The file inside the zip is misleadingly
+# named *_DDAQuantification_noecoli.fasta; that is the HY mix.
+[[modules]]
+name = "dia_singlecell"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_singlecell/archive/refs/heads/main.zip"
+settings_path = "DIA/ion/lowinput/module_settings.toml"
+fasta = "ProteoBenchFASTA_DDAQuantification_noecoli.fasta"

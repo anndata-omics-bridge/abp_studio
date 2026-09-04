@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from loguru import logger
 
 from apb_studio import execution, provenance, run_history, settings
 from apb_studio.capabilities import CapabilityDiscovery, CapabilityStatus
@@ -31,6 +32,7 @@ from apb_studio.jobrunner import (
 from apb_studio.pipeline import (
     CleanGuardError,
     Target,
+    load_pipeline,
 )
 
 
@@ -231,6 +233,7 @@ def test_launch_corpus_keeps_existing_targets_for_snakemake_staleness(
 ) -> None:
     settings_path, _data_root, _output_root = _fixture_settings(tmp_path)
     snapshot, run_path, selected = prepare_run(
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
@@ -250,7 +253,7 @@ def test_launch_corpus_keeps_existing_targets_for_snakemake_staleness(
 
     monkeypatch.setattr(execution, "run_pipeline", fake_run_pipeline)
 
-    job_id = execution.launch_corpus(settings_path=settings_path)
+    job_id = execution.launch_corpus(pipeline=load_pipeline(), settings_path=settings_path)
 
     assert job_id
     captured_options = captured["options"]
@@ -273,6 +276,7 @@ def test_clear_corpus_launches_packaged_snakemake_clean(
 ) -> None:
     settings_path, _data_root, _output_root = _fixture_settings(tmp_path)
     snapshot, run_path, selected = prepare_run(
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
@@ -292,7 +296,7 @@ def test_clear_corpus_launches_packaged_snakemake_clean(
 
     monkeypatch.setattr(execution, "run_pipeline", fake_run_pipeline)
 
-    job_id = execution.clear_corpus(settings_path=settings_path)
+    job_id = execution.clear_corpus(pipeline=load_pipeline(), settings_path=settings_path)
 
     assert job_id
     captured_options = captured["options"]
@@ -400,6 +404,7 @@ def test_load_overview_resolves_shared_inventory(tmp_path: Path) -> None:
     settings_path, data_root, output_root = _fixture_settings(tmp_path)
 
     targets, rows, snapshot, error = load_overview(
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
@@ -410,9 +415,13 @@ def test_load_overview_resolves_shared_inventory(tmp_path: Path) -> None:
     assert snapshot.output_root == output_root.resolve()
     assert len(snapshot.fixtures) == 1
     assert {(target.branch, target.stage) for target in targets} == {
-        (branch, stage)
-        for branch in ("mudata", "ion")
-        for stage in ("convert", "annotate", "fasta", "proteobench")
+        ("mudata", "convert"),
+        ("mudata", "fasta"),
+        ("mudata", "aggregate-ion"),
+        ("mudata", "proteobench"),
+        ("ion", "convert"),
+        ("ion", "fasta"),
+        ("ion", "proteobench"),
     }
     assert len(rows) == len(targets)
 
@@ -427,23 +436,24 @@ def test_persisted_invalid_resources_block_stages_before_execution(
     fasta.write_text("not FASTA\n")
 
     snapshot, _path, selected = prepare_run(
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
 
-    annotate = next(
+    proteobench = next(
         target
         for target in snapshot.targets
-        if target.branch == "mudata" and target.stage == "annotate"
+        if target.branch == "mudata" and target.stage == "proteobench"
     )
     fasta_target = next(
         target
         for target in snapshot.targets
         if target.branch == "mudata" and target.stage == "fasta"
     )
-    assert annotate.command == []
-    assert annotate.blocked_reason is not None
-    assert "Invalid annotation resource" in annotate.blocked_reason
+    assert proteobench.command == []
+    assert proteobench.blocked_reason is not None
+    assert "Invalid annotation resource" in proteobench.blocked_reason
     assert fasta_target.command == []
     assert fasta_target.blocked_reason is not None
     assert "Invalid FASTA resource" in fasta_target.blocked_reason
@@ -456,6 +466,7 @@ def test_prepare_run_writes_internal_json_and_alias_map(tmp_path: Path) -> None:
     legacy.mkdir(parents=True)
 
     snapshot, path, selected = prepare_run(
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
@@ -466,7 +477,9 @@ def test_prepare_run_writes_internal_json_and_alias_map(tmp_path: Path) -> None:
     assert snapshot.fixtures[0].dataset == "legacy-abcdef12"
     assert execution.output_alias_path(output_root).is_file()
     document = json.loads(path.read_text())
-    assert document["schema_version"] == 1
+    assert document["schema_version"] == 2
+    assert document["pipeline"]["name"] == "full"
+    assert document["pipeline"]["converters"] == ["apb2"]
     assert "modules" not in document
 
 
@@ -529,6 +542,7 @@ def test_active_run_snapshot_survives_browser_state_loss(
 ) -> None:
     settings_path, data_root, _output_root = _fixture_settings(tmp_path)
     pinned, run_path, _selected = prepare_run(
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
@@ -550,6 +564,7 @@ def test_active_run_snapshot_survives_browser_state_loss(
 
     _targets, _rows, active_snapshot, error = load_overview(
         None,
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
@@ -561,6 +576,7 @@ def test_active_run_snapshot_survives_browser_state_loss(
     state["running"] = False
     _targets, _rows, refreshed_snapshot, error = load_overview(
         None,
+        pipeline=load_pipeline(),
         settings_path=settings_path,
         discover=_supported_discovery,
     )
@@ -575,9 +591,48 @@ def test_load_overview_returns_readable_settings_error(tmp_path: Path) -> None:
     settings_path = tmp_path / "settings.json"
     settings_path.write_text("not JSON")
 
-    targets, rows, snapshot, error = load_overview(settings_path=settings_path)
+    targets, rows, snapshot, error = load_overview(
+        pipeline=load_pipeline(),
+        settings_path=settings_path,
+    )
 
     assert targets == []
     assert rows == []
     assert snapshot is None
     assert error and "Fixture Manager inventory" in error and "JSONDecodeError" in error
+
+
+def test_force_reruns_a_pipeline_whose_artifacts_already_exist(tmp_path: Path) -> None:
+    argv = execution.snakemake_argv(
+        execution.SNAKEFILE,
+        tmp_path / "run.json",
+        targets=[tmp_path / "ion.apb2.h5ad"],
+        cores=4,
+        force=True,
+    )
+
+    assert "--forceall" in argv
+    assert "-n" not in argv
+    assert "--forceall" not in execution.snakemake_argv(execution.SNAKEFILE, tmp_path / "run.json")
+
+
+def test_snapshots_from_an_older_schema_are_history_not_a_warning(tmp_path: Path) -> None:
+    output_root = tmp_path / "outputs"
+    run_dir = output_root / ".apb_studio" / "runs" / "old-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run.json").write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
+    (run_dir / "snakemake.log").write_text("old log\n", encoding="utf-8")
+
+    def _messages() -> list[str]:
+        captured: list[str] = []
+        sink = logger.add(captured.append, format="{level}|{message}", level="INFO")
+        try:
+            assert execution.latest_persisted_run(output_root) is None
+        finally:
+            logger.remove(sink)
+        return captured
+
+    assert _messages() == []
+
+    (run_dir / "run.json").write_text("{not json", encoding="utf-8")
+    assert any("invalid persisted run snapshot" in message for message in _messages())

@@ -1,68 +1,69 @@
-# Packaged stage registry — the single source of truth for pipeline stages.
-# Read by both the packaged workflow/Snakefile and apb_studio.dashboard.
-#
-# Adding a pipeline step = one entry here + one Snakemake rule + one `apb` CLI subcommand.
-# The dashboard re-derives its stage columns from this file.
-#
-# Fields:
-#   name            stage id (also the Snakemake rule name, dashes→underscores)
-#   scope           dataset | module | corpus
-#   basket          compact dashboard column label after this stage runs
-#   output_pattern  glob, relative to output_root; {placeholders} filled per dataset
-#   artifact        output basename (no suffix) for a NON-root stage → f"{artifact}{suffix}"; the
-#                   suffix tracks the dataset's convert artifact (.h5mu/.h5ad). The root (convert)
-#                   omits it — pipeline.convert_artifact is authoritative for its name (decision 16).
-#   command         the `apb` CLI template the Snakemake `shell:` runs (and the GUI previews)
-#   depends_on      upstream stage names (a list); [] marks the root, which reads the raw dataset.
-#                   pipeline.expand_resolved_targets derives each stage's INPUT edge from this —
-#                   no hardcoded edges — and reconnects to the nearest emitted upstream.
-#   resource        optional fixture resource consumed by this stage.
-#   container_agnostic  operates on whatever object it's given (a level .h5ad or the .h5mu)
-#
-# These templates ARE the real `apb` CLI. Target expansion invokes convert once for MuData and once
-# for every standalone level supported by APB's parsing-rule JSONs.
+# Packaged stage registry — the single source of truth for Corpus Runner commands and topology.
 
 stages:
 
-  # DAG root. The studio creates one no-level MuData target plus one --level target for every
-  # standalone level returned by APB available_targets().
+  # APB2 appends .h5ad for a standalone level and .h5mu when level is omitted.
   - name: convert
     scope: dataset
     basket: converted
     output_pattern: "{module}/{dataset}/{branch}{suffix}"
-    command: "apb convert {input} --software {vendor} --params {params} --params-software {parameter_vendor} --output {output}"
+    command: "apb2 convert {input} {level} --software {vendor} --params {params} --params-software {parameter_vendor} --output {output}"
     depends_on: []
 
-  # Join sample annotations onto obs. Container-agnostic: takes the .h5mu (or a level .h5ad) and
-  # one external annotation table; writes obs once. Gated on the module-level resource.
-  - name: annotate
-    scope: dataset
-    basket: annotated
-    container_agnostic: true
-    output_pattern: "{module}/{dataset}/{branch}.annotated{suffix}"
-    artifact: annotated
-    command: "apb annotate {input} {annotation} --output {output}"
-    depends_on: [convert]
-    resource: annotation
-
-  # FASTA validation for peptide-derived levels and protein annotation for protein levels.
+  # Verify canonical modification-stripped peptide sequences against the FASTA database.
   - name: fasta
     scope: dataset
-    basket: fasta annotated
+    basket: fasta checked
     container_agnostic: true
     output_pattern: "{module}/{dataset}/{branch}.fasta{suffix}"
     artifact: fasta
-    command: "apb fasta {input} {fasta} --output {output}"
+    command: "apb-fasta verify-peptides {input} {fasta} --output {output_path}"
     depends_on: [convert]
     resource: fasta
+    branches: [mudata, ion, peptidoform, peptide, fragment]
 
-  # Quantitative HYE scoring consumes sample_name and condition from APB annotation.
+  # Apply the existing apb-aggregate CLI once for each lower level that is actually available.
+  - name: aggregate-ion
+    scope: dataset
+    basket: ion aggregated
+    container_agnostic: true
+    output_pattern: "{module}/{dataset}/{branch}.aggregate-ion{suffix}"
+    artifact: aggregate-ion
+    command: "apb-aggregate ion protein sum {input} {output_path}"
+    depends_on: [fasta]
+    branches: [mudata]
+    requires_level: ion
+
+  - name: aggregate-fragment
+    scope: dataset
+    basket: fragment aggregated
+    container_agnostic: true
+    output_pattern: "{module}/{dataset}/{branch}.aggregate-fragment{suffix}"
+    artifact: aggregate-fragment
+    command: "apb-aggregate fragment protein sum {input} {output_path}"
+    depends_on: [aggregate-ion]
+    branches: [mudata]
+    requires_level: fragment
+
+  # Attach the ProteoBench sample design and score it in one result-to-result call.
   - name: proteobench
     scope: dataset
     basket: proteobench scored
     container_agnostic: true
     output_pattern: "{module}/{dataset}/{branch}.proteobench{suffix}"
     artifact: proteobench
-    command: "apb proteobench {input} {module_settings} --output {output}"
-    depends_on: [annotate]
+    command: "apb-proteobench benchmark {input} {module_settings} {output_path}"
+    depends_on: [aggregate-fragment]
     resource: module_settings
+    branches: [mudata, ion, peptidoform]
+
+  # Single-call alternative: raw vendor table directly to one scored MuData result.
+  - name: raw-proteobench
+    scope: dataset
+    basket: raw to proteobench
+    output_pattern: "{module}/{dataset}/{branch}.raw-proteobench{suffix}"
+    artifact: raw-proteobench
+    command: "apb-proteobench run {input} {fasta} --params {params} --module {module_settings} --software {vendor} --params-software {parameter_vendor} --output {output_path}"
+    depends_on: []
+    resources: [fasta, module_settings]
+    branches: [mudata]

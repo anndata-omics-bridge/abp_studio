@@ -24,6 +24,7 @@ from apb_studio.pipeline import (
     ResolvedFixture,
     RunSnapshot,
     Target,
+    load_pipeline,
     write_run_snapshot,
 )
 
@@ -85,6 +86,7 @@ def _snapshot(tmp_path: Path, *, run_id: str = "run") -> RunSnapshot:
         output_root=tmp_path / "outputs",
         registry_digest="digest",
         apb_version=None,
+        pipeline=load_pipeline(),
         fixtures=(fixture,),
         targets=(target,),
     )
@@ -170,7 +172,7 @@ def test_incomplete_fixture_guards(
         lambda *_args, **_kwargs: {inconsistent.identity: "diann-abcdef12"},
     )
     with pytest.raises(ValueError, match="no unique input and parameter"):
-        execution.resolve_current_run()
+        execution.resolve_current_run(pipeline=load_pipeline())
 
 
 def test_alias_store_validation_and_exhaustion(tmp_path: Path) -> None:
@@ -247,13 +249,13 @@ def test_snapshot_log_prepare_and_job_state_branches(
     monkeypatch.setattr(execution, "resolve_current_run", lambda **_kwargs: snapshot)
     monkeypatch.setattr(execution, "runnable_targets", lambda _targets: [])
     with pytest.raises(ValueError, match="no runnable stages"):
-        execution.prepare_run()
+        execution.prepare_run(pipeline=load_pipeline())
 
     job = _job(tmp_path)
     monkeypatch.setattr(execution, "_JOBS", {"active": job})
     monkeypatch.setattr(execution, "inspect_job", lambda _job: _status(tmp_path, running=True))
     with pytest.raises(RuntimeError, match="already active"):
-        execution.launch_corpus()
+        execution.launch_corpus(pipeline=load_pipeline())
 
     monkeypatch.setattr(execution, "_RUNS", {})
     assert execution._running_snapshot("missing") is None
@@ -345,7 +347,7 @@ def test_operation_launch_failure_is_persisted(
     )
 
     with pytest.raises(OSError, match="cannot start"):
-        execution.clear_corpus()
+        execution.clear_corpus(pipeline=load_pipeline())
 
     operation = run_history.load_operation(run_path)
     assert operation is not None
@@ -365,12 +367,13 @@ def test_clean_prepare_and_operation_lookup_edge_paths(
         output_root=empty.output_root,
         registry_digest=empty.registry_digest,
         apb_version=empty.apb_version,
+        pipeline=load_pipeline(),
         fixtures=empty.fixtures,
         targets=(),
     )
     monkeypatch.setattr(execution, "resolve_current_run", lambda **_kwargs: empty)
     with pytest.raises(ValueError, match="no managed stages"):
-        execution.prepare_run(operation="clean")
+        execution.prepare_run(pipeline=load_pipeline(), operation="clean")
 
     run_path = tmp_path / "operation/run.json"
     run_history.start_operation(run_path, "clean", started_at="now")

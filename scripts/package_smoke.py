@@ -11,8 +11,8 @@ import zipfile
 from pathlib import Path
 
 _ENTRY_POINTS = {
-    "apb-studio": "apb_studio.dashboard:main",
-    "apb-studio-corpus-runner": "apb_studio.dashboard:main",
+    "apb-studio": "apb_studio.dashboard:cli",
+    "apb-studio-corpus-runner": "apb_studio.dashboard:cli",
     "apb-studio-fixture-manager": "apb_studio.testdata_app:main",
     "apb-studio-testdata": "apb_studio.testdata_app:main",
 }
@@ -20,6 +20,11 @@ _REQUIRED_FILES = {
     "apb_studio/__init__.py",
     "apb_studio/py.typed",
     "apb_studio/config/registry.yaml",
+    "apb_studio/config/pipelines/full.yaml",
+    "apb_studio/config/pipelines/convert.yaml",
+    "apb_studio/config/pipelines/direct.yaml",
+    "apb_studio/config/pipelines/apb2-convert.yaml",
+    "apb_studio/config/pipelines/apb2-full.yaml",
     "apb_studio/workflow/Snakefile",
 }
 _INSTALLED_CHECK = """
@@ -28,7 +33,12 @@ from pathlib import Path
 
 import apb_studio
 from apb_studio.execution import SNAKEFILE
-from apb_studio.registry import REGISTRY_PATH, load_registry
+from apb_studio.registry import (
+    REGISTRY_PATH,
+    available_pipelines,
+    load_pipeline_document,
+    load_registry,
+)
 from apb_studio.settings import DEFAULT_OUTPUT_ROOT, DEFAULT_TEST_DATA_ROOT
 
 installed_root = Path(os.environ["APB_STUDIO_SMOKE_ROOT"]).resolve()
@@ -37,6 +47,10 @@ if not package_root.is_relative_to(installed_root):
     raise RuntimeError(f"Imported APB Studio outside smoke install: {package_root}")
 if not REGISTRY_PATH.is_file() or not load_registry():
     raise RuntimeError(f"Installed registry is unavailable: {REGISTRY_PATH}")
+if not available_pipelines():
+    raise RuntimeError("Installed package exposes no pipeline documents")
+for pipeline_name in available_pipelines():
+    load_pipeline_document(pipeline_name)
 if not SNAKEFILE.is_file():
     raise RuntimeError(f"Installed Snakefile is unavailable: {SNAKEFILE}")
 for default_root in (DEFAULT_TEST_DATA_ROOT, DEFAULT_OUTPUT_ROOT):

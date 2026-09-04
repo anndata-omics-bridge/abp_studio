@@ -1,6 +1,6 @@
 """Per-artifact provenance sidecars (decision 17).
 
-APB stores search parameters in the result's ``uns`` but writes no sidecar, so apb_studio writes
+APB2 stores search parameters in the result's metadata but writes no sidecar, so APB Studio writes
 one adjacent ``<artifact>.provenance.json`` for every output artifact. Each sidecar records the
 rendered command (which carries ``--software``/``--params``), inputs, APB version, and timestamp.
 Artifact-specific filenames keep same-stage records from independent output branches distinct.
@@ -35,12 +35,12 @@ app = App(
 
 
 def apb_version(apb_exe: str | None = None) -> str | None:
-    """Return installed APB metadata or the version reported by its executable."""
+    """Return installed APB2 metadata or the version reported by its executable."""
     try:
-        return version("anndata-proteomics")
+        return version("apb2")
     except PackageNotFoundError:
         pass
-    exe = apb_exe or shutil.which("apb")
+    exe = apb_exe or shutil.which("apb2")
     if exe is None:
         return None
     result = subprocess.run(

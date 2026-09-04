@@ -10,6 +10,7 @@ from apb_studio.pipeline import (
     ResolvedFixture,
     RunSnapshot,
     Target,
+    load_pipeline,
     write_run_snapshot,
 )
 from apb_studio.provenance import (
@@ -52,6 +53,7 @@ def _run(tmp_path: Path, *targets: Target) -> tuple[RunSnapshot, Path]:
         output_root=tmp_path / "out",
         registry_digest="registry-hash",
         apb_version="0.1.0",
+        pipeline=load_pipeline(),
         fixtures=(fixture,),
         targets=tuple(targets),
     )

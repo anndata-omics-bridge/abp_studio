@@ -8,25 +8,39 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_corpus_runner_make_targets_restart_and_stop_by_port() -> None:
-    restart = subprocess.run(
-        ["make", "--dry-run", "corpus-runner", "APP_PORT=49151"],
+def test_pipeline_variable_reaches_every_corpus_target() -> None:
+    for target, expected in (
+        ("corpus-run", "run_corpus.py --pipeline apb2-convert"),
+        ("corpus-check", "run_corpus.py --pipeline apb2-convert"),
+        ("corpus-clean", "clean_corpus.py --pipeline apb2-convert"),
+    ):
+        rendered = subprocess.run(
+            ["make", "--dry-run", target, "CORPUS_PIPELINE=apb2-convert"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert expected in rendered, target
+
+
+def test_routine_gate_names_its_fixtures_and_run_defaults_to_the_whole_corpus() -> None:
+    routine = subprocess.run(
+        ["make", "--dry-run", "corpus-routine"],
         cwd=PROJECT_ROOT,
         check=True,
         capture_output=True,
         text=True,
     ).stdout
-    stop = subprocess.run(
-        ["make", "--dry-run", "corpus-runner-stop", "APP_PORT=49151"],
+    whole = subprocess.run(
+        ["make", "--dry-run", "corpus-run"],
         cwd=PROJECT_ROOT,
         check=True,
         capture_output=True,
         text=True,
     ).stdout
 
-    assert "lsof -tiTCP:49151" in restart
-    assert "Refusing to stop PID" in restart
-    assert "VIRTUAL_ENV= APB_STUDIO_PORT=49151" in restart
-    assert "exec apb-studio-corpus-runner" in restart
-    assert "kill -INT" in stop
-    assert ".apb-studio-corpus-runner-49151.pid" in stop
+    assert "--datasets selections/routine.txt" in routine
+    # No sample: the default runs everything the pipeline covers.
+    assert "--fixtures 0" in whole
+    assert (PROJECT_ROOT / "selections" / "routine.txt").is_file()

@@ -9,12 +9,14 @@ from cyclopts import App
 from loguru import logger
 
 from apb_studio.execution import SNAKEFILE, prepare_run, snakemake_argv
+from apb_studio.pipeline import load_pipeline
+from apb_studio.registry import DEFAULT_PIPELINE, available_pipelines
 
 app = App(name="clean-corpus")
 
 
 @app.default
-def clean_corpus(*, settings: Path | None = None) -> None:
+def clean_corpus(*, pipeline: str = DEFAULT_PIPELINE, settings: Path | None = None) -> None:
     """Clean the whole corpus headlessly.
 
     The packaged Snakefile refuses to load without a Corpus Runner-generated ``run.json``, and its
@@ -23,11 +25,27 @@ def clean_corpus(*, settings: Path | None = None) -> None:
 
     Parameters
     ----------
+    pipeline
+        Which pipeline's artifacts to remove. The default clears everything both converters
+        can produce; a narrower pipeline clears only its own stages.
     settings
         Alternative settings file. Defaults to the settings shared by both applications.
     """
-    snapshot, run_path, targets = prepare_run(operation="clean", settings_path=settings)
-    logger.info("Cleaning {} managed stages under {}", len(targets), snapshot.output_root)
+    if pipeline not in available_pipelines():
+        raise SystemExit(
+            f"Unknown pipeline {pipeline!r}; available: {', '.join(available_pipelines())}"
+        )
+    snapshot, run_path, targets = prepare_run(
+        pipeline=load_pipeline(pipeline),
+        operation="clean",
+        settings_path=settings,
+    )
+    logger.info(
+        "Cleaning {} managed stages of pipeline {!r} under {}",
+        len(targets),
+        pipeline,
+        snapshot.output_root,
+    )
     command = snakemake_argv(SNAKEFILE, run_path, targets=[Path("clean")], cores=1)
     completed = subprocess.run(command, cwd=SNAKEFILE.parent, check=False)
     if completed.returncode != 0:

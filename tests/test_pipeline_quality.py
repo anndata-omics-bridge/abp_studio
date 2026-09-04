@@ -9,6 +9,8 @@ from typing import Any, cast
 import pytest
 
 from apb_studio import pipeline
+from apb_studio.pipeline import load_pipeline
+from apb_studio.registry import PipelineDocument
 
 
 def _target(
@@ -61,6 +63,7 @@ def _snapshot(
         output_root=tmp_path / "outputs",
         registry_digest="digest",
         apb_version=None,
+        pipeline=load_pipeline(),
         fixtures=(_fixture(tmp_path),),
         targets=targets,
     )
@@ -248,23 +251,36 @@ def test_resolved_expansion_keeps_full_topology_for_a_missing_resource(
     registry: list[dict[str, Any]] = [
         {
             "name": "root",
-            "command": "apb convert {input} --output {output}",
+            "command": "apb2 convert {input} --output {output}",
         },
         {
             "name": "middle",
             "depends_on": ["root"],
             "artifact": "middled",
             "resource": "annotation",
-            "command": "apb annotate {input} {annotation} --output {output}",
+            "command": "apb-fasta merge-annotations {input} {annotation} --output {output}",
         },
         {
             "name": "finish",
             "depends_on": ["middle"],
             "artifact": "finished",
-            "command": "apb finish {input} --output {output}",
+            "command": "apb-proteobench benchmark {input} {output}",
         },
     ]
-    resolved = pipeline.expand_resolved_targets(registry, (_fixture(tmp_path),), tmp_path / "out")
+    selection = pipeline.resolve_pipeline(
+        PipelineDocument(
+            name="custom",
+            description="Three-stage catalogue with one resource-gated middle stage.",
+            converters=("apb2",),
+            stages=("root", "middle", "finish"),
+        ),
+        registry,
+    )
+    resolved = pipeline.expand_resolved_targets(
+        selection,
+        (_fixture(tmp_path),),
+        tmp_path / "out",
+    )
     blocked = {target.stage: target.blocked_reason for target in resolved}
     assert blocked == {
         "root": None,

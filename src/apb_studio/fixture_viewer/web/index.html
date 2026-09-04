@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>APB Studio — Fixture Store</title>
+    <!--
+      Tabulator ships its stylesheet separately rather than inlining it, so this
+      link is load-bearing: without it the tables render as unstyled divs. Pinned
+      to the same version as vendor/tabulator.js.
+    -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/tabulator-tables@6.5.2/dist/css/tabulator.min.css"
+    />
+    <link rel="stylesheet" href="app.css?v=20260904.3" />
+  </head>
+  <body>
+    <fixture-app></fixture-app>
+    <noscript>This viewer is a JavaScript application and needs scripting enabled.</noscript>
+    <script type="module" src="app.js?v=20260904.3"></script>
+  </body>
+</html>

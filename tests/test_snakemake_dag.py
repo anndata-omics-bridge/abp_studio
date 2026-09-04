@@ -8,10 +8,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from anndata_proteomics.converters import pipeline as conversion_pipeline
-from anndata_proteomics.vendor_params.registry import parse_params
-from anndata_proteomics.vendor_quant_rules.loader import load_rule
-from anndata_proteomics.vendor_quant_rules.registry import RuleNotFound, find_rule_for_version
 
 from apb_studio import capabilities, run_history
 from apb_studio.pipeline import (
@@ -22,46 +18,107 @@ from apb_studio.pipeline import (
     benchmark_path,
     expand_resolved_targets,
     failure_marker_path,
+    load_pipeline,
     load_run_snapshot,
     write_run_snapshot,
 )
-from apb_studio.registry import REGISTRY_PATH, load_registry
+from apb_studio.registry import REGISTRY_PATH
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SNAKEFILE = REGISTRY_PATH.parent.parent / "workflow" / "Snakefile"
 _LOCAL_SNAKEMAKE = _REPO_ROOT / ".venv" / "bin" / "snakemake"
 _SNAKEMAKE = str(_LOCAL_SNAKEMAKE) if _LOCAL_SNAKEMAKE.exists() else shutil.which("snakemake")
-_APB_PARAMS = _REPO_ROOT.parent / "apb" / "tests" / "params"
+_APB2_PARAMS = _REPO_ROOT.parent / "apb2" / "tests" / "parserV2" / "vendor_params" / "params"
+
+_LONG_HEADERS = {
+    "diann": (
+        "Fragment.Quant.Raw",
+        "Genes",
+        "Modified.Sequence",
+        "PG.MaxLFQ",
+        "Precursor.Charge",
+        "Precursor.Id",
+        "Precursor.Normalised",
+        "Protein.Group",
+        "Protein.Ids",
+        "Protein.Names",
+        "Run",
+        "Stripped.Sequence",
+    ),
+    "spectronaut": (
+        "E.Errors",
+        "E.LFQMethod",
+        "E.Warnings",
+        "EG.AvgProfileQvalue",
+        "EG.IntPIMID",
+        "EG.IsDecoy",
+        "EG.MaxProfileQvalue",
+        "EG.MinProfileQvalue",
+        "EG.ModifiedPeptide",
+        "EG.ModifiedSequence",
+        "EG.PercentileQvalue",
+        "EG.PrecursorId",
+        "EG.Qvalue",
+        "EG.UserGroup",
+        "EG.Workflow",
+        "EG.iRTPredicted",
+        "F.Charge",
+        "F.FrgIon",
+        "F.FrgLossType",
+        "F.FrgMz",
+        "F.FrgNum",
+        "F.FrgType",
+        "F.PeakArea",
+        "F.TheoreticalMz",
+        "FG.Charge",
+        "FG.IntMID",
+        "FG.LabeledSequence",
+        "FG.Mass",
+        "FG.PrecMz",
+        "FG.Quantity",
+        "FG.Qvalue",
+        "FG.XICDBID",
+        "PEP.GroupingKey",
+        "PEP.GroupingKeyType",
+        "PEP.StrippedSequence",
+        "PG.Cscore",
+        "PG.GroupLabel",
+        "PG.PEP",
+        "PG.ProteinAccessions",
+        "PG.ProteinGroups",
+        "PG.Pvalue",
+        "PG.Quantity",
+        "PG.Qvalue",
+        "R.Condition",
+        "R.FileName",
+        "R.Fraction",
+        "R.Label",
+        "R.Replicate",
+    ),
+}
+
+_FRAGPIPE_HEADERS = (
+    "Assigned Modifications",
+    "Charge",
+    "Gene",
+    "M/Z",
+    "Mapped Proteins",
+    "Modified Sequence",
+    "Peptide Sequence",
+    "Protein",
+    "Protein ID",
+    "run1 Intensity",
+)
 
 
-def _long_headers(software: str, parameter_path: Path) -> tuple[str, ...]:
-    """Required headers of every matching packaged long-format level rule."""
-    parameters = parse_params(parameter_path, software=software)
-    if parameters.software_version is None:
-        raise AssertionError(f"{parameter_path} contains no software version")
-    version = parameters.software_version
-    headers: set[str] = set()
-    for level in conversion_pipeline.LEVELS:
-        try:
-            locator = find_rule_for_version(software, level, version)
-        except RuleNotFound:
-            continue
-        rule = load_rule(locator)
-        if rule.input_shape != "long":
-            continue
-        headers.update(rule.required_long_headers())
-        if rule.fragments is not None and rule.fragments.label_strategy == "column":
-            headers.add(rule.fragments.label_column)
-    return tuple(sorted(headers))
+def _long_headers(software: str) -> tuple[str, ...]:
+    """Headers sufficient to compile the APB2 packaged rules used in this DAG test."""
+    return _LONG_HEADERS[software]
 
 
-def _fragpipe_headers(parameter_path: Path) -> tuple[str, ...]:
-    """Required FragPipe wide columns, including one sample's required intensity."""
-    parameters = parse_params(parameter_path, software="fragpipe")
-    if parameters.software_version is None:
-        raise AssertionError(f"{parameter_path} contains no software version")
-    rule = load_rule(find_rule_for_version("fragpipe", "ion", parameters.software_version))
-    return (*sorted(rule.columns.var.select.values()), "run1 Intensity")
+def _fragpipe_headers() -> tuple[str, ...]:
+    """Required FragPipe wide columns, including one sample intensity."""
+    return _FRAGPIPE_HEADERS
 
 
 def _snakemake_env(tmp_path: Path) -> dict[str, str]:
@@ -74,7 +131,7 @@ def _runtime_cache(tmp_path: Path) -> str:
     return str(path)
 
 
-def _fixture_run(tmp_path: Path) -> Path:
+def _fixture_run(tmp_path: Path, pipeline_name: str = "full") -> Path:
     in_root, out_root = tmp_path / "in", tmp_path / "out"
     files = (
         "diann_annotation.toml",
@@ -94,8 +151,8 @@ def _fixture_run(tmp_path: Path) -> Path:
 
     diann_dir = in_root / "quant_lfq_ion_DIA_AIF" / "run1"
     diann_dir.mkdir(parents=True)
-    diann_params = _APB_PARAMS / "Version1_9_Predicted_Library_report.log.txt"
-    (diann_dir / "report.tsv").write_text("\t".join(_long_headers("diann", diann_params)) + "\n")
+    diann_params = _APB2_PARAMS / "Version1_9_Predicted_Library_report.log.txt"
+    (diann_dir / "report.tsv").write_text("\t".join(_long_headers("diann")) + "\n")
     shutil.copyfile(
         diann_params,
         diann_dir / "report.log.txt",
@@ -104,19 +161,15 @@ def _fixture_run(tmp_path: Path) -> Path:
     spectronaut_dir = in_root / "quant_lfq_ion_DIA_Spectronaut" / "runS"
     spectronaut_dir.mkdir(parents=True)
     spectronaut_params = (
-        _APB_PARAMS / "spectronaut_Experiment1_ExperimentSetupOverview_BGS_Factory_Settings.txt"
+        _APB2_PARAMS / "spectronaut_Experiment1_ExperimentSetupOverview_BGS_Factory_Settings.txt"
     )
-    (spectronaut_dir / "report.tsv").write_text(
-        "\t".join(_long_headers("spectronaut", spectronaut_params)) + "\n"
-    )
+    (spectronaut_dir / "report.tsv").write_text("\t".join(_long_headers("spectronaut")) + "\n")
     shutil.copyfile(spectronaut_params, spectronaut_dir / "settings.txt")
 
     fragpipe_dir = in_root / "quant_lfq_ion_DDA_QExactive" / "runA"
     fragpipe_dir.mkdir(parents=True)
-    fragpipe_params = _APB_PARAMS / "fragpipe_fdr_test.workflow"
-    (fragpipe_dir / "combined_ion.tsv").write_text(
-        "\t".join(_fragpipe_headers(fragpipe_params)) + "\n"
-    )
+    fragpipe_params = _APB2_PARAMS / "fragpipe_fdr_test.workflow"
+    (fragpipe_dir / "combined_ion.tsv").write_text("\t".join(_fragpipe_headers()) + "\n")
     shutil.copyfile(
         fragpipe_params,
         fragpipe_dir / "fragpipe.workflow",
@@ -192,7 +245,8 @@ def _fixture_run(tmp_path: Path) -> Path:
             )
         )
     resolved = tuple(fixtures)
-    targets = expand_resolved_targets(load_registry(), resolved, out_root)
+    selection = load_pipeline(pipeline_name)
+    targets = expand_resolved_targets(selection, resolved, out_root)
     snapshot = RunSnapshot(
         schema_version=RUN_SNAPSHOT_SCHEMA_VERSION,
         run_id="dag-test",
@@ -201,6 +255,7 @@ def _fixture_run(tmp_path: Path) -> Path:
         output_root=out_root,
         registry_digest="test-registry",
         apb_version=None,
+        pipeline=selection,
         fixtures=resolved,
         targets=tuple(targets),
     )
@@ -234,17 +289,14 @@ def test_dry_run_resolves_default_dag(tmp_path: Path) -> None:
     out = proc.stdout + proc.stderr
     assert proc.returncode == 0, out
     assert "convert" in out
-    assert "annotate" in out
     assert "fasta" in out
     assert "proteobench" in out
     assert "spectronaut-runS/mudata.fasta.h5mu" in out
     assert "spectronaut-runS/ion.fasta.h5ad" in out
-    assert "spectronaut-runS/protein.fasta.h5ad" in out
     assert "spectronaut-runS/fragment.fasta.h5ad" in out
     assert "spectronaut-runS/mudata.proteobench.h5mu" in out
     assert "spectronaut-runS/ion.proteobench.h5ad" in out
-    assert "spectronaut-runS/protein.proteobench.h5ad" in out
-    assert "spectronaut-runS/fragment.proteobench.h5ad" in out
+    assert "spectronaut-runS/protein.h5ad" in out
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
@@ -253,10 +305,12 @@ def test_dry_run_routes_single_and_multi_level_artifacts(tmp_path: Path) -> None
     config = _fixture_run(tmp_path)
     out_root = tmp_path / "out"
     targets = [
-        str(out_root / "quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu"),  # multi-level → MuData
+        str(out_root / "quant_lfq_ion_DIA_AIF/diann-run1/mudata.h5mu"),
         str(
             out_root / "quant_lfq_ion_DDA_QExactive/fragpipe-runA/ion.h5ad"
         ),  # single-level → <level>.h5ad
+        str(out_root / "quant_lfq_ion_DIA_AIF/diann-run1/ion.h5ad"),
+        str(out_root / "quant_lfq_ion_DIA_AIF/diann-run1/ion.fasta.h5ad"),
     ]
     proc = subprocess.run(
         [
@@ -325,6 +379,7 @@ def _single_command_run(
         output_root=tmp_path / "out",
         registry_digest="test-registry",
         apb_version=None,
+        pipeline=load_pipeline(),
         fixtures=(fixture,),
         targets=(target,),
     )
@@ -518,11 +573,16 @@ def test_success_without_declared_artifact_is_a_failed_rule(tmp_path: Path) -> N
 
 
 @pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
-def test_apb_command_resolves_from_snakemake_virtualenv(tmp_path: Path) -> None:
+def test_apb2_command_resolves_from_snakemake_virtualenv(tmp_path: Path) -> None:
+    """The second converter's binary must resolve the same way the first one does.
+
+    A template naming `apb2` is only useful if the workflow finds the interpreter-local script;
+    a bare name would silently pick up whatever is on PATH, or nothing.
+    """
     run_path, output = _single_command_run(
         tmp_path,
-        ["apb", "--version"],
-        run_id="apb-executable-test",
+        ["apb2", "--version"],
+        run_id="apb2-executable-test",
     )
 
     proc = _run_real_target(tmp_path, run_path, output)
@@ -531,3 +591,86 @@ def test_apb_command_resolves_from_snakemake_virtualenv(tmp_path: Path) -> None:
     log = Path(f"{output}.log").read_text()
     assert "command not found" not in log
     assert "Rule command completed without creating its artifact" in log
+
+
+@pytest.mark.parametrize("tool", ["apb-aggregate", "apb-fasta", "apb-proteobench"])
+def test_pipeline_tool_resolves_from_snakemake_virtualenv(tmp_path: Path, tool: str) -> None:
+    run_path, output = _single_command_run(
+        tmp_path,
+        [tool, "--version"],
+        run_id=f"{tool}-executable-test",
+    )
+
+    proc = _run_real_target(tmp_path, run_path, output)
+
+    assert proc.returncode != 0  # the version command intentionally creates no artifact
+    log = Path(f"{output}.log").read_text()
+    assert "command not found" not in log
+    assert "Rule command completed without creating its artifact" in log
+
+
+@pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
+def test_convert_only_pipeline_schedules_nothing_downstream(tmp_path: Path) -> None:
+    """A narrower pipeline is a narrower target set; the Snakefile is unchanged by it."""
+    assert _SNAKEMAKE is not None
+    config = _fixture_run(tmp_path, "apb2-convert")
+    proc = subprocess.run(
+        [
+            _SNAKEMAKE,
+            "-s",
+            str(_SNAKEFILE),
+            "--configfile",
+            str(config),
+            "-n",
+            "--cores",
+            "1",
+            "--runtime-source-cache-path",
+            _runtime_cache(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        env=_snakemake_env(tmp_path),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    output = proc.stdout + proc.stderr
+    assert "convert" in output
+    for stage in ("fasta", "aggregate", "proteobench", "raw_proteobench"):
+        assert f"\n{stage}" not in output, stage
+    snapshot = load_run_snapshot(config)
+    assert {target.stage for target in snapshot.targets} == {"convert"}
+    assert {target.branch for target in snapshot.targets} >= {"mudata", "ion"}
+
+
+@pytest.mark.skipif(_SNAKEMAKE is None, reason="snakemake not installed")
+def test_direct_pipeline_schedules_one_raw_proteobench_call_per_fixture(tmp_path: Path) -> None:
+    """The direct pipeline bypasses all intermediate stage rules."""
+    assert _SNAKEMAKE is not None
+    config = _fixture_run(tmp_path, "direct")
+    proc = subprocess.run(
+        [
+            _SNAKEMAKE,
+            "-s",
+            str(_SNAKEFILE),
+            "--configfile",
+            str(config),
+            "-n",
+            "--cores",
+            "1",
+            "--runtime-source-cache-path",
+            _runtime_cache(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        env=_snakemake_env(tmp_path),
+    )
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 0, output
+    assert "raw_proteobench" in output
+    assert "mudata.raw-proteobench.h5mu" in output
+    snapshot = load_run_snapshot(config)
+    assert len(snapshot.targets) == len(snapshot.fixtures)
+    assert {target.stage for target in snapshot.targets} == {"raw-proteobench"}
+    assert all(target.command[:2] == ["apb-proteobench", "run"] for target in snapshot.targets)

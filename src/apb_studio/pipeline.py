@@ -1,6 +1,6 @@
 """Registry-driven target expansion and corpus progress state.
 
-APB's parsing-rule JSONs decide which conversion branches an input supports. This module expands
+APB2's parsing-rule JSONs decide which conversion branches an input supports. This module expands
 each discovered branch through the registry's stage DAG, producing the concrete paths and commands
 shared by Snakemake and the dashboard.
 """
@@ -12,34 +12,144 @@ import json
 import math
 import re
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from anndata_proteomics.converters import pipeline as conversion_pipeline
+from apb2.parserV2.vendor_parse_rules.schema.base import LEVELS as APB2_LEVELS
 
-from apb_studio.registry import load_registry
+from apb_studio.registry import (
+    DEFAULT_PIPELINE,
+    PipelineDocument,
+    load_pipeline_document,
+    load_registry,
+)
 
-MUDATA = conversion_pipeline.MUDATA
-LEVELS = tuple(conversion_pipeline.LEVELS)
+MUDATA = "mudata"
+MUDATA_LABEL = "MuData"
+"""How the MuData container is labelled in the Level column; it is not a quantification level."""
+LEVELS = tuple(APB2_LEVELS)
+
+APB2 = "apb2"
+CONVERTERS = (APB2,)
+"""APB2 is the only converter used by new Corpus Runner snapshots."""
+
 BRANCHES = (MUDATA, *LEVELS)
+"""The APB2 MuData container and standalone quantification levels."""
+
+
+@dataclass(frozen=True, slots=True)
+class Pipeline:
+    """One named selection from the stage catalogue: which converters, which stages.
+
+    Resolved, not declarative: ``stages`` holds the catalogue entries themselves, in topological
+    order, so a pipeline is self-contained and a persisted run needs no second lookup to know what
+    it ran.
+    """
+
+    name: str
+    description: str
+    converters: tuple[str, ...]
+    stages: tuple[dict[str, Any], ...]
+
+    @property
+    def stage_names(self) -> tuple[str, ...]:
+        """The selected stage names, in the order they run."""
+        return tuple(str(stage["name"]) for stage in self.stages)
+
+    def column_suffix(self, converter: str) -> str:
+        """What one converter appends to a stage's column key within this run.
+
+        The suffix exists to separate two chains sharing a grid row, so the first converter needs
+        none. A run with a single converter has nothing to disambiguate, and a ``Converted2``
+        column with no ``Converted`` beside it would be noise.
+        """
+        index = self.converters.index(converter)
+        return "" if index == 0 else str(index + 1)
+
+    def column(self, stage_name: str, converter: str) -> str:
+        """The row/column key one stage occupies for one converter."""
+        return f"{stage_name}{self.column_suffix(converter)}"
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        """Every stage column, one converter's whole chain before the next one's."""
+        return tuple(
+            self.column(name, converter)
+            for converter in self.converters
+            for name in self.stage_names
+        )
+
+
+def load_pipeline(name: str = DEFAULT_PIPELINE) -> Pipeline:
+    """Resolve one named pipeline against the packaged stage catalogue."""
+    return resolve_pipeline(load_pipeline_document(name), load_registry())
+
+
+def resolve_pipeline(document: PipelineDocument, registry: list[dict[str, Any]]) -> Pipeline:
+    """Bind a pipeline document to catalogue entries, rejecting anything it cannot name."""
+    unknown_converters = [name for name in document.converters if name not in CONVERTERS]
+    if unknown_converters:
+        raise ValueError(
+            f"Pipeline {document.name!r} names unknown converter(s) {unknown_converters}; "
+            f"known converters are: {', '.join(CONVERTERS)}"
+        )
+    if not document.converters:
+        raise ValueError(f"Pipeline {document.name!r} selects no converter.")
+    catalogue = {str(stage["name"]): stage for stage in registry}
+    unknown_stages = [name for name in document.stages if name not in catalogue]
+    if unknown_stages:
+        raise ValueError(
+            f"Pipeline {document.name!r} names unknown stage(s) {unknown_stages}; "
+            f"the catalogue declares: {', '.join(catalogue)}"
+        )
+    if not document.stages:
+        raise ValueError(f"Pipeline {document.name!r} selects no stage.")
+    selected = set(document.stages)
+    # A selection must be closed under `depends_on`. A stage reads its parent's artifact, so
+    # dropping the parent is not a shortcut. Refusing here reports an invalid workflow before
+    # any command runs.
+    for name in document.stages:
+        missing = [dep for dep in (catalogue[name].get("depends_on") or []) if dep not in selected]
+        if missing:
+            raise ValueError(
+                f"Pipeline {document.name!r} selects stage {name!r} without its "
+                f"dependencies {missing}; a stage reads its parent's artifact."
+            )
+    # Catalogue order, not document order: `depends_on` decides what runs before what, and a
+    # pipeline that lists its stages out of order is a preference, not a topology.
+    return Pipeline(
+        name=document.name,
+        description=document.description,
+        converters=tuple(document.converters),
+        stages=tuple(catalogue[name] for name in stage_order(registry) if name in selected),
+    )
+
 
 # Wildcard-constraint regexes the Snakefile uses to route one `{artifact}` wildcard to the right
 # stage rule (the four are disjoint, so there is no ambiguity).
 _LEVEL_RE = "|".join(LEVELS)
-CONVERT_ARTIFACT_RE = rf"{MUDATA}\.h5mu|(?:{_LEVEL_RE})\.h5ad"
-ANNOTATE_ARTIFACT_RE = rf"{MUDATA}\.annotated\.h5mu|(?:{_LEVEL_RE})\.annotated\.h5ad"
-FASTA_ARTIFACT_RE = (
-    rf"{MUDATA}\.fasta\.h5mu|"
-    rf"(?:{_LEVEL_RE})\.fasta\.h5ad"
-)
-PROTEOBENCH_ARTIFACT_RE = rf"{MUDATA}\.proteobench\.h5mu|(?:{_LEVEL_RE})\.proteobench\.h5ad"
+_BRANCH_RE = rf"(?:{_LEVEL_RE})"
+CONVERT_ARTIFACT_RE = rf"{MUDATA}\.h5mu|{_BRANCH_RE}\.h5ad"
+FASTA_ARTIFACT_RE = rf"{MUDATA}\.fasta\.h5mu|{_BRANCH_RE}\.fasta\.h5ad"
+AGGREGATE_ARTIFACT_RE = rf"{MUDATA}\.aggregate-(?:ion|fragment)\.h5mu"
+PROTEOBENCH_ARTIFACT_RE = rf"{MUDATA}\.proteobench\.h5mu|{_BRANCH_RE}\.proteobench\.h5ad"
+RAW_PROTEOBENCH_ARTIFACT_RE = rf"{MUDATA}\.raw-proteobench\.h5mu"
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
 class CleanGuardError(Exception):
     """Raised when a Clean would delete a path under `input_root` — never an input (§8.3)."""
+
+
+class UnsupportedSnapshotSchema(ValueError):
+    """Raised for a snapshot written by another schema version.
+
+    Distinct from a malformed snapshot: an output root accumulates runs across schema versions, so
+    reading one written before the current schema is ordinary history and not a fault to report.
+    """
 
 
 @dataclass(frozen=True)
@@ -60,7 +170,7 @@ class Target:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedFixture:
-    """One complete local fixture resolved against APB's parsing rules."""
+    """One complete local fixture resolved against APB2's parsing rules."""
 
     module: str
     repo_name: str
@@ -97,11 +207,12 @@ class RunSnapshot:
     output_root: Path
     registry_digest: str
     apb_version: str | None
+    pipeline: Pipeline
     fixtures: tuple[ResolvedFixture, ...]
     targets: tuple[Target, ...]
 
 
-RUN_SNAPSHOT_SCHEMA_VERSION = 1
+RUN_SNAPSHOT_SCHEMA_VERSION = 2
 
 
 def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
@@ -114,6 +225,14 @@ def run_snapshot_data(snapshot: RunSnapshot) -> dict[str, Any]:
         "output_root": str(snapshot.output_root),
         "registry_digest": snapshot.registry_digest,
         "apb_version": snapshot.apb_version,
+        # The resolved stages travel with the run, so a persisted snapshot renders its own
+        # columns and runs its own stages without consulting the packaged catalogue again.
+        "pipeline": {
+            "name": snapshot.pipeline.name,
+            "description": snapshot.pipeline.description,
+            "converters": list(snapshot.pipeline.converters),
+            "stages": [dict(stage) for stage in snapshot.pipeline.stages],
+        },
         "fixtures": [
             {
                 "module": fixture.module,
@@ -160,10 +279,17 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
     """Validate and decode a generated run JSON object."""
     version = data.get("schema_version")
     if version != RUN_SNAPSHOT_SCHEMA_VERSION:
-        raise ValueError(
+        raise UnsupportedSnapshotSchema(
             "Unsupported run snapshot schema version "
             f"{version!r}; expected {RUN_SNAPSHOT_SCHEMA_VERSION}."
         )
+    pipeline_data = data["pipeline"]
+    pipeline = Pipeline(
+        name=str(pipeline_data["name"]),
+        description=str(pipeline_data["description"]),
+        converters=tuple(str(name) for name in pipeline_data["converters"]),
+        stages=tuple(dict(stage) for stage in pipeline_data["stages"]),
+    )
     fixtures = tuple(
         ResolvedFixture(
             module=str(item["module"]),
@@ -219,6 +345,7 @@ def run_snapshot_from_data(data: dict[str, Any]) -> RunSnapshot:
         output_root=Path(data["output_root"]),
         registry_digest=str(data["registry_digest"]),
         apb_version=(str(data["apb_version"]) if data.get("apb_version") is not None else None),
+        pipeline=pipeline,
         fixtures=fixtures,
         targets=targets,
     )
@@ -255,6 +382,35 @@ def load_run_snapshot(path: Path) -> RunSnapshot:
     return run_snapshot_from_data(data)
 
 
+def apb2_branch(level: str) -> str:
+    """Return the APB2 branch name for one level or the MuData container."""
+    return level
+
+
+def branch_converter(branch: str) -> str:
+    """Return the sole converter for a supported branch."""
+    if branch not in BRANCHES:
+        raise ValueError(f"unknown conversion branch {branch!r}; expected one of {BRANCHES}")
+    return APB2
+
+
+def branch_level(branch: str) -> str | None:
+    """The quantification level one branch converts, or ``None`` for the MuData container."""
+    if branch == MUDATA:
+        return None
+    return branch
+
+
+def command_template(stage: dict[str, Any], converter: str) -> str:
+    """Return one stage command, including compatibility with older snapshot catalogues."""
+    commands = stage.get("commands")
+    if commands is None:
+        return str(stage["command"])
+    if converter not in commands:
+        raise KeyError(f"stage {stage['name']!r} declares no command for converter {converter!r}")
+    return str(commands[converter])
+
+
 def convert_artifact(branch: str) -> str:
     """Return the converted artifact name for a discovered branch."""
     if branch not in BRANCHES:
@@ -264,12 +420,12 @@ def convert_artifact(branch: str) -> str:
 
 def convert_suffix(branch: str) -> str:
     """Return ``.h5mu`` for MuData and ``.h5ad`` for standalone levels."""
-    return ".h5mu" if branch == MUDATA else ".h5ad"
+    return ".h5mu" if branch_level(branch) is None else ".h5ad"
 
 
 def stage_artifact(stage: dict[str, Any], branch: str) -> str:
     """Return the branch-qualified artifact name produced by one stage."""
-    if not stage.get("depends_on"):
+    if not stage.get("depends_on") and "artifact" not in stage:
         return convert_artifact(branch)
     return f"{branch}.{stage['artifact']}{convert_suffix(branch)}"
 
@@ -278,13 +434,18 @@ def render_command(template: str, ctx: dict[str, Any]) -> list[str]:
     """Substitute `{placeholder}`s in a registry command template → an argv list.
 
     Plain per-token substitution (so a value with spaces stays one argv element); raises on any
-    unfilled `{placeholder}`. There is no optional-group grammar — `--level` is appended by
-    `expand_resolved_targets`, not encoded in the template.
+    unfilled `{placeholder}`. A placeholder that occupies a complete token may resolve to the
+    empty string; that token is omitted. This gives apb2's optional positional level one canonical
+    template without introducing optional-group syntax.
     """
     missing = sorted({m.group(1) for m in _PLACEHOLDER.finditer(template)} - set(ctx))
     if missing:
         raise KeyError(f"unfilled placeholder(s) {missing} in command template {template!r}")
-    return [_PLACEHOLDER.sub(lambda m: str(ctx[m.group(1)]), token) for token in template.split()]
+    rendered = [
+        _PLACEHOLDER.sub(lambda match: str(ctx[match.group(1)]), token)
+        for token in template.split()
+    ]
+    return [token for token in rendered if token]
 
 
 # --- stage-graph helpers (topology is data — decision 5 / §13) --------------------------------
@@ -315,7 +476,10 @@ def basket_label(stage: dict[str, Any]) -> str:
 
 
 def _resource_names(stage: dict[str, Any]) -> tuple[str, ...]:
-    """Return a stage's optional resource placeholder."""
+    """Return a stage's optional resource placeholders."""
+    resources = stage.get("resources")
+    if resources is not None:
+        return tuple(str(name) for name in resources)
     resource = stage.get("resource")
     return (resource,) if resource is not None else ()
 
@@ -366,70 +530,94 @@ def _emitted_ancestor(
     return None
 
 
+def _stage_applies(
+    stage: dict[str, Any],
+    fixture: ResolvedFixture,
+    branch: str,
+) -> bool:
+    """Return whether one stage applies to this resolved fixture branch."""
+    allowed_branches = stage.get("branches")
+    if allowed_branches is not None and branch not in allowed_branches:
+        return False
+    required_level = stage.get("requires_level")
+    return required_level is None or required_level in fixture.branches
+
+
 def expand_resolved_targets(
-    registry: list[dict[str, Any]],
+    pipeline: Pipeline,
     fixtures: tuple[ResolvedFixture, ...] | list[ResolvedFixture],
     output_root: Path,
 ) -> list[Target]:
-    """Expand frozen fixture branches into concrete stage targets.
+    """Expand frozen fixture branches into concrete stage targets for one pipeline.
 
-    Every stage receives a target, even when its own module resource is absent. Such a target
-    carries ``blocked_reason`` and is excluded from Snakemake while its independent ancestors stay
-    runnable. This preserves the complete branch topology needed for truthful status propagation.
+    Every selected stage receives a target, even when its own module resource is absent. Such a
+    target carries ``blocked_reason`` and is excluded from Snakemake while its independent
+    ancestors stay runnable. This preserves the complete branch topology needed for truthful
+    status propagation.
+
+    A branch whose converter the pipeline does not select contributes nothing at all.
     """
-    reg = {stage["name"]: stage for stage in registry}
-    order = stage_order(registry)
+    reg = {stage["name"]: stage for stage in pipeline.stages}
+    order = list(pipeline.stage_names)
     out_root = output_root
     targets: list[Target] = []
 
     for fixture in fixtures:
         for branch in fixture.branches:
+            converter = branch_converter(branch)
+            if converter not in pipeline.converters:
+                continue
             base = out_root / fixture.repo_name / fixture.dataset
+            level = branch_level(branch)
             emitted: dict[str, Path] = {}
 
             for name in order:
                 stage = reg[name]
+                if not _stage_applies(stage, fixture, branch):
+                    continue
                 dependencies = list(stage.get("depends_on") or [])
                 blocked_reason: str | None = None
+                output = base / stage_artifact(stage, branch)
 
                 if not dependencies:
-                    output = base / stage_artifact(stage, branch)
-                    command = render_command(
-                        stage["command"],
-                        {
-                            "input": fixture.input_path,
-                            "output": output.with_suffix(""),
-                            "vendor": fixture.vendor,
-                            "parameter_vendor": (fixture.parameter_vendor or fixture.vendor),
-                            "params": fixture.parameter_path,
-                        },
-                    )
-                    if branch != MUDATA:
-                        command += ["--level", branch]
                     inputs = [fixture.input_path, fixture.parameter_path]
+                    context: dict[str, Any] = {
+                        "input": fixture.input_path,
+                        "output": output.with_suffix(""),
+                        "output_path": output,
+                        "vendor": fixture.vendor,
+                        "parameter_vendor": (fixture.parameter_vendor or fixture.vendor),
+                        "params": fixture.parameter_path,
+                        "level": level or "",
+                    }
                 else:
                     # Every stage emits a target here, so a dependency always has an artifact.
                     upstream = _nearest_upstream(dependencies, emitted, reg)
-                    output = base / stage_artifact(stage, branch)
                     inputs = [upstream]
-                    context: dict[str, Path] = {"input": upstream, "output": output}
+                    context = {
+                        "input": upstream,
+                        "output": output,
+                        "output_path": output,
+                    }
 
-                    for resource_name in _resource_names(stage):
-                        resource_path, resource_error = _resolved_resource(
-                            fixture,
-                            resource_name,
-                        )
-                        if resource_error is not None:
-                            blocked_reason = resource_error
-                        elif resource_path is None:
-                            blocked_reason = f"Missing module resource: {resource_name}"
-                        else:
-                            context[resource_name] = resource_path
-                            inputs.append(resource_path)
-
-                    command = (
-                        render_command(stage["command"], context) if blocked_reason is None else []
+                for resource_name in _resource_names(stage):
+                    resource_path, resource_error = _resolved_resource(
+                        fixture,
+                        resource_name,
                     )
+                    if resource_error is not None:
+                        blocked_reason = resource_error
+                    elif resource_path is None:
+                        blocked_reason = f"Missing module resource: {resource_name}"
+                    else:
+                        context[resource_name] = resource_path
+                        inputs.append(resource_path)
+
+                command = (
+                    render_command(command_template(stage, converter), context)
+                    if blocked_reason is None
+                    else []
+                )
 
                 emitted[name] = output
                 targets.append(
@@ -441,7 +629,7 @@ def expand_resolved_targets(
                         command=command,
                         inputs=inputs,
                         vendor=fixture.vendor,
-                        level=None if branch == MUDATA else branch,
+                        level=branch_level(branch),
                         branch=branch,
                         blocked_reason=blocked_reason,
                     )
@@ -528,7 +716,8 @@ def _log_error(logpath: Path) -> str | None:
     """The apb error summary from a per-rule log (Snakefile tees each rule to ``<artifact>.log``).
 
     Prefers the exception line (``ValueError: …`` / ``…Error: …``); else the last non-empty line.
-    Used to surface *why* a convert/annotate/fasta failed when its artifact is absent.
+    Used to surface why a convert, FASTA, aggregate, or ProteoBench stage failed when its artifact
+    is absent.
     """
     try:
         lines = [
@@ -676,8 +865,22 @@ def _completed_stage_detail(target: Target, base: dict[str, str]) -> dict[str, s
             "duration_seconds": str(duration_seconds),
         }
     )
+    size_bytes = _artifact_bytes(target.output)
+    size = {} if size_bytes is None else {"bytes": str(size_bytes)}
     display = "DONE" if not timing else f"DONE · {timing['duration']}"
-    return {**base, **timing, "state": "completed", "display": display}
+    return {**base, **timing, **size, "state": "completed", "display": display}
+
+
+def _artifact_bytes(output: Path) -> int | None:
+    """The produced artifact's own size, or None when it cannot be read.
+
+    This is the file's size, not a proxy for anything: runtime still comes only from Snakemake's
+    benchmark files, never from an artifact's timestamps.
+    """
+    try:
+        return output.stat().st_size
+    except OSError:
+        return None
 
 
 def _incomplete_stage_detail(
@@ -717,16 +920,14 @@ def _incomplete_stage_detail(
     return {**base, "state": "pending", "display": ""}
 
 
-def branch_rows(
-    run: RunSnapshot,
-    targets: list[Target],
-    *,
-    registry: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """Return one compact progress row per frozen fixture branch."""
-    registry = registry or load_registry()
+def branch_rows(run: RunSnapshot, targets: list[Target]) -> list[dict[str, Any]]:
+    """Return one compact progress row per frozen fixture branch.
 
-    order = stage_order(registry)
+    The run's own pipeline decides the columns: a grid describes one run, so the definition that
+    produced it owns what the row can show.
+    """
+    pipeline = run.pipeline
+    order = list(pipeline.stage_names)
     by_key = {
         (target.module, target.dataset, target.branch, target.stage): target for target in targets
     }
@@ -737,22 +938,19 @@ def branch_rows(
             status = fixture.capability_status.lower()
             state = status if status in {"failed", "unsupported"} else "failed"
             display = state.upper()
-            root_stage = order[0]
+            root_stage = pipeline.column(order[0], pipeline.converters[0])
             root_reason = fixture.diagnostic or "No supported APB branch"
+            columns = list(pipeline.columns)
             details = {
-                root_stage: {
-                    "state": state,
-                    "display": display,
-                    "error": root_reason,
-                }
+                column: {"state": "unavailable", "display": ""}
+                for column in columns
+                if column != root_stage
             }
-            details.update({
-                stage_name: {
-                    "state": "unavailable",
-                    "display": "",
-                }
-                for stage_name in order[1:]
-            })
+            details[root_stage] = {
+                "state": state,
+                "display": display,
+                "error": root_reason,
+            }
             row: dict[str, Any] = {
                 "module": fixture.repo_name,
                 "dataset": fixture.dataset,
@@ -761,30 +959,63 @@ def branch_rows(
                 root_stage: display,
                 "_stage_details": details,
             }
-            row.update(dict.fromkeys(order[1:], ""))
+            row.update({column: "" for column in columns if column != root_stage})
             rows.append(row)
             continue
 
-        for branch in fixture.branches:
+        for label, branches in _levels(fixture.branches).items():
+            if not any(converter in branches for converter in pipeline.converters):
+                # No converter this pipeline runs produces this level; the row would be empty.
+                continue
+            if not any(
+                (fixture.repo_name, fixture.dataset, branch, stage_name) in by_key
+                for branch in branches.values()
+                for stage_name in order
+            ):
+                # A branch-restricted root such as the direct MuData workflow deliberately emits
+                # no target for this level, so it should not create an empty dashboard row.
+                continue
             details: dict[str, dict[str, str]] = {}
             row = {
                 "module": fixture.repo_name,
                 "dataset": fixture.dataset,
                 "software": fixture.vendor,
-                "level": "MuData" if branch == MUDATA else branch,
+                "level": label,
             }
-            for stage_name in order:
-                target = by_key.get((fixture.repo_name, fixture.dataset, branch, stage_name))
-                detail = _stage_detail(
-                    target,
-                    targets=targets,
-                    missing_reason="Stage target unavailable",
-                )
-                details[stage_name] = detail
-                row[stage_name] = detail["display"]
+            for converter in pipeline.converters:
+                branch = branches.get(converter)
+                for stage_name in order:
+                    column = pipeline.column(stage_name, converter)
+                    if branch is None:
+                        # This level has no such conversion at all. A level one converter cannot
+                        # parse produced no branch.
+                        details[column] = {"state": "unavailable", "display": ""}
+                        row[column] = ""
+                        continue
+                    target = by_key.get((fixture.repo_name, fixture.dataset, branch, stage_name))
+                    detail = _stage_detail(
+                        target,
+                        targets=targets,
+                        missing_reason="Stage target unavailable",
+                    )
+                    details[column] = detail
+                    row[column] = detail["display"]
             row["_stage_details"] = details
             rows.append(row)
     return rows
+
+
+def _levels(branches: tuple[str, ...]) -> dict[str, dict[str, str]]:
+    """Group one fixture's branches by the level they convert, keeping declared order.
+
+    ``{"ion": {"apb2": "ion"}}`` — the row is a level and APB2 contributes its branch.
+    """
+    grouped: dict[str, dict[str, str]] = {}
+    for branch in branches:
+        branch_quantification_level = branch_level(branch)
+        label = MUDATA_LABEL if branch_quantification_level is None else branch_quantification_level
+        grouped.setdefault(label, {})[branch_converter(branch)] = branch
+    return grouped
 
 
 def reject_input_paths(paths: list[Path], input_root: Path) -> list[Path]:
@@ -839,3 +1070,47 @@ def sample_fixture_targets(targets: list[Target], fixture_limit: int) -> list[Ta
         for key in ordered
         for target in sorted(by_fixture[key], key=lambda target: target.output)
     ]
+
+
+def selected_dataset_targets(
+    targets: list[Target],
+    datasets: Sequence[str],
+) -> tuple[list[Target], list[str]]:
+    """Keep the targets of the named datasets, and report every name that matched nothing.
+
+    A name is either a dataset alias (``diann-300beac4``) or a module-qualified one
+    (``Results_quant_ion_DDA/diann-300beac4``); the qualified form settles the rare case of one
+    alias existing under two modules. Names that match nothing come back to the caller instead of
+    being dropped: an explicit selection whose entries silently do not apply is the very thing a
+    named list exists to avoid.
+    """
+    wanted = {name.strip() for name in datasets if name.strip()}
+    matched: set[str] = set()
+    selected: list[Target] = []
+    for target in targets:
+        for name in (target.dataset, f"{target.module}/{target.dataset}"):
+            if name in wanted:
+                matched.add(name)
+                selected.append(target)
+                break
+    return selected, sorted(wanted - matched)
+
+
+def level_targets(targets: list[Target], levels: Sequence[str]) -> list[Target]:
+    """Keep the targets of the named quantification levels, ``mudata`` included.
+
+    A branch's level is its own answer — ``Target.level`` is None only for the MuData container,
+    whose name is ``mudata`` — so one lookup covers every branch without asking what kind it is.
+    """
+    wanted = {name.strip() for name in levels if name.strip()}
+    return [target for target in targets if (target.level or MUDATA) in wanted]
+
+
+def dataset_names(targets: Sequence[Target]) -> list[str]:
+    """The module-qualified datasets a target list covers, for reporting what will run."""
+    return sorted({f"{target.module}/{target.dataset}" for target in targets})
+
+
+def level_names(targets: Sequence[Target]) -> list[str]:
+    """The levels a target list covers, for reporting what will run."""
+    return sorted({target.level or MUDATA for target in targets})

@@ -23,9 +23,6 @@ import tempfile
 from pathlib import Path
 
 import polars as pl
-from cyclopts import App
-from loguru import logger
-
 from apb2.parserV2.compile import NoCompatibleLevelError, header_predicate
 from apb2.parserV2.conversion_facade import ConversionError, convert_all_from_rule_config
 from apb2.parserV2.parse_rule_facade import ParseRuleFacade
@@ -35,6 +32,9 @@ from apb2.parserV2.vendor_parse_rules.document import (
     SearchParameterEvidence,
 )
 from apb2.parserV2.vendor_parse_rules.loader import PACKAGED, load_rule_document
+from cyclopts import App
+from loguru import logger
+
 from apb_studio.settings import load_settings
 
 app = App(name="make-apb2-test-samples", help=__doc__)
@@ -109,8 +109,7 @@ def _delimiter_for(header_line: bytes) -> bytes:
 def document_admits(document: RuleDocument, header: tuple[str, ...]) -> bool:
     """Whether any declared level of the document accepts this header."""
     return any(
-        header_predicate(facade.working_parameters)(header)
-        for facade in admitted_facades(document)
+        header_predicate(facade.working_parameters)(header) for facade in admitted_facades(document)
     )
 
 
@@ -178,7 +177,9 @@ def write_artifacts(key: str, export: Path, rule_config: Path, output: Path) -> 
     if export.suffix.lower() == ".parquet":
         sample_name = "sample.parquet"
         pl.scan_parquet(export).head(MAX_ROWS).collect().write_parquet(target / sample_name)
-        rows = min(MAX_ROWS, pl.scan_parquet(target / sample_name).select(pl.len()).collect().item())
+        rows = min(
+            MAX_ROWS, pl.scan_parquet(target / sample_name).select(pl.len()).collect().item()
+        )
         sample_for_convert = target / sample_name
         scratch = None
     else:
@@ -225,7 +226,11 @@ def make(output: Path = DEFAULT_OUTPUT, *, force: bool = False) -> None:
             continue
         document = load_rule_document(rule_config)
         export = next(
-            (path for path in store_exports(document, root) if document_admits(document, header_of(path))),
+            (
+                path
+                for path in store_exports(document, root)
+                if document_admits(document, header_of(path))
+            ),
             None,
         )
         if export is None:

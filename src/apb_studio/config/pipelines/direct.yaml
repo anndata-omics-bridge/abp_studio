@@ -1,0 +1,5 @@
+# One CLI call from raw vendor files to the final scored MuData result.
+name: direct
+description: Direct APB ProteoBench workflow — raw vendor files to one scored MuData.
+converters: [apb2]
+stages: [raw-proteobench]

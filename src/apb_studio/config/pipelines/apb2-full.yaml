@@ -1,0 +1,5 @@
+# Compatibility name for the APB2 staged workflow.
+name: apb2-full
+description: APB2 staged workflow — convert, FASTA-check, aggregate, ProteoBench.
+converters: [apb2]
+stages: [convert, fasta, aggregate-ion, aggregate-fragment, proteobench]

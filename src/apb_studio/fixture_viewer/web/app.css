@@ -1,0 +1,107 @@
+/*
+ * One plain stylesheet for the whole app. Tabulator appends its rules to
+ * document.head and they do not cross a shadow boundary, so every host renders
+ * into the light DOM and everything shares this file.
+ */
+
+:root {
+  --ink: #16191d;
+  --muted: #5c6570;
+  --line: #d8dde3;
+  --paper: #ffffff;
+  --panel: #f6f8fa;
+  --accent: #1f4f82;
+  --error: #a4262c;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+fixture-app {
+  display: block;
+  padding: 0 16px 24px;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.masthead .status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.masthead .error {
+  color: var(--error);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0;
+}
+
+.tabs button {
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  background: var(--panel);
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs button[aria-selected="true"] {
+  background: var(--paper);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+section.view {
+  margin: 0 0 20px;
+}
+
+section.view h3 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+section.view pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  max-height: 40vh;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.detail:empty::before {
+  content: "Click a submission to see its metadata, columns and parameter file.";
+  color: var(--muted);
+}
+
+.tabulator {
+  font-size: 12px;
+}

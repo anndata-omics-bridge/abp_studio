@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from apb_studio.pipeline import Target, sample_fixture_targets
+from apb_studio.pipeline import (
+    Target,
+    dataset_names,
+    level_names,
+    level_targets,
+    sample_fixture_targets,
+    selected_dataset_targets,
+)
 
 
 def _target(vendor: str, dataset: str, stage: str) -> Target:
@@ -57,3 +64,58 @@ def test_a_limit_above_the_corpus_size_returns_every_fixture() -> None:
     assert {(target.module, target.dataset) for target in sampled} == {
         (target.module, target.dataset) for target in corpus
     }
+
+
+def test_named_datasets_are_selected_by_alias_or_module_qualified_name() -> None:
+    corpus = _corpus()
+
+    selected, unmatched = selected_dataset_targets(
+        corpus,
+        ["diann-1", "module_maxquant/maxquant-1", "  ", "diann-1"],
+    )
+
+    assert unmatched == []
+    assert dataset_names(selected) == ["module_diann/diann-1", "module_maxquant/maxquant-1"]
+    # Every stage of a named dataset comes along; naming a dataset is not naming a stage.
+    assert len({target.stage for target in selected}) == len({
+        target.stage for target in corpus if target.dataset == "diann-1"
+    })
+
+
+def test_a_name_matching_nothing_is_reported_rather_than_dropped() -> None:
+    selected, unmatched = selected_dataset_targets(_corpus(), ["diann-1", "typo-9"])
+
+    assert unmatched == ["typo-9"]
+    assert dataset_names(selected) == ["module_diann/diann-1"]
+
+    empty, all_unmatched = selected_dataset_targets(_corpus(), ["nope"])
+    assert empty == []
+    assert all_unmatched == ["nope"]
+
+
+def test_levels_select_branches_including_the_mudata_container() -> None:
+    corpus = [
+        Target(
+            module="m",
+            dataset="d",
+            stage="convert",
+            output=Path(f"/out/{branch}.h5ad"),
+            command=[],
+            branch=branch,
+            level=None if branch.startswith("mudata") else branch.removesuffix(".apb2"),
+        )
+        for branch in ("mudata", "mudata.apb2", "ion", "ion.apb2", "protein")
+    ]
+
+    assert level_names(corpus) == ["ion", "mudata", "protein"]
+    assert [target.branch for target in level_targets(corpus, ["ion"])] == ["ion", "ion.apb2"]
+    assert [target.branch for target in level_targets(corpus, ["mudata"])] == [
+        "mudata",
+        "mudata.apb2",
+    ]
+    assert [target.branch for target in level_targets(corpus, ["ion", "protein"])] == [
+        "ion",
+        "ion.apb2",
+        "protein",
+    ]
+    assert level_targets(corpus, ["peptide"]) == []
