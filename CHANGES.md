@@ -1,7 +1,89 @@
 # Changes
 
+- 2026-09-04: The conventional test-data root moved into this repo: `apb_studio/test_data_download/` (gitignored). The Fixture Manager setting names it, consumers never assume it exists, and apb2's unit tests read it via `APB2_TEST_DATA`. The legacy `config/corpus.yaml` relic — written by the corpus scaffold removed with the fixture-driven runner and read by nothing since — was deleted along with its `.gitignore` entry, and the README sentence that mentioned it.
+
+- 2026-09-03: The full pipeline now calls the existing `apb-aggregate` CLI after FASTA checking and before ProteoBench: ion-to-protein and fragment-to-protein `sum` run independently when those levels exist, and skipped stages reconnect their successor to the last emitted artifact. The direct `apb-proteobench run` route performs the corresponding in-memory aggregations and still writes one final MuData result.
+
 - 2026-08-28: Added the missing `LICENSE` file (MIT), and the `license` and `authors` fields that
   `pyproject.toml` had never declared.
+
+- 2026-08-26: The integrated corpus environment now resolves Prozor from the authoritative local
+  workspace checkout, matching APB's structural protein-record API instead of reinstalling its
+  obsolete Git revision. The full ten-dataset routine corpus and its zero-job settling check pass.
+
+- 2026-08-25: `AGENTS.md` and `README.md` no longer point into the workspace's archived planning
+  folder for the migration history, the original dashboard design, or the observer/operator
+  boundary. The boundary section in `AGENTS.md` is the record; `CHANGES.md`, `git log`, and
+  `docs/architecture.md` carry the rest. Documentation only.
+
+- 2026-08-25: apb2's no-level conversion now appears beside APB's on the MuData row as
+  `mudata.apb2`. Capability discovery adds that branch whenever apb2 has at least one compatible
+  level, the common DAG routes its `.h5mu` artifacts through the same downstream stages, and the
+  `apb2-convert` pipeline reruns only apb2's MuData and standalone conversions.
+
+- 2026-08-24: Added the `convert` pipeline — both converters, conversion only — so the grid can
+  show `Converted` beside `Converted2` with nothing downstream; `apb-convert` and `apb2-convert`
+  each show one chain and could not be compared on one row. The GUI gained a cores field and a
+  `force` checkbox (defaulting to 10 cores rather than the hardcoded 3), and the Snakemake log
+  panel now pins itself to its newest line — it renders the last 40 KB of a log that can reach
+  megabytes, and starting that window at the top made a live run look frozen.
+
+- 2026-08-24: `run_corpus.py` runs the whole corpus by default (`--fixtures` 0) and can be
+  narrowed by **name** instead of by anonymous sample: `--datasets FILE` takes one dataset alias
+  or `module/alias` per line, `--level ion --level mudata` restricts quantification levels, and
+  any narrowed run logs the datasets it covered. A name matching nothing is warned about
+  individually and a selection matching nothing fails the run. `selections/routine.txt` names one
+  fixture per vendor and `make corpus-routine` runs it — that, not a sample, is now the routine
+  gate.
+
+- 2026-08-24: The comparison plot pins each axis to its own data instead of letting the `y = x`
+  line drive both: a 2280 s outlier in one column had stretched the other column's axis from 26 s
+  to 2300 s, flattening every point against the origin. The reference line now spans both columns
+  and is clipped by those ranges, so it survives even when every row sits on one side of equality.
+  Added a linear/log axis toggle and a title reporting how many of the grid's rows the plot could
+  compare, and axis ranges start at zero because neither a runtime nor a size can be negative.
+
+- 2026-08-24: The Corpus Runner can compare two stage columns as a scatter plot — runtime from
+  Snakemake's benchmark files, or artifact size, one point per row with a `y = x` reference line, in
+  a collapsed panel under the grid. Axis choices come from the columns the grid is showing, so they
+  follow the active pipeline; a row missing either value contributes no point. Completed stages now
+  record their artifact's size beside its duration. AG Grid cell-range selection was not an option:
+  it is an Enterprise feature, so the axes are explicit pickers. Also fixed: after the run-snapshot
+  schema bump, every snapshot from the older schema logged a warning on each dashboard refresh —
+  `UnsupportedSnapshotSchema` now separates expected history from a malformed snapshot.
+
+- 2026-08-23: A run now selects a **pipeline** — which converters and which stages — instead of
+  always running both generations through all four stages. Five packaged documents in
+  `config/pipelines/` (`full`, `apb-convert`, `apb2-convert`, `apb-full`, `apb2-full`) select from
+  the stage catalogue without restating any stage, and are refused when a selection is not closed
+  under `depends_on`. `--pipeline` on the Corpus Runner (now a cyclopts app with `--port` and
+  `--settings`) and on both scripts, `CORPUS_PIPELINE` in every Make corpus target; `run_corpus.py`
+  also gained `--output-root` and `--force`. The choice rides in `run.json` (schema 2), so a
+  persisted run renders its own grid columns instead of the packaged catalogue's, and a pinned run
+  keeps the pipeline it was minted with. Column suffixes are positional, so a single-converter run
+  shows `Converted`, not `Converted2`; artifact tabs are now one per stage column, which also fixes
+  apb2 columns having had no tab. The Snakefile and `capabilities.py` are unchanged: every pipeline
+  is a subset of the four rules, and converter filtering happens once, in
+  `expand_resolved_targets`.
+
+- 2026-08-23: `docs/architecture.md` now records the layering, the decision to compute the
+  DAG in Python and let Snakemake schedule it (what the single generic Snakefile buys and
+  what it costs), the `run.json` contract with the three things it does not yet carry
+  (requested target subset, apb2's version, per-target resources), and the status
+  contract. No behaviour change.
+
+- 2026-08-22: A corpus run now converts every fixture with **both** generations and runs APB's
+  annotate, FASTA and ProteoBench stages on each conversion. The converter rides in the branch
+  (`ion` for `apb`, `ion.apb2` for `apb2`), so one extra branch buys the whole comparison: the
+  stage DAG and the four Snakemake rules are unchanged. One grid row is one level and each
+  converter has its own stage columns — `Converted`/`Annotated`/`FASTA annotated`/`Proteobench
+  scored`, then the same four suffixed `2` — so both conversions of a fixture sit on one line.
+  The registry's root stage declares one command per converter — `apb` takes the level as an
+  option, `apb2` takes it positionally — while every later stage keeps
+  its single template, because it reads whatever object it is given. Which levels apb2 supports is
+  asked of apb2 (`compile_parsers` over its own packaged rules, headers only); a fixture it cannot
+  convert contributes no branch and leaves the APB branches beside it untouched. apb2 is a new
+  Studio dependency, and the workflow resolves its console script the same way it resolves apb's.
 
 - 2026-08-13: Follow APB's contract-folder rename in lockstep: `anndata_proteomics.rules` →
   `.vendor_quant_rules` and `.params` → `.vendor_params` across six files. No shims — Studio is

@@ -8,10 +8,12 @@ coverage.xml
 htmlcov/
 public/
 
-# local corpus config & pipeline state
-config/corpus.yaml
+# local pipeline state
 .snakemake/
 .apb-studio-corpus-runner-*.pid
+
+# the Fixture-Manager-owned test-data store (downloaded, re-downloadable)
+/test_data_download/
 
 # outputs (filesystem-as-database lives outside the repo, but ignore stray local runs)
 /outputs/
