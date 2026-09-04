@@ -10,8 +10,7 @@ export const GROUPS = [
   { field: 'module', label: 'Module' },
   { field: 'software_version', label: 'Version' },
   { field: 'format', label: 'Format' },
-  { field: 'status', label: 'Status' },
-  { field: 'old_new', label: 'Old/new' }
+  { field: 'status', label: 'Status' }
 ]
 
 export const DEFAULT_GROUP = GROUPS[0].field
