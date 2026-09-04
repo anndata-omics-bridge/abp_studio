@@ -105,3 +105,43 @@ section.view pre {
 .tabulator {
   font-size: 12px;
 }
+
+/* The tables are dense reference material, so they run smaller than the chrome. */
+.tabulator {
+  font-size: 12px;
+}
+
+.tabulator .tabulator-header .tabulator-col-title {
+  font-size: 12px;
+}
+
+.tabulator .tabulator-row .tabulator-cell {
+  padding: 3px 6px;
+}
+
+.tabulator .tabulator-header .tabulator-col-content {
+  padding: 4px 6px;
+}
+
+.tabulator .tabulator-header input {
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker select {
+  font: inherit;
+  color: var(--ink);
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+}

@@ -5,6 +5,7 @@ import { LitElement, html } from '../vendor/lit.js'
 
 const TABS = [
   ['catalog', 'Submissions'],
+  ['overview', 'Counts'],
   ['resources', 'Resources'],
   ['storage', 'Storage']
 ]
@@ -13,7 +14,9 @@ class FixtureApp extends LitElement {
   static properties = {
     tab: { type: String },
     status: { type: String },
-    error: { type: String }
+    error: { type: String },
+    groups: { type: Array },
+    group: { type: String }
   }
 
   /** Create the shell with empty state. */
@@ -22,6 +25,8 @@ class FixtureApp extends LitElement {
     this.tab = 'catalog'
     this.status = 'loading…'
     this.error = ''
+    this.groups = []
+    this.group = ''
   }
 
   /** @returns {HTMLElement} This light-DOM element, so Tabulator's CSS applies. */
@@ -43,6 +48,12 @@ class FixtureApp extends LitElement {
     this.dispatchEvent(new CustomEvent('tab-change', { detail: { tab }, bubbles: true }))
   }
 
+  /** @param {string} group The column to group the counts by. */
+  regroup (group) {
+    this.group = group
+    this.dispatchEvent(new CustomEvent('group-change', { detail: { group }, bubbles: true }))
+  }
+
   /** @returns {import('../vendor/lit.js').TemplateResult} The shell. */
   render () {
     return html`
@@ -60,6 +71,17 @@ class FixtureApp extends LitElement {
       <div ?hidden=${this.tab !== 'catalog'}>
         <div data-views="catalog"></div>
         <div data-views="detail" class="detail"></div>
+      </div>
+      <div ?hidden=${this.tab !== 'overview'}>
+        <label class="picker">
+          Group by
+          <select @change=${(event) => this.regroup(event.target.value)}>
+            ${this.groups.map(({ field, label }) => html`
+              <option value=${field} ?selected=${field === this.group}>${label}</option>
+            `)}
+          </select>
+        </label>
+        <div data-views="overview"></div>
       </div>
       <div ?hidden=${this.tab !== 'resources'}><div data-views="resources"></div></div>
       <div ?hidden=${this.tab !== 'storage'}><div data-views="storage"></div></div>

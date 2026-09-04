@@ -2,6 +2,7 @@ import { fetchCsv, fetchJson, fetchText } from './lib/fetch.js'
 import { joinSubmissions, parseSubmissionJson, storageRows, summaryPath } from './lib/store.js'
 import { catalogView } from './panels/catalog.js'
 import { detailViews } from './panels/detail.js'
+import { DEFAULT_GROUP, GROUPS, overviewViews } from './panels/overview.js'
 import { resourcesView } from './panels/resources.js'
 import { storageView } from './panels/storage.js'
 import { rendererFor } from './render/index.js'
@@ -33,6 +34,11 @@ function dataUrl (...parts) {
 
 /** @type {Map<HTMLElement, Array<{renderer: object, handle: object}>>} */
 const mounted = new Map()
+
+// The rows last read from the store, kept so regrouping the counts redraws one chart
+// instead of re-reading 202 files.
+/** @type {{submissions: object[]}} */
+const loaded = { submissions: [] }
 
 /**
  * Replace whatever a host shows with new views.
@@ -121,10 +127,12 @@ async function refresh (app, index) {
   }
   const summaries = await fetchSummaries(catalog, pattern)
   const submissions = joinSubmissions(catalog, downloads, summaries)
+  loaded.submissions = submissions
   const events = { rowClick: (_event, tableRow) => showDetail(app, tableRow.getData()) }
   const downloaded = [...summaries.values()]
   await Promise.all([
     show(app.hostFor('catalog'), [catalogView(submissions, events)]),
+    show(app.hostFor('overview'), overviewViews(submissions, app.group)),
     show(app.hostFor('resources'), [resourcesView(resources)]),
     show(app.hostFor('storage'), [storageView(storageRows(index, downloaded))])
   ])
@@ -138,10 +146,15 @@ async function refresh (app, index) {
  */
 async function main () {
   const app = document.querySelector('fixture-app')
+  app.groups = GROUPS
+  app.group = DEFAULT_GROUP
   await app.updateComplete
+  app.addEventListener('group-change', (event) => {
+    show(app.hostFor('overview'), overviewViews(loaded.submissions, event.detail.group))
+  })
   app.addEventListener('tab-change', () => {
     window.requestAnimationFrame(() => {
-      for (const id of ['catalog', 'resources', 'storage']) resize(app.hostFor(id))
+      for (const id of ['catalog', 'overview', 'resources', 'storage']) resize(app.hostFor(id))
     })
   })
   try {

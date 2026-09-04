@@ -1,4 +1,5 @@
 import { noteRenderer } from './note.js'
+import { chartRenderer } from './plotly.js'
 import { tableRenderer } from './tabulator.js'
 
 // The one place a backend name is turned into behaviour. Panels name the backend
@@ -6,7 +7,8 @@ import { tableRenderer } from './tabulator.js'
 
 const RENDERERS = new Map([
   [tableRenderer.name, tableRenderer],
-  [noteRenderer.name, noteRenderer]
+  [noteRenderer.name, noteRenderer],
+  [chartRenderer.name, chartRenderer]
 ])
 
 /**
