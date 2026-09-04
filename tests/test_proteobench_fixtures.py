@@ -6,9 +6,11 @@ import ast
 import io
 import json
 import math
+import os
 import tomllib
 import zipfile
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -564,6 +566,15 @@ def test_a_summary_is_written_beside_each_submission(tmp_path: Path) -> None:
     assert document["columns"] == 2
     assert document["parameter_file"] == "submissions/Repo/a/param_0..txt"
     assert document["parameter_size_bytes"] == 6
+
+    # The table's own mtime, so re-summarising an old download does not redate it.
+    table = ok / "input_file.tsv"
+    os.utime(table, (1_760_000_000, 1_760_000_000))
+    redone = rawdb.write_submission_summary(store, "Repo", "a")
+    assert redone is not None
+    assert json.loads(redone.read_text(encoding="utf-8"))["downloaded_at"] == (
+        datetime.fromtimestamp(1_760_000_000, UTC).isoformat(timespec="seconds")
+    )
 
     empty = store.submission_dir("Repo", "b")
     empty.mkdir(parents=True)

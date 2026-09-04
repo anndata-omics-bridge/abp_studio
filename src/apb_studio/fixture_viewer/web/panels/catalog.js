@@ -10,6 +10,18 @@ const FLAG = {
 }
 
 /**
+ * Show a timestamp to the minute: the seconds and the offset are noise in a cell, and
+ * the detail panel still carries the whole of it.
+ *
+ * @param {object} cell A Tabulator cell.
+ * @returns {string} The display text.
+ */
+function minutes (cell) {
+  const value = cell.getValue()
+  return value ? String(value).slice(0, 16).replace('T', ' ') : ''
+}
+
+/**
  * Format megabytes with one decimal.
  *
  * @param {object} cell A Tabulator cell.
@@ -40,6 +52,7 @@ const COLUMNS = [
   { title: 'Rows', field: 'rows', hozAlign: 'right' },
   { title: 'Cols', field: 'columns', hozAlign: 'right' },
   { title: 'Format', field: 'format' },
+  { title: 'Downloaded', field: 'downloaded_at', formatter: minutes, headerTooltip: 'When the archive was extracted, UTC' },
   { title: 'Min/ver', field: 'smallest_per_software_version', ...FLAG, headerTooltip: `${SMALLEST}software version` },
   { title: 'Min/sw', field: 'smallest_per_software', ...FLAG, headerTooltip: `${SMALLEST}software` },
   { title: 'Min/mod', field: 'smallest_per_module', ...FLAG, headerTooltip: `${SMALLEST}module` },

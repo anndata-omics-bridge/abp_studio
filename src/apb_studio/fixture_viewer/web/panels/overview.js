@@ -10,7 +10,8 @@ export const GROUPS = [
   { field: 'module', label: 'Module' },
   { field: 'software_version', label: 'Version' },
   { field: 'format', label: 'Format' },
-  { field: 'status', label: 'Status' }
+  { field: 'status', label: 'Status' },
+  { field: 'downloaded_on', label: 'Download date' }
 ]
 
 export const DEFAULT_GROUP = GROUPS[0].field
@@ -30,7 +31,8 @@ export function groupFor (field) {
  *
  * @param {object[]} rows Joined submission rows.
  * @param {string} field The field to group by.
- * @returns {Array<{label: string, total: number, downloaded: number}>} Counts, smallest first.
+ * @returns {Array<{label: string, total: number, downloaded: number}>} Counts: smallest
+ *   group first, or oldest date first when grouping by a date.
  */
 export function countsBy (rows, field) {
   const counts = new Map()
@@ -41,7 +43,12 @@ export function countsBy (rows, field) {
     if (row.status === 'ok') entry.downloaded += 1
     counts.set(label, entry)
   }
-  return [...counts.values()].sort((a, b) => a.total - b.total || a.label.localeCompare(b.label))
+  const counted = [...counts.values()]
+  // Plotly puts the first entry at the bottom of a horizontal chart, so dates ascend:
+  // oldest at the bottom, newest at the top, the way a timeline reads.
+  return field.startsWith('downloaded')
+    ? counted.sort((a, b) => a.label.localeCompare(b.label))
+    : counted.sort((a, b) => a.total - b.total || a.label.localeCompare(b.label))
 }
 
 /**

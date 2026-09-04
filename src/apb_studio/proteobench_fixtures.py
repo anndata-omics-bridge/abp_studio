@@ -23,6 +23,7 @@ import tomllib
 import zipfile
 from collections.abc import Callable
 from contextlib import chdir
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, Literal, TypedDict
@@ -640,6 +641,11 @@ def write_submission_summary(target: Store, repo_name: str, intermediate_hash: s
         "repo_name": repo_name,
         "intermediate_hash": intermediate_hash,
         "input_file": tables[0].relative_to(target.root).as_posix(),
+        # The vendor table's own mtime, set when the archive was extracted, rather than
+        # the clock now: a summary rewritten later must not claim a later download.
+        "downloaded_at": datetime.fromtimestamp(tables[0].stat().st_mtime, UTC).isoformat(
+            timespec="seconds"
+        ),
         **summarize_table(tables[0]),
         "parameter_file": (parameters[0].relative_to(target.root).as_posix() if parameters else ""),
         "parameter_size_bytes": parameters[0].stat().st_size if parameters else None,

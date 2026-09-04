@@ -9,6 +9,7 @@ const FACTS = [
   ['software_version', 'Version'],
   ['nr_feature', 'Features'],
   ['status', 'Download status'],
+  ['downloaded_at', 'Downloaded'],
   ['input_file', 'Input file'],
   ['format', 'Format'],
   ['delimiter', 'Delimiter'],

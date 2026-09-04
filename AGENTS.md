@@ -27,7 +27,8 @@ because a store is entirely re-downloadable. Nothing filters downloads; the stra
 annotate. The layout lives in `fixture_store.py`.
 
 **Each submission is described by its own `summary.json`, written beside its files the moment
-they land** — format, size, rows, columns, column names, parameter file. The viewer composes
+they land** — format, size, rows, columns, column names, parameter file, and the download
+time, taken from the vendor table's mtime so re-summarising cannot redate it. The viewer composes
 that URL from the `submissionSummary` pattern in `index.json` and asks for it: **present means
 downloaded, absent means not.** So a submission that lands mid-run needs no table rebuilt and
 no listing refreshed, and a page reload shows the truth. `downloads.csv` is consulted only for

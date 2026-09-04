@@ -73,7 +73,10 @@ export function joinSubmissions (catalog, downloads, summaries) {
       rows: summary?.rows ?? null,
       columns: summary?.columns ?? null,
       column_names: summary?.column_names ?? '',
-      parameter_file: summary?.parameter_file ?? ''
+      parameter_file: summary?.parameter_file ?? '',
+      downloaded_at: summary?.downloaded_at ?? '',
+      // The day alone, for grouping: 202 timestamps to the second are 202 groups.
+      downloaded_on: (summary?.downloaded_at ?? '').slice(0, 10)
     }
   })
 }
