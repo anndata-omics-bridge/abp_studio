@@ -1,5 +1,0 @@
-# APB2 conversion only.
-name: convert
-description: APB2 conversion only — one job per supported branch.
-converters: [apb2]
-stages: [convert]

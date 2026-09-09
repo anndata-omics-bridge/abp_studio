@@ -1,281 +1,46 @@
-# apb_studio pipeline — registry-driven (decision 5).
-#
-# Every target's output path, command, inputs, and branch come from the Corpus Runner-generated
-# run.json. This file only executes that immutable snapshot; it never reads fixture tables,
-# application settings, or a user-maintained corpus manifest.
-#
-# State lives entirely in the output tree (filesystem-as-database):
-#   output_root/<module>/<dataset>/<branch>.{h5mu,h5ad}
-#   output_root/<module>/<dataset>/<branch>.fasta.{h5mu,h5ad}
-#   output_root/<module>/<dataset>/mudata.aggregate-{ion,fragment}.h5mu
-#   output_root/<module>/<dataset>/<branch>.proteobench.{h5mu,h5ad}
-# or, for the direct pipeline:
-#   output_root/<module>/<dataset>/mudata.raw-proteobench.h5mu
+"""One complete linear Python workflow per dataset; JSON is the only rule output."""
 
-import os
-import shlex
-import sys
-from importlib.util import find_spec
+import subprocess
 from pathlib import Path
 
-# Prefer packages already resolved by the active Python environment. A plain source checkout gets
-# an explicit fallback only for packages that are otherwise unavailable; appending keeps an
-# installed package ahead of a sibling checkout.
-_PACKAGE_ROOT = Path(workflow.basedir).parent
-_SRC_ROOT = _PACKAGE_ROOT.parent
-_WORKSPACE_ROOT = _SRC_ROOT.parent.parent
-_SOURCE_FALLBACKS = []
+from apb_studio.corpus.models import RunManifest
+from apb_studio.corpus.clean import archive_results
+from apb_studio.corpus.runs import command_for, publish_index
 
-
-def _append_source_fallback(import_name, source_path):
-    if find_spec(import_name) is None and source_path.is_dir():
-        sys.path.append(str(source_path))
-        _SOURCE_FALLBACKS.append(source_path)
-
-
-_append_source_fallback("apb_studio", _SRC_ROOT)
-_append_source_fallback("anndata_proteomics", _WORKSPACE_ROOT / "legacy" / "src")
-_append_source_fallback("apb2", _WORKSPACE_ROOT / "apb2" / "src")
-_append_source_fallback("apb_aggregate", _WORKSPACE_ROOT / "apb-aggregate" / "src")
-_append_source_fallback("apb_fasta", _WORKSPACE_ROOT / "apb-fasta" / "src")
-_append_source_fallback("apb_proteobench", _WORKSPACE_ROOT / "apb-proteobench" / "src")
-
-from apb_studio.execution import clean_targets
-from apb_studio.pipeline import (
-    AGGREGATE_ARTIFACT_RE,
-    CONVERT_ARTIFACT_RE,
-    FASTA_ARTIFACT_RE,
-    PROTEOBENCH_ARTIFACT_RE,
-    RAW_PROTEOBENCH_ARTIFACT_RE,
-    load_run_snapshot,
-    runnable_targets,
-)
-from apb_studio.run_history import mark_operation
-
-# ``--configfile`` is only Snakemake's transport for the internal JSON. No default is allowed:
-# Snakemake merges defaults with an explicit config file, which would violate snapshot isolation.
 if not workflow.configfiles:
-    raise ValueError("apb_studio: Corpus Runner must pass its generated run.json")
-_RUN_PATH = Path(workflow.configfiles[-1])
-_RUN_PATH_ENV = "APB_STUDIO_RUN_PATH"
-# The snapshot path identifies this invocation, not artifact content. Pass it to provenance through
-# the process environment so a fresh run ID does not invalidate every otherwise unchanged target.
-os.environ[_RUN_PATH_ENV] = str(_RUN_PATH)
+    raise ValueError("Pass the generated run.json using --configfile")
 
-RUN = load_run_snapshot(_RUN_PATH)
-OUTPUT_ROOT = RUN.output_root
-TARGETS = list(RUN.targets)
-BY_OUTPUT = {str(t.output): t for t in TARGETS}
-
-# Missing external resources are represented as UNSUPPORTED cells in the dashboard and are not
-# allowed to abort DAG construction for otherwise independent branches. Existing artifacts stay in
-# the goal so Snakemake can assess input timestamps and rebuild stale work.
-DEFAULT_TARGETS = [str(t.output) for t in runnable_targets(TARGETS)]
-BENCHMARK_PATTERN = str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".benchmark.tsv"
-
-# For the per-rule provenance hook (decision 17): use this interpreter and pass on only source
-# fallbacks that this process actually needed. The inherited PYTHONPATH stays ahead of appended
-# fallbacks, matching this process's resolution order.
-_INHERITED_PYTHONPATH = os.environ.get("PYTHONPATH", "")
-_SUBPROCESS_PYTHONPATH = os.pathsep.join(
-    [path for path in [_INHERITED_PYTHONPATH, *(str(p) for p in _SOURCE_FALLBACKS)] if path]
-)
-def _tool_command(name, module):
-    """The interpreter-local console script, or its module, for one converter/step binary."""
-    local = Path(sys.executable).with_name(name)
-    return [str(local)] if local.is_file() else [sys.executable, "-m", module]
+ROOT = Path(workflow.configfiles[-1]).resolve().parent
+RUN = RunManifest.model_validate_json((ROOT / "run.json").read_text())
+BY_KEY = {Path(link.path).stem: link for link in RUN.reports}
 
 
-# One entry per binary a registry template may name. A template naming anything else runs as
-# written, which is how a non-APB command would have to be declared anyway.
-_TOOL_COMMANDS = {
-    "apb2": _tool_command("apb2", "apb2.cli"),
-    "apb-aggregate": _tool_command("apb-aggregate", "apb_aggregate.cli"),
-    "apb-fasta": _tool_command("apb-fasta", "apb_fasta.cli"),
-    "apb-proteobench": _tool_command("apb-proteobench", "apb_proteobench.cli"),
-}
-
-
-onstart:
-    mark_operation(_RUN_PATH, "running")
-
-
-onsuccess:
-    mark_operation(_RUN_PATH, "succeeded")
-
-
-onerror:
-    mark_operation(_RUN_PATH, "failed")
-
-
-def _target(wildcards):
-    return BY_OUTPUT[str(OUTPUT_ROOT / wildcards.module / wildcards.dataset / wildcards.artifact)]
-
-
-def _inputs(wildcards):
-    return [str(p) for p in _target(wildcards).inputs]
-
-
-def _command(wildcards):
-    """Render the APB command followed by its provenance hook."""
-    target = _target(wildcards)
-    command = list(target.command)
-    tool = _TOOL_COMMANDS.get(command[0]) if command else None
-    is_apb_command = tool is not None
-    if tool is not None:
-        command = [*tool, *command[1:]]
-    provenance_prefix = shlex.join(
-        [
-            sys.executable,
-            "-m",
-            "apb_studio.provenance",
-            "--run",
-        ]
-    )
-    provenance_command = (
-        f'{provenance_prefix} "${_RUN_PATH_ENV}"'
-        f" --output {shlex.quote(str(target.output))}"
-    )
-    command_text = shlex.join(command)
-    if _SOURCE_FALLBACKS:
-        environment = f"PYTHONPATH={shlex.quote(_SUBPROCESS_PYTHONPATH)} "
-        if is_apb_command:
-            command_text = environment + command_text
-        provenance_command = environment + provenance_command
-    return command_text + " && " + provenance_command
-
-
-def _failure_marker(wildcards):
-    """Marker written only after a rule command fails; a live tee log is not a failure."""
-    return f"{_target(wildcards).output}.failed"
-
-
-wildcard_constraints:
-    module=r"[^/]+",
-    dataset=r"[^/]+",
-
-# Default goal: let Snakemake assess every branch whose external prerequisites exist.
 rule all:
     input:
-        DEFAULT_TARGETS
+        str(ROOT / "corpus_index.json")
+
+
+rule dataset:
+    output:
+        str(ROOT / "reports/{key}.json")
+    params:
+        command=lambda wc: command_for(ROOT, RUN, BY_KEY[wc.key])
+    run:
+        subprocess.run(params.command, check=True)
+
+
+rule index:
+    input:
+        [str(ROOT / link.path) for link in RUN.reports]
+    output:
+        str(ROOT / "corpus_index.json")
+    run:
+        publish_index(ROOT, RUN)
 
 
 localrules: clean
 
 
 rule clean:
-    """Remove every managed corpus artifact and its Snakemake-side state."""
     run:
-        clean_targets(TARGETS, input_root=RUN.test_data_root)
-
-
-# Disjoint artifact constraints make the five rules unambiguous; ruleorder is a backstop.
-ruleorder: raw_proteobench > proteobench > aggregate > fasta > convert
-
-
-rule convert:
-    output:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
-    wildcard_constraints:
-        artifact=CONVERT_ARTIFACT_RE
-    input:
-        _inputs
-    params:
-        cmd=_command,
-        failure_marker=_failure_marker
-    log:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
-    benchmark:
-        BENCHMARK_PATTERN
-    shell:
-        # The log streams live progress. Only a non-zero exit writes the adjacent failure marker;
-        # pipeline state therefore never mistakes a currently running tee log for a failed rule.
-        "rm -f {params.failure_marker:q}; "
-        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
-        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
-        "exit \"$status\"; fi"
-
-
-rule fasta:
-    output:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
-    wildcard_constraints:
-        artifact=FASTA_ARTIFACT_RE
-    input:
-        _inputs
-    params:
-        cmd=_command,
-        failure_marker=_failure_marker
-    log:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
-    benchmark:
-        BENCHMARK_PATTERN
-    shell:
-        # See convert: clear stale failure state, stream progress, then mark only a real failure.
-        "rm -f {params.failure_marker:q}; "
-        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
-        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
-        "exit \"$status\"; fi"
-
-
-rule aggregate:
-    output:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
-    wildcard_constraints:
-        artifact=AGGREGATE_ARTIFACT_RE
-    input:
-        _inputs
-    params:
-        cmd=_command,
-        failure_marker=_failure_marker
-    log:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
-    benchmark:
-        BENCHMARK_PATTERN
-    shell:
-        "rm -f {params.failure_marker:q}; "
-        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
-        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
-        "exit \"$status\"; fi"
-
-
-rule proteobench:
-    output:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
-    wildcard_constraints:
-        artifact=PROTEOBENCH_ARTIFACT_RE
-    input:
-        _inputs
-    params:
-        cmd=_command,
-        failure_marker=_failure_marker
-    log:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
-    benchmark:
-        BENCHMARK_PATTERN
-    shell:
-        "rm -f {params.failure_marker:q}; "
-        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
-        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
-        "exit \"$status\"; fi"
-
-
-rule raw_proteobench:
-    output:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}")
-    wildcard_constraints:
-        artifact=RAW_PROTEOBENCH_ARTIFACT_RE
-    input:
-        _inputs
-    params:
-        cmd=_command,
-        failure_marker=_failure_marker
-    log:
-        str(OUTPUT_ROOT / "{module}/{dataset}/{artifact}") + ".log"
-    benchmark:
-        BENCHMARK_PATTERN
-    shell:
-        "rm -f {params.failure_marker:q}; "
-        "if ({params.cmd}) 2>&1 | tee {log:q}; then :; "
-        "else status=$?; printf 'exit %s\\n' \"$status\" > {params.failure_marker:q}; "
-        "exit \"$status\"; fi"
+        print(f"Results preserved in {archive_results(ROOT)}")

@@ -1,121 +1,39 @@
 # Architecture
 
-APB Studio discovers ProteoBench fixtures, asks APB2 which quantification levels each fixture can produce, freezes concrete commands into a run snapshot, and lets Snakemake execute them. Studio does not implement vendor parsing, FASTA matching, level aggregation, or ProteoBench scoring.
+Studio has three boundaries: acquisition writes fixture files and the minimal corpus table; concrete Python workflows execute APB subprocesses and write reports; the JavaScript viewer reads those reports.
 
-Two parts share one settings file:
+## Modules
 
-- **Fixture store**: `apb-studio-fixtures` downloads every ProteoBench submission, both FASTAs and
-  all module TOMLs into `test_data_root`, summarises them, and serves a plain-JavaScript viewer
-  over the resulting CSVs and JSON. Layout: `catalog.csv`, `metadata/`, `submissions/`,
-  `downloads.csv`, `fasta/`, `modules/`, `summaries.csv`, `resources.csv`, `index.json`.
-- **Corpus Runner** resolves APB2 branches, launches whole-corpus run or clean operations, and
-  reports artifacts, timings, and exact failures. Its Dash application was removed on
-  2026-09-04; the headless scripts remain and a static viewer replaces the app.
+| Component | Responsibility |
+| --- | --- |
+| `proteobench_fixtures.py`, `fixture_store.py` | Downloading, fixture inventory, acquisition history |
+| `corpus_export.py` | Export explicit existing input/parameter paths and workflow resource mappings |
+| `corpus/tables.py` | Exact CSV schema and explicit joins |
+| `corpus/models.py` | Versioned JSON records |
+| `corpus/runner.py` | Linear subprocess execution, telemetry, logs, progress and final reports |
+| `workflows/workflow_convert.py`, `workflows/workflow_aggregate.py` | Workflow-owned ordered APB commands |
+| `corpus/runs.py`, `corpus/cli.py` | Snapshot preparation and Snakemake invocation |
+| `workflow/Snakefile` | One dataset rule, one index rule, recoverable clean |
+| `corpus_viewer/web/` | JavaScript rendering of persisted settings, tables and execution state |
 
-## Workflow shapes
+The workflow scripts depend on the shared corpus runner. The corpus runner never imports APB domain packages or computes proteomics summaries. The server serves static files and performs no workflow actions. The stage registry and pipeline YAMLs have been removed.
 
-The stage catalogue in `config/registry.yaml` defines two paths.
+## Inputs and snapshots
 
-```text
-staged:
-  apb2 convert
-      -> apb-fasta verify-peptides
-      -> apb-aggregate ion protein sum       [when ion exists]
-      -> apb-aggregate fragment protein sum  [when fragment exists]
-      -> apb-proteobench benchmark
+Named inventories in `corpuses/` have four columns: `input_file,vendor_parameter_file,module,software_name`. Paths are relative to an independently configured data root, never the CSV directory. A workflow receives the selected file path and the CSV paths, locates its row, and performs any join itself. `workflow_proteobench.csv` uses `module`; `workflow_aggregate.csv` uses `software_name` and supplies `start_level` and `method`.
 
-direct:
-  apb-proteobench run
-```
+`ExecutionSettings` explicitly names the corpus, optional workflow table, optional acquisition downloads table, data root, workflow, format, required executables, cores, and any selection. A content-derived settings ID groups runs independently of their timestamps or observed software versions. The `configure` CLI publishes settings and CSV previews without a run; `execute` replays a saved settings document.
 
-The staged path persists every applicable boundary. Aggregation is MuData-only because upward aggregation retains both source and target levels. If just one of ion or fragment exists, ProteoBench reconnects to that result; if neither aggregation stage applies on a standalone branch, it reconnects to the FASTA-checked result. The direct path runs all work in memory and persists one final `mudata.raw-proteobench.h5mu` per fixture.
+At launch, the full source inventory, selected rows, selected input-size metadata, optional workflow table, settings, and workflow source are copied into a run directory. Input size is joined explicitly from `corpus.input_file` to `downloads.input_file_path`; the acquisition status column is not consulted. Run identity hashes the Snakefile, corpus modules, selected and shared workflow modules, executable metadata, and editable tool package contents without importing APB. `run.json` links the snapshots and expected reports before execution. The viewer selects settings first, then one of their saved runs, and can also inspect settings without any run. Manifests without a saved settings reference are omitted from the viewer catalog.
 
-The legacy `apb` library is gone from Studio: nothing imports it, and the fixture store needs
-only the standard library, pandas, pyarrow, requests and beautifulsoup4.
+## Reporting and progress
 
-## Four boundaries
+Each APB step records its name, argv, inputs, outputs, timestamps, runtime in seconds, peak process-tree RSS in bytes, exit code, separate stdout/stderr, warnings and errors. Present inputs and successfully generated file or directory artifacts also record their byte sizes. The runner writes atomic progress snapshots during execution and a final report after all attempted steps settle. Subsequent steps become skipped after an APB failure.
 
-| Boundary | Owner | Files |
-| --- | --- | --- |
-| Stage definition | commands, dependencies, required resources | `config/registry.yaml` |
-| Pipeline selection | staged, direct, or conversion-only target set | `config/pipelines/*.yaml`, `registry.py` |
-| Resolution | fixtures + APB2 capabilities → concrete targets | `capabilities.py`, `pipeline.py`, `execution.py` |
-| Execution and observation | scheduling, logs, markers, timing, UI | `workflow/Snakefile`, `provenance.py`, `dashboard.py` |
+An APB failure produces a failed report and a successful workflow-process exit. An inability to run the reporting framework fails the Snakemake rule. The index is published only after all final reports validate. Scheduler completion and APB success remain separate visible fields.
 
-Resolution ends by writing one immutable `run.json`; execution begins by reading it.
+The viewer uses only JSON/CSV/text URLs. Its identity endpoint hashes the canonical store and web roots, allowing serve, shutdown and restart to distinguish the requested viewer from another store or service on the same port; shutdown also requires the recorded PID to own the exact localhost listening socket before signaling. It polls at two-second intervals and reads progress until a final report becomes available. A new operation invalidates cached reports. It displays interrupted work when the operation ended before a dataset produced a final result. The dataset table exposes only the last observed scientific output of a succeeded step. Show more retains all declared paths, distinguishes missing outputs from existing failed-step artifacts through independently observed sizes, and selects the representation sidecar belonging to that displayed output, falling back to the last readable representation. Its top-level tabs separate files and execution diagnostics, APB-owned metadata scopes, every AnnData modality represented by a quantification level or annotation table, and the complete representation JSON. The metadata projection preserves shared MuData and level-specific AnnData ownership and renders each as `uns["apb"]`; it does not move missing shared provenance out of a modality. Each AnnData panel contains nested axes, one-tab-per-layer, and aligned-structure scientific views only. Both tab levels render lazily so Plotly measures a visible container. Known embedded provenance JSON is decoded defensively for older sidecars. It renders categorical counts and Plotly summaries only for quantitative layers without computing proteomics statistics. The execution report remains a secondary diagnostic in the files tab. Its corpus visualization projection expands persisted reports into per-step runtime/memory points and per-observed-output size points; Plotly groups them by software and never substitutes zero for absent measurements.
 
-```mermaid
-flowchart LR
-  INV[Fixture inventory] --> CAP[APB2 capability discovery]
-  CAP --> EXP[Target expansion]
-  REG[Stage registry + pipeline selection] --> EXP
-  EXP --> RUN[run.json]
-  RUN --> SNK[Snakemake]
-  SNK --> A[APB2 artifacts]
-  SNK --> L[logs + failure markers + benchmarks]
-  A --> UI[Corpus Runner]
-  L --> UI
-```
+## Verification
 
-## Capability discovery
-
-Supported levels are APB2's answer. `capabilities.discover_capabilities()` parses the vendor
-parameter file, detects the packaged rule document from parameter evidence and source columns, and
-compiles each compatible parser without loading the quantitative dataset. A supported fixture
-produces `mudata` followed by APB2's compatible standalone levels. Studio maintains no vendor or
-level map.
-
-The discovery cache key includes input and parameter mtimes plus a fingerprint of APB2's packaged
-rule documents, so changing either data or rules invalidates the answer.
-
-## `run.json` is the execution interface
-
-Each operation writes:
-
-```text
-<output_root>/.apb_studio/runs/<run-id>/run.json
-```
-
-The versioned snapshot contains resolved fixture identities, source paths, resources, branches,
-the selected pipeline, exact argv, input edges, outputs, registry digest, and APB2 version. It is
-internal execution state, not user configuration, and is immutable after creation. Snakemake never
-rediscovers fixtures or rerenders commands.
-
-The Snakefile resolves the four tool names against its own Python environment:
-
-- `apb2`
-- `apb-fasta`
-- `apb-aggregate`
-- `apb-proteobench`
-
-No legacy `apb` executable fallback exists.
-
-## Filesystem state
-
-The output tree is the status database:
-
-```text
-<output_root>/<module>/<dataset>/mudata.h5mu
-<output_root>/<module>/<dataset>/mudata.fasta.h5mu
-<output_root>/<module>/<dataset>/mudata.aggregate-ion.h5mu
-<output_root>/<module>/<dataset>/mudata.aggregate-fragment.h5mu
-<output_root>/<module>/<dataset>/mudata.proteobench.h5mu
-<output_root>/<module>/<dataset>/ion.h5ad
-<output_root>/<module>/<dataset>/ion.fasta.h5ad
-<output_root>/<module>/<dataset>/ion.proteobench.h5ad
-<output_root>/<module>/<dataset>/mudata.raw-proteobench.h5mu
-```
-
-Each artifact may also have `.log`, `.failed`, `.benchmark.tsv`, and `.provenance.json` sidecars.
-An artifact means `DONE`; a non-zero rule writes the authoritative `.failed` marker; a live log
-without that marker remains pending. Benchmark TSVs are the only source of recorded runtime.
-
-## Invariants
-
-- Pipeline documents select catalogue stages; they never restate commands.
-- A staged pipeline is closed under `depends_on`: convert → FASTA → ion aggregation → fragment aggregation → ProteoBench.
-- Direct execution is restricted to the MuData branch because it converts all compatible levels.
-- Missing resources block only targets that require them; independent conversion remains runnable.
-- The grid is an observer, not a row- or stage-scoped executor.
-- Clean removes managed artifacts and sidecars but never fixture inputs or persisted run history.
-- `run.json` paths are absolute, and outputs must remain under the frozen output root.
+Unit tests exercise CSV validation, explicit join failures, workflow step construction, subprocess logs, unavailable commands, missing files, skipped steps and failed report publication. Integration checks run the named vendor fixtures through the actual APB2 and apb-aggregate CLIs. Node tests exercise viewer state projection.

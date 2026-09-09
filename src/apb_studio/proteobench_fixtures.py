@@ -37,6 +37,8 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from apb_studio import fixture_index
+from apb_studio.corpus_export import export_corpus, export_proteobench_table
+from apb_studio.disk import atomic_write_text
 from apb_studio.fixture_store import INDEX_NAME, TABLE_NAMES, Store
 from apb_studio.fixture_viewer.server import run as serve_store
 from apb_studio.proteobench_config import packaged_config
@@ -528,10 +530,11 @@ def download(*, store: Path | None = None, module: ModuleKey | None = None) -> N
         out_rows.append(record)
 
     out_df = pd.DataFrame(out_rows)
-    out_df.to_csv(target.downloads_csv, index=False)
+    atomic_write_text(target.downloads_csv, out_df.to_csv(index=False))
     logger.info("total rows: {}", len(out_df))
     logger.info("status breakdown:\n{}", out_df["status"].value_counts().to_string())
     logger.info("written to {}", target.downloads_csv)
+    export_corpus(target)
     fixture_index.write(target)
 
 
@@ -723,6 +726,23 @@ def run_all(*, store: Path | None = None, module: ModuleKey | None = None) -> No
     catalog(store=store)
     download(store=store, module=module)
     resources(store=store)
+
+
+@app.command
+def corpus(
+    *,
+    store: Path | None = None,
+    workflow_tables: Path | None = None,
+    corpuses: Path | None = None,
+) -> None:
+    """Export existing fixtures and a separate workflow_proteobench.csv without downloading."""
+    target = _store(store)
+    directory = corpuses or target.root.parent / "corpuses"
+    logger.info("written to {}", export_corpus(target, directory / "all.csv"))
+    if target.resources_csv.is_file():
+        tables = workflow_tables or target.root.parent / "workflow_tables"
+        logger.info("written to {}", export_proteobench_table(target, tables))
+    fixture_index.write(target)
 
 
 @app.command

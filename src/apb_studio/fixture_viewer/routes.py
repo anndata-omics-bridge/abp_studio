@@ -5,13 +5,15 @@
 rule, header and refusal is testable without a socket.
 
 Two roots share one origin: the viewer is served from ``/`` and the store from
-``/data/``. Both are plain files: nothing here computes, summarises or refreshes
-anything. ``index.json`` is written by :mod:`apb_studio.fixture_index` when a command
-changes the store, so this module never has to know what a store is.
+``/data/``. Those trees are plain files; a small identity route hashes their configured
+roots so lifecycle commands cannot mistake one viewer for another. ``index.json`` is
+written by :mod:`apb_studio.fixture_index` when a command changes the store.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import mimetypes
 import posixpath
 from dataclasses import dataclass
@@ -21,6 +23,7 @@ from urllib.parse import unquote
 from apb_studio.fixture_store import INDEX_NAME, Store
 
 DATA_PREFIX = "data"
+VIEWER_IDENTITY_PATH = ".well-known/apb-studio-viewer.json"
 
 _NO_CACHE = ("Cache-Control", "no-cache")
 _HEADERS_BY_SUFFIX: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
@@ -81,10 +84,23 @@ def _data(store: Store, relative: str) -> Response:
     return _file(target)
 
 
+def viewer_identity(web_root: Path, store: Store) -> bytes:
+    """Return a stable identity for one exact viewer and store pairing."""
+    payload = {
+        "schema_version": 1,
+        "server": "apb-studio-static-viewer",
+        "store": hashlib.sha256(str(store.root.resolve()).encode()).hexdigest(),
+        "viewer": hashlib.sha256(str(web_root.resolve()).encode()).hexdigest(),
+    }
+    return (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
 def resolve(url_path: str, web_root: Path, store: Store) -> Response:
     """Map one request path onto its complete response."""
     path = unquote(url_path.split("?", 1)[0].split("#", 1)[0])
     clean = posixpath.normpath(path).lstrip("/")
+    if clean == VIEWER_IDENTITY_PATH:
+        return Response(200, headers_for(VIEWER_IDENTITY_PATH), viewer_identity(web_root, store))
     if clean in {".", ""}:
         return _file(web_root / "index.html")
     head, _, tail = clean.partition("/")

@@ -1,5 +1,0 @@
-# Conversion only, apb2. No annotation, FASTA, or ProteoBench.
-name: apb2-convert
-description: apb2 conversion only — one job per branch, nothing downstream.
-converters: [apb2]
-stages: [convert]

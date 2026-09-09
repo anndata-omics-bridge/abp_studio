@@ -1,240 +1,102 @@
 # APB Studio
 
-APB Studio provides two local applications around the APB2 toolchain:
+APB Studio downloads ProteoBench fixtures, runs concrete Python workflows over existing files, and serves two local JavaScript viewers.
 
-- **Fixture Manager** catalogs, selects, downloads, and inspects ProteoBench fixtures and their
-  module and FASTA resources.
-- **Corpus Runner** derives every branch supported by APB2, launches the complete runnable corpus,
-  and shows stage progress, artifact summaries, and exact failure logs.
-
-## Sources of truth
-
-| Information | Owner |
-| --- | --- |
-| Catalog, download queue, report, and cached fixture files | Fixture Manager via `apb-testdata` |
-| Active test-data root | Fixture Manager setting |
-| ProteoBench module TOMLs and FASTA resources | Fixture Manager downloads/resource inventory |
-| MuData and standalone levels | APB2 rules resolved against local inputs and parameters |
-| Output root | Corpus Runner setting |
-| Scope and provenance of one launch | Corpus Runner-generated `run.json` |
-| Completion and runtime failure | Artifacts and authoritative rule failure markers |
-
-The applications share typed settings stored in the operating system's application-config
-directory. The corpus is every complete local fixture under the active test-data root; the
-selection CSV controls the download queue only. A complete fixture has exactly one `input_file.*`
-and one `param_0.*`. The conventional test-data root in this workspace is
-`apb_studio/test_data_download/` — gitignored, downloaded and re-downloadable by the Fixture
-Manager, and never assumed present by any consumer (apb2's corpus-backed unit tests read it via
-`APB2_TEST_DATA` and skip when it is absent).
-
-There is no user-maintained `corpus.yaml`. No fixture table or application setting declares a
-level such as `ion`: APB2 parses the parameter version and input headers, then resolves the matching
-packaged parsing-rule JSON.
-
-## Pipelines
-
-A **pipeline** says which converters a run exercises and which stages it runs. It is one small
-YAML document in `src/apb_studio/config/pipelines/`, selecting from the stage catalogue in
-`src/apb_studio/config/registry.yaml` — it never restates a stage's command, so the two cannot
-drift. Both entry points take the same names:
-
-| `--pipeline` | CLI calls | Result |
-| --- | --- | --- |
-| `full` (default) | `apb2 convert` → `apb-fasta verify-peptides` → conditional `apb-aggregate` calls → `apb-proteobench benchmark` | inspectable artifacts at every boundary |
-| `direct` | `apb-proteobench run` | one final scored MuData artifact per fixture |
-| `convert` | `apb2 convert` | conversion only |
-| `apb2-convert` | same as `convert` | compatibility name |
-| `apb2-full` | same as `full` | compatibility name |
-
-```bash
-make corpus-runner CORPUS_PIPELINE=apb2-convert    # app opens on that pipeline
-make corpus-run    CORPUS_PIPELINE=apb2-convert    # headless, same target set
-make corpus-check  CORPUS_PIPELINE=apb2-convert    # dry-run it
-make corpus-clean  CORPUS_PIPELINE=apb2-convert    # clean only its artifacts
-```
-
-The picker beside the output path switches pipeline in the running app; the grid's columns follow.
-While a run is active the table stays pinned to that run's own pipeline, so a switch applies to the
-next resolution rather than relabelling work already under way.
-
-Three things worth knowing:
-
-- **The staged pipelines share conversion artifact names.** That is what makes `convert` followed
-  by `full` incremental rather than repeated work. The direct pipeline intentionally writes a
-  distinct `mudata.raw-proteobench.h5mu`. Pass `--force` (or a
-  separate `--output-root`) when the point is to time the work again:
-  `uv run python scripts/run_corpus.py --pipeline apb2-convert --force`.
-- **A pipeline must be closed under `depends_on`.** In the staged route, FASTA checking reads the conversion; `apb-aggregate ion protein sum` and `apb-aggregate fragment protein sum` run only when their source levels exist; ProteoBench reads the last aggregate result that was produced.
-- **The direct route is MuData-only.** It converts every compatible APB2 level, checks the FASTA, performs the same available ion/fragment-to-protein aggregations in memory, and writes one final h5mu result.
-
-Adding a pipeline is one YAML file. Adding a *stage* is a registry entry plus one Snakemake rule,
-because Snakemake rules are top-level declarations and cannot be generated from data.
-
-## Corpus Runner
-
-The Corpus Runner shows one compact table with `Module`, `Dataset`, `Software`, `Level`, and then
-one stage column per stage of the active pipeline: `Converted`, `FASTA checked`, `Ion aggregated`, `Fragment aggregated`, and `ProteoBench scored` for the staged route, or `Raw to ProteoBench` for the direct route. One row is
-one APB2 quantification level. The direct route emits only the MuData row; the staged route fans
-out to MuData plus every supported standalone level. Unsupported or invalid local fixtures remain
-visible as one unresolved row.
-
-`Run corpus` freezes fixture identities, resolved branches, paths, resources, output aliases, the
-active pipeline, and APB/registry versions into:
-
-```text
-<output_root>/.apb_studio/runs/<run-id>/run.json
-```
-
-That JSON file is internal execution state, not user configuration. Snakemake consumes the frozen
-snapshot with `--keep-going`; a fixture downloaded during a run joins only after that run finishes
-and the application reloads. Each run directory also stores durable operation state and the
-Snakemake log, which Corpus Runner reloads after an application restart.
-
-The stage states have precise meanings:
-
-| State | Meaning |
-| --- | --- |
-| blank | Runnable or normally waiting for an upstream stage |
-| `DONE` | The expected artifact exists |
-| `UNSUPPORTED` | APB2 has no registered capability for the software, or no parsing-rule JSON matches |
-| `BLOCKED` | A required input/resource is invalid or absent, or an upstream stage terminated |
-| `FAILED` | Snakemake attempted that exact rule and its failure marker exists |
-
-Only `FAILED` is red and offers a downloadable rule log. A leftover log alone never means failure,
-and an artifact wins over an old failure marker. Clicking `DONE` shows the cumulative artifact
-summary, including `uns`; clicking another terminal state shows its diagnostic. `Clear corpus…`
-launches the packaged Snakemake clean target for every managed stage. It removes artifacts and
-their rule logs, failure markers, benchmarks, and provenance while preserving fixture inputs and
-persisted run/log history. Run and clean are disabled while either operation is active.
-
-Newly executed stages include Snakemake's persisted elapsed time directly in their state, for
-example `DONE · 2m 14s`. Existing artifacts remain plain `DONE` and report runtime unavailable
-until Snakemake records a benchmark for them. The Corpus summary reports stage-state counts,
-produced artifacts, and timing coverage.
-
-### Comparing two stage columns
-
-`Compare two stage columns`, the collapsed panel under the grid, scatters any two stage columns
-against each other — one point per grid row, coloured by software, with a dotted `y = x` line so
-`Converted` against `Converted2` reads as "which converter produced the larger artifact" at a
-glance. Two metrics:
-
-| Metric | Source | Available for |
-| --- | --- | --- |
-| Runtime (s) | the stage's Snakemake benchmark file | stages run under Snakemake |
-| Artifact size (MB) | the produced file's own size | every produced artifact |
-
-The axis choices are the columns the grid is currently showing, so they follow the active pipeline
-(and a pinned run's own pipeline). A row missing either value contributes no point — a stage that
-never ran, or an artifact predating benchmark metadata, is absent evidence and not a zero — so the
-plot titles itself with how many of the rows it could compare. Nothing is recomputed: every value
-plotted is already in the row the grid drew.
-
-**Each axis is pinned to its own data**, because the two columns hold the same quantity but not the
-same distribution: one column's 2280 s outlier must not rescale the other column's 26 s axis. The
-`y = x` line spans both columns and is clipped by those ranges rather than widening them, so when
-every row sits on one side of equality the line is still there, at the edge. `Log axes` is worth
-switching to whenever a few rows dwarf the rest.
-
-!!! warning "Two columns can come from two different runs"
-    A benchmark is written when Snakemake *runs* a stage. If one column's artifacts already
-    existed, that column's numbers are from whenever they were last produced — possibly weeks
-    earlier, under different load — and comparing them measures the two runs, not the two
-    stages. For a comparison you can defend, produce both columns in one session:
-    run both measurements in one deliberate `--force` session.
-
-## Fixture Manager
-
-The Fixture Manager owns the canonical cache lifecycle. Its fixture table combines the generated
-catalog, selection, and download-report CSVs with live filesystem checks. It downloads
-ProteoBench `module_settings.toml` files and FASTA resources, then resolves them without
-requiring manual paths. The same module TOML supplies sample annotation and the ProteoBench
-experiment-design contract; scoring consumes the `sample_name` and `condition` added by the
-ProteoBench benchmark stage.
-
-Its Data workspace retains the fixture file, submission JSON, and parameter views. Its
-Configuration workspace catalogs and edits APB parsing-rule JSON documents. Conversion execution
-and converted-artifact inspection belong exclusively to Corpus Runner. In Resources, clicking an
-annotation or FASTA status/path cell previews the annotation content or the first 40 FASTA lines.
-
-## Quick start
-
-```bash
-uv sync --frozen
-
-make fixture-manager   # Fixture Manager, default Dash port 8050
-make corpus-runner     # Stop any managed instance, then run Corpus Runner on port 8051
-make corpus-runner-stop
-
-make corpus-runner CORPUS_PIPELINE=apb2-convert   # open on one pipeline (see Pipelines above)
-make corpus-run    CORPUS_PIPELINE=direct CORPUS_FIXTURES=10
-```
-
-`make corpus-clean` runs the packaged Snakemake clean rule without the application, removing
-exactly what `Clear corpus…` removes. It deletes immediately, without a confirmation prompt. It
-defaults to `CORPUS_PIPELINE=full`; a narrower
-pipeline clears only that pipeline's artifacts.
-
-`make corpus-run` runs **everything** the pipeline covers. It takes `CORPUS_PIPELINE` (default
-`full`), `CORPUS_CORES` (default 10), and `CORPUS_RUN_FLAGS` for anything else.
-
-### Choosing which datasets run
-
-Name them in a file rather than sampling, so a run can always say what it covered:
-
-```bash
-make corpus-routine                                     # selections/routine.txt, one per vendor
-make corpus-run CORPUS_RUN_FLAGS="--datasets selections/routine.txt --level ion"
-```
-
-```text
-# selections/routine.txt — a dataset alias, or module/alias. # comments and blank lines ignored.
-Results_quant_ion_DDA/maxquant-00e2f863    # maxquant
-diann-300beac4                             # diann
-```
-
-A name matching nothing is logged as a warning and the rest still run; if *nothing* matches, the
-run stops rather than quietly doing less than you asked. `--level ion --level mudata` restricts
-which quantification levels convert (`mudata` is the MuData container). `--fixtures N` still takes a
-vendor-spread sample of whatever is selected, and every narrowed run logs the datasets it covers.
-
-For flags without a Make variable, call the script directly:
-
-```bash
-uv run --frozen python scripts/run_corpus.py --help
-uv run --frozen python scripts/run_corpus.py --pipeline apb2-convert --force --output-root /tmp/apb2
-```
-
-The lifecycle targets are scoped by `APP_PORT`; for example, use
-`make corpus-runner APP_PORT=8052` and `make corpus-runner-stop APP_PORT=8052`. A restart also
-recognizes an older Corpus Runner already listening on that port, but refuses to terminate an
-unrelated process. The preferred console commands are `apb-studio-fixture-manager` and
-`apb-studio-corpus-runner`.
-`apb-studio-testdata` and `apb-studio` remain compatibility aliases.
-
-Bypassing Make, the Corpus Runner takes the same selection directly:
-
-```bash
-uv run --frozen apb-studio-corpus-runner --pipeline apb2-convert --port 8052
-uv run --frozen apb-studio-corpus-runner --help
-```
-
-`--port` falls back to `APB_STUDIO_PORT`, then 8051; `--settings` points at an alternative
-settings file.
-
-For development, install all locked checks and run the local CI stages:
+## Start
 
 ```bash
 uv sync --frozen --extra dev --group docs
-uv run pre-commit run --hook-stage pre-commit --all-files
-uv run pre-commit run --hook-stage pre-push --all-files
+make corpus-export
+make corpus-routine
+make corpus-viewer
 ```
 
-See [docs/development.md](docs/development.md) for the security audit and
-individual checks.
+The corpus viewer is at http://127.0.0.1:8766/. Running `make corpus-viewer` again reports the healthy existing server and exits successfully only when that server exposes the exact configured corpus and web roots; another viewer or service on the port is refused. Use `make corpus-viewer-shutdown` to stop the matching managed process or `make corpus-viewer-restart` to replace it. It shows saved settings, the exact CSV inputs, workflow source, live dataset/step progress, stdout, stderr, errors, runtime, peak memory, and input/output-size charts. It reads persisted files and remains useful after the runner exits. Refresh polling happens every two seconds. The fixture viewer remains available through `make fixture-manager` on port 8765.
 
-## Historical design
+The APB2 executable must be on PATH or supplied with `--apb-executable /path/to/apb2`. Aggregation runs also require `apb-aggregate` on PATH or `--aggregate-executable /path/to/apb-aggregate`. The development extra installs both workspace checkouts for local integration testing; Studio invokes them only through subprocesses.
 
-[CHANGES.md](CHANGES.md) and `git log` are the record of how the dashboard and the Snakemake
-migration reached their current shape. [docs/architecture.md](docs/architecture.md) describes
-that shape as it stands.
+## Inputs
+
+`apb-studio-fixtures corpus` exports existing downloaded fixtures without downloading again:
+
+```csv
+input_file,vendor_parameter_file,module,software_name
+```
+
+Inventories live in `corpuses/`: `all.csv` contains every available file pair; `routine.csv` contains the ten named fixtures. `make corpus-export` writes both, selecting the routine rows using `selections/routine.txt`. Additional named CSVs can be created with `apb-studio-corpus select --corpus corpuses/all.csv --datasets <selection.txt> --output corpuses/<name>.csv`.
+
+Both row paths are relative to the explicit `data_root`, not the CSV directory. `--data-root` defaults to Studio's configured fixture-store root. Each input file is unique. Execution joins only `input_file_path` and `input_file_size_bytes` from the separately configured `downloads.csv`; acquisition status remains outside pipeline state.
+
+Workflow-specific resources live in `workflow_tables/`. The exact conventional `workflow_<name>.csv` is selected automatically when present, or can be supplied with `--workflow-table`. The workflow declares its join columns explicitly and uses a validated many-to-one lookup. `workflow_aggregate.csv` contains exactly `software_name,start_level,method` and joins on `software_name`; `workflow_proteobench.csv` contains exactly `module,module_toml,fasta` and joins on `module`. Resource paths are relative to the same data root. Conversion needs no companion CSV and records `workflow_table: null`.
+
+## Execution settings and saved runs
+
+Execution settings explicitly record `corpus`, optional `workflow_table`, optional acquisition `downloads`, `data_root`, `workflow`, `format`, required executable paths, `cores`, and any additional selection. They contain no run ID, timestamp, or observed tool version. They are saved separately under `<output_root>/corpus/settings/<settings-id>/execution_settings.json`, together with CSV previews. Source paths in generated settings are absolute. When `<data_root>/downloads.csv` exists it is selected by default; `--downloads` can name another table.
+
+```bash
+# Save settings and preview the full inventory without running APB.
+uv run apb-studio-corpus configure --corpus corpuses/all.csv --cores 2
+# Execute a saved configuration; this remains a headless operation.
+uv run apb-studio-corpus execute /absolute/path/to/execution_settings.json
+```
+
+The viewer first selects execution settings, then one of their saved runs. Settings without runs still show their configuration and inventory preview. Each run freezes its own settings and CSVs; later changes to source tables do not rewrite recorded evidence. Runs without source execution settings are excluded instead of being presented with guessed provenance.
+
+The main Datasets tab is one compact table with the last observed scientific output from a succeeded step and a Show more button per dataset; failed or skipped steps never contribute the summary output. Show more opens with an Inputs & outputs tab containing every planned and observed input, output and intermediate path with its available size, including an artifact written before a later output or sidecar publication failed. APB metadata is a separate top-level tab with nested MuData and modality tabs which render each shared or level-owned provenance scope under `uns["apb"]`; another top-level tab exposes the complete representation JSON which drives the viewer. Every quantification-level or annotation-table modality has an AnnData tab containing only scientific tables and nested tabs for its axes, individual layers, and aligned structures. This prevents an intermediate converted level from being repeated beside the same level in the final aggregate. Known JSON-text provenance fields render as structured trees, while invalid text remains inspectable. Quantitative layers use Plotly box traces from bounded persisted per-observation quartiles with explicit observation and quantity axes; categorical layers show fixed-size category and missing-value counts without treating their codes as numbers. The complete execution report remains an expandable diagnostic in Inputs & outputs. The Visualizations tab plots every available step's runtime and peak process-tree RSS, plus every observed scientific artifact size, against its vendor input size; software is the series and exact dataset evidence is available on hover.
+
+## Run
+
+```bash
+make corpus-run CORPUS_WORKFLOW=convert CORPUS_FORMAT=hdf5
+make corpus-routine CORPUS_WORKFLOW=aggregate CORPUS_FORMAT=hdf5
+make corpus-routine CORPUS_FORMAT=duckdb
+make corpus-check CORPUS_CSV=corpuses/routine.csv
+uv run apb-studio-corpus run --corpus corpuses/all.csv --data-root /data/vendor-files --workflow convert --format parquet
+```
+
+`workflow_convert.py` invokes `apb2 convert` for all compatible levels and, for DuckDB or Parquet, invokes `apb2 reformat` as a separately measured step. `workflow_aggregate.py` has exactly two steps: convert the level selected by `workflow_aggregate.csv`, then aggregate it directly to protein with the configured method. Its initial table uses `mean`, fragment for DIA-NN and Spectronaut, and ion otherwise. Both workflows use the same workflow CLI; the Snakefile only parallelizes one selected workflow script per dataset.
+
+Snakemake schedules one script per dataset. Its only dataset output is the JSON report; APB artifacts are recorded inside that report. A failed APB command stops the linear workflow, records later steps as skipped, writes the report, and returns success to Snakemake. A framework failure fails the job. A successful Snakemake operation therefore does not imply that every APB command succeeded: inspect the report statuses.
+
+The run directory is `<output_root>/corpus/<workflow>-<format>-<fingerprint>/`. Identical inputs/settings reuse completed reports; a missing generated artifact does not cause a rerun when its report still exists. The fingerprint includes input file sizes/mtimes, the Snakefile, selected and shared workflow/runner source, required executable launchers, reported versions, installed-distribution metadata, and editable APB package contents discovered without importing APB. Source changes therefore select a new run even when the command version is unchanged. Use `--force` only for deliberate repeat measurement of the same identity. Previous reports and artifacts are moved into the run's `history/` folder before a forced attempt.
+
+```bash
+make corpus-run CORPUS_RUN_FLAGS="--force"
+make corpus-clean CORPUS_RUN=/absolute/path/to/run
+```
+
+Clean goes through Snakemake and moves generated results into recoverable history. It preserves fixture files and the input snapshots.
+
+## Persisted files
+
+| File | Purpose |
+| --- | --- |
+| `run.json` | Settings and links to every expected dataset report, available before jobs start |
+| `execution_settings.json` | Exact reusable configuration used for this run, including both source CSV paths |
+| `corpus.csv` | Frozen full copy of the chosen source inventory |
+| `selected_corpus.csv` | Exact selected rows passed to the workflow scripts |
+| `input_metadata.csv` | Selected vendor input sizes joined explicitly from the acquisition downloads table |
+| `workflow_<name>.csv` | Optional copied workflow table |
+| `workflow_<name>.py` | Source snapshot shown by the viewer |
+| `operation.json` | Scheduler running/succeeded/failed/interrupted state |
+| `reports/<key>.progress.json` | Atomic live step state and recent output |
+| `reports/<key>.json` | Complete dataset result with full stdout and stderr |
+| `corpus_index.json` | Final validated index pointing to all dataset reports |
+| `snakemake.log` | Scheduler output |
+| `artifacts/**/*.apb.json` | Compact APB scientific representations for final and intermediate results |
+
+Execution JSON documents have `schema_version: 1`; scientific representation documents have their own `format_version`. Report/index links are relative to the run directory and can be fetched directly by JavaScript. Final reports retain full logs; live progress carries the last 16 KiB of each stream. Memory is sampled every 100 ms as summed RSS across the APB process tree; it is an estimate and can miss short spikes. Declared input artifacts record observed sizes when present, and every output that exists after a command records its total file or recursive-directory byte size independently of the command status.
+
+## Development
+
+```bash
+make check
+make test
+make test-web
+make package
+make docs
+```
+
+Run the named routine corpus after execution changes, report the dataset names and outcomes, and dry-run the same selection to confirm zero jobs. `selections/routine.txt` contains ten fixtures (including two AlphaDIA versions). Whole-corpus runs are for deliberate broader checks.
+
+See [architecture](docs/architecture.md) for module ownership and [development](docs/development.md) for the quality gates.

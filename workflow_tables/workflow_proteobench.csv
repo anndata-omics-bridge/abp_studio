@@ -1,0 +1,9 @@
+module,module_toml,fasta
+dda_qexactive,modules/dda_qexactive.toml,fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta
+dda_astral,modules/dda_astral.toml,fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta
+dda_peptidoform,modules/dda_peptidoform.toml,fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta
+dia_astral,modules/dia_astral.toml,fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta
+dia_diapasef,modules/dia_diapasef.toml,fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta
+dia_aif,modules/dia_aif.toml,fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta
+dia_zenotof,modules/dia_zenotof.toml,fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta
+dia_singlecell,modules/dia_singlecell.toml,fasta/ProteoBenchFASTA_DDAQuantification_noecoli.fasta

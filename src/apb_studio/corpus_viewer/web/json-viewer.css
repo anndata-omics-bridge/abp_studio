@@ -1,0 +1,42 @@
+.json-tree {
+  max-height: 480px;
+  overflow: auto;
+  background: #f1f5f4;
+  border: 1px solid #dce4e1;
+  border-radius: 6px;
+}
+
+.json-controls {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
+  background: #e8efed;
+  border-bottom: 1px solid #d3dfdc;
+}
+
+.json-controls button {
+  padding: 6px 10px;
+  background: #fff;
+  font-size: 12px;
+}
+
+json-viewer {
+  display: block;
+  padding: 14px;
+  --background-color: #f1f5f4;
+  --color: #213c45;
+  --property-color: #176451;
+  --string-color: #8a3d22;
+  --number-color: #7656a5;
+  --boolean-color: #086c61;
+  --null-color: #77827f;
+  --preview-color: #58716b;
+  --highlight-color: #ffe4a8;
+  --font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-size: 12px;
+  --line-height: 1.55rem;
+}

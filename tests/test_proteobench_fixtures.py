@@ -486,6 +486,7 @@ def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.M
     )
     rawdb.download(store=tmp_path)
     assert calls == [store.submissions_dir / "Other", store.submissions_dir / "Repo"]
+    assert store.downloads_csv.read_text().count("input_file_path,input_file_size_bytes") == 1
 
     numeric = _catalog_frame().assign(repo_name=1)
     numeric.to_csv(store.catalog_csv, index=False)

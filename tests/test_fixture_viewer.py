@@ -71,6 +71,21 @@ def test_resolve_serves_files_and_nothing_else(tmp_path: Path) -> None:
     assert escaped.status in {403, 404}
 
 
+def test_identity_route_names_the_exact_store_and_viewer(tmp_path: Path) -> None:
+    web = _web_root(tmp_path)
+    store = _store(tmp_path)
+    response = routes.resolve(f"/{routes.VIEWER_IDENTITY_PATH}?probe=1", web, store)
+
+    assert response.status == 200
+    assert response.headers[0] == ("Content-Type", "application/json")
+    assert response.body == routes.viewer_identity(web, store)
+    assert json.loads(response.body)["server"] == "apb-studio-static-viewer"
+
+    other_root = tmp_path / "other-store"
+    other_root.mkdir()
+    assert response.body != routes.viewer_identity(web, Store(other_root))
+
+
 def test_server_binds_and_answers(tmp_path: Path) -> None:
     web = _web_root(tmp_path)
     store = _store(tmp_path)
