@@ -24,13 +24,14 @@ fasta = "mix.fasta"
 def test_the_packaged_configuration_covers_every_module() -> None:
     config = packaged_config()
     assert config.schema_version == 1
-    assert len(config.modules) == 8
+    assert len(config.modules) == 9
     assert config.module_names[0] == "dda_qexactive"
     assert packaged_config() is config, "read once"
     for name in config.module_names:
         assert config.fasta_for_module(name).endswith(".fasta")
     assert config.fasta_for_module("dia_singlecell").endswith("noecoli.fasta")
     assert config.module("dia_aif").repo_name == "Results_quant_ion_DIA_AIF"
+    assert config.module("dia_plasma").repo_name == "Results_quant_ion_DIA_plasma"
     assert len(config.fasta_urls) == 2
 
 

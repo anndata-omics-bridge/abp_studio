@@ -1,7 +1,7 @@
 """Manage ProteoBench fixtures.
 
 ``corpus`` refreshes the remote submission catalog, downloads the selected vendor tables
-and parameter files, downloads every reference FASTA and module TOML, and writes the
+and parameter files, downloads every reference FASTA, and writes the
 fixture metadata and runner corpus CSV. ``clean`` deletes fixture-store contents.
 ``view`` serves the fixture-store browser. The store root is Studio's configured
 ``test_data_root``.
@@ -67,6 +67,7 @@ ModuleKey = Literal[
     "dia_aif",
     "dia_zenotof",
     "dia_singlecell",
+    "dia_plasma",
 ]
 
 # The three corpus strategies, each a boolean column on the catalog: the smallest

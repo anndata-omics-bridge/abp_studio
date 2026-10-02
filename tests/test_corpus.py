@@ -1431,8 +1431,8 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
     all_rows = load_corpus(root / "corpuses" / "all.csv")
     proteobench_rows = load_corpus(root / "corpuses" / "proteobench.csv")
 
-    assert len(all_rows) == 202
-    assert len(proteobench_rows) == 197
+    assert len(all_rows) == 224
+    assert len(proteobench_rows) == 219
     assert proteobench_rows == [
         row for row in all_rows if row.module != "dda_peptidoform" and row.software_name != "Sage"
     ]

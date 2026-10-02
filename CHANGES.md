@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-02: The fixture store and corpus include ProteoBench's plasma module: `config/proteobench.toml` fetches `Results_quant_ion_DIA_plasma` with the HYE FASTA, `ModuleKey` accepts `dia_plasma`, and `workflow_proteobench.csv` gains its row. The ProteoBench workflows score it through apb-proteobench's packaged `dia_plasma` module.
+
 - 2026-10-02: `fixture corpus` no longer overwrites `workflow_tables/workflow_proteobench.csv`. Its export copied only `module,fasta` from `resources.csv`, so every acquisition left a table that all three ProteoBench workflows rejected for lacking `level`. The table is now hand-maintained like the other workflow tables; a test checks it has each ProteoBench workflow's `WORKFLOW_COLUMNS` and the FASTA `config/proteobench.toml` names for every module.
 
 - 2026-10-02: **Breaking:** Studio no longer downloads ProteoBench module TOMLs. The ProteoBench workflows pass the corpus `module` to `apb-proteobench` as a packaged module name, whose TOML and SDRF ship with apb-proteobench. `workflow_proteobench.csv` drops `module_toml`; `resources.csv` and `index.json` drop their module TOML entries; `config/proteobench.toml` drops `settings_revision`, `settings_root`, and `settings_path`; the fixture and corpus viewers no longer show or link module TOMLs.

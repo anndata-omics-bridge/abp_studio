@@ -62,3 +62,10 @@ fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
 name = "dia_singlecell"
 repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_singlecell/archive/refs/heads/main.zip"
 fasta = "ProteoBenchFASTA_DDAQuantification_noecoli.fasta"
+
+# Plasma DIA (PYE: human plasma with yeast and E. coli spike-ins) uses the HYE FASTA, as
+# ProteoBench's current module settings do.
+[[modules]]
+name = "dia_plasma"
+repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_plasma/archive/refs/heads/main.zip"
+fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
