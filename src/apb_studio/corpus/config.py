@@ -10,6 +10,8 @@ from apb_studio.disk import atomic_write_text
 
 DEFAULT_CORPUSES: dict[str, str] = {
     "all": "corpuses/all.csv",
+    "entrapment": "corpuses/entrapment.csv",
+    "plasma": "corpuses/plasma.csv",
     "proteobench": "corpuses/proteobench.csv",
     "routine": "corpuses/routine.csv",
 }

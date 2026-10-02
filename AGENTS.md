@@ -26,6 +26,8 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 | Install | `uv sync --frozen --extra dev --group docs` |
 | Acquire full corpus | `uv run fixture corpus all` |
 | Acquire routine corpus | `uv run fixture corpus smallest-per-module` |
+| Acquire entrapment corpus | `uv run fixture corpus entrapment` |
+| Acquire plasma corpus | `uv run fixture corpus plasma` |
 | List packaged workflows | `uv run corpus workflows` |
 | Inspect configuration | `uv run corpus configure` |
 | Run named integration fixtures | `uv run corpus run routine --workflow <name>` |
@@ -41,7 +43,7 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 | Package smoke | `make package` |
 | Before push | `make check-full` |
 
-`corpus run <corpus>` requires and resolves its positional name through `corpuses.json`, then runs one workflow, defaulting to `convert` and `hdf5`. The implemented workflows are `convert`, `aggregate`, `proteobench`, `proteobench_run`, and the ion-only `proteobench_pmultiqc`; all accept `hdf5`, `duckdb`, and `parquet`, and every APB step in one workflow uses the selected format. Runs expose corpus, workflow, format, cores, dry-run, and force. Corpus names and workflow resources are file-driven, roots live in Studio's settings JSON, and every tool a workflow declares must be on `PATH`. `corpus configure` is read-only and reports those locations and effective values.
+`corpus run <corpus>` requires and resolves its positional name through `corpuses.json`, then runs one workflow, defaulting to `convert` and `hdf5`. The implemented workflows are `convert`, `aggregate`, `proteobench`, `proteobench_run`, the ion-only `proteobench_pmultiqc`, its plasma variant `plasma`, and `proteobench_entrapment` for the `entrapment` corpus; all accept `hdf5`, `duckdb`, and `parquet`, and every APB step in one workflow uses the selected format. Runs expose corpus, workflow, format, cores, dry-run, and force. Corpus names and workflow resources are file-driven, roots live in Studio's settings JSON, and every tool a workflow declares must be on `PATH`. `corpus configure` is read-only and reports those locations and effective values.
 
 ## Verification
 

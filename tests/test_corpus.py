@@ -59,8 +59,16 @@ from apb_studio.workflows.workflow_aggregate import steps as aggregate_steps
 from apb_studio.workflows.workflow_convert import steps as convert_steps
 from apb_studio.workflows.workflow_convert_ion import steps as convert_ion_steps
 from apb_studio.workflows.workflow_convert_no_param import steps as convert_no_param_steps
+from apb_studio.workflows.workflow_plasma import WORKFLOW_COLUMNS as PLASMA_COLUMNS
+from apb_studio.workflows.workflow_plasma import steps as plasma_steps
 from apb_studio.workflows.workflow_proteobench import WORKFLOW_COLUMNS as PROTEOBENCH_COLUMNS
 from apb_studio.workflows.workflow_proteobench import steps as proteobench_steps
+from apb_studio.workflows.workflow_proteobench_entrapment import (
+    WORKFLOW_COLUMNS as PROTEOBENCH_ENTRAPMENT_COLUMNS,
+)
+from apb_studio.workflows.workflow_proteobench_entrapment import (
+    steps as proteobench_entrapment_steps,
+)
 from apb_studio.workflows.workflow_proteobench_pmultiqc import (
     WORKFLOW_COLUMNS as PROTEOBENCH_PMULTIQC_COLUMNS,
 )
@@ -181,11 +189,13 @@ def test_export_reads_local_pairs_without_download_state(tmp_path: Path) -> None
         ],
     )
     store.downloads_csv.write_text("unreadable download history")
-    corpus = export_corpus(store)
-    assert corpus == tmp_path / "corpuses" / "all.csv"
+    all_csv = tmp_path / "corpuses" / "all.csv"
+    corpus = export_corpus(store, all_csv, modules={"dia_aif"})
+    assert corpus == all_csv
     assert load_corpus(corpus)[0].vendor_parameter_file.endswith("param_0..txt")
+    assert load_corpus(export_corpus(store, all_csv, modules={"entrapment_dia_astral"})) == []
     (folder / "param_0.second").write_text("ambiguous")
-    assert load_corpus(export_corpus(store)) == []
+    assert load_corpus(export_corpus(store, all_csv, modules={"dia_aif"})) == []
 
 
 def test_export_corpus_filters_on_one_catalog_strategy(tmp_path: Path) -> None:
@@ -213,6 +223,7 @@ def test_export_corpus_filters_on_one_catalog_strategy(tmp_path: Path) -> None:
     target = export_corpus(
         store,
         tmp_path / "corpuses" / "routine.csv",
+        modules={"dia_aif"},
         selection_column="smallest_per_module",
     )
 
@@ -223,12 +234,12 @@ def test_export_corpus_filters_on_one_catalog_strategy(tmp_path: Path) -> None:
     ]
     write_rows(store.catalog_csv, list(rows_without_flag[0]), rows_without_flag)
     with pytest.raises(ValueError, match="has no selection column"):
-        export_corpus(store, target, selection_column="smallest_per_module")
+        export_corpus(store, target, modules={"dia_aif"}, selection_column="smallest_per_module")
 
     invalid_rows = [{**row, "smallest_per_module": "maybe"} for row in rows]
     write_rows(store.catalog_csv, list(invalid_rows[0]), invalid_rows)
     with pytest.raises(ValueError, match="must contain only true/false"):
-        export_corpus(store, target, selection_column="smallest_per_module")
+        export_corpus(store, target, modules={"dia_aif"}, selection_column="smallest_per_module")
 
 
 def test_runner_streams_and_records_failure_then_skips(
@@ -593,6 +604,7 @@ def test_every_workflow_declares_the_executables_it_needs() -> None:
     assert workflow_tools("proteobench") == ("apb2", "apb-fasta", "apb-proteobench")
     assert workflow_tools("proteobench_pmultiqc") == ("apb-proteobench", "multiqc")
     assert workflow_tools("proteobench_run") == ("apb-proteobench",)
+    assert workflow_tools("proteobench_entrapment") == ("apb-proteobench",)
     for name in ("../convert", "unknown", "convert.py"):
         with pytest.raises(ValueError):
             workflow_tools(name)
@@ -659,7 +671,9 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "convert",
         "convert_ion",
         "convert_no_param",
+        "plasma",
         "proteobench",
+        "proteobench_entrapment",
         "proteobench_pmultiqc",
         "proteobench_run",
     ]
@@ -713,6 +727,8 @@ def test_corpus_config_bootstrap_preserves_existing_config(tmp_path: Path) -> No
     ensure_config(source)
     assert load_corpuses(source) == {
         "all": tmp_path / "corpuses" / "all.csv",
+        "entrapment": tmp_path / "corpuses" / "entrapment.csv",
+        "plasma": tmp_path / "corpuses" / "plasma.csv",
         "proteobench": tmp_path / "corpuses" / "proteobench.csv",
         "routine": tmp_path / "corpuses" / "routine.csv",
     }
@@ -903,6 +919,41 @@ def test_no_param_workflow_does_not_depend_on_a_parameter_file(tmp_path: Path) -
 
     assert source.resolve() in dependencies
     assert (tmp_path / "params.txt").resolve() not in dependencies
+
+
+def test_plasma_workflow_exports_the_layer_its_table_names(tmp_path: Path) -> None:
+    table = tmp_path / "workflow_plasma.tsv"
+    table.write_text(
+        "module\tsoftware_name\tfasta\tlevel\tlayer\n"
+        "dia_aif\tDIA-NN\tfasta/HYE.fasta\tion\tPrecursor_Quantity\n"
+    )
+    context = proteobench_context(tmp_path).model_copy(
+        update={
+            "workflow_table": table,
+            "tools": {"apb-proteobench": tmp_path / "apb", "multiqc": tmp_path / "multiqc"},
+        }
+    )
+
+    export, report = plasma_steps(context)
+
+    assert workflow_table_name("plasma") == "workflow_plasma.tsv"
+    assert export.command[export.command.index("--layer") + 1] == "Precursor_Quantity"
+    assert export.command[export.command.index("--module") + 1] == "dia_aif"
+    assert report.name == "pmultiqc"
+
+
+def test_plasma_table_covers_the_plasma_corpus() -> None:
+    root = Path(__file__).parents[1]
+    table = root / "workflow_tables" / "workflow_plasma.tsv"
+    rows = load_corpus(root / "corpuses" / "plasma.csv")
+
+    assert rows
+    assert {row.module for row in rows} == {"dia_plasma"}
+    assert all(row.module != "dia_plasma" for row in load_corpus(root / "corpuses" / "all.csv"))
+    for row in rows:
+        workflow = join_workflow(row.model_dump(), table, on=("module", "software_name"))
+        assert tuple(workflow) == PLASMA_COLUMNS
+        assert workflow["layer"]
 
 
 def test_no_param_software_table_covers_proteobench_corpus() -> None:
@@ -1271,7 +1322,7 @@ def test_one_call_proteobench_declares_every_input_of_the_single_command(tmp_pat
         "fasta",
     ]
     assert planned[0].command[planned[0].command.index("--module") + 1] == "dia_aif"
-    assert planned[0].command[1] == "run"
+    assert planned[0].command[1:3] == ["run", "quant"]
     assert planned[0].command[0] == str(context.tool("apb-proteobench"))
     assert planned[0].outputs[0].path.name == "scored.h5mu"
     assert planned[0].command[planned[0].command.index("--software") + 1] == "diann"
@@ -1303,10 +1354,10 @@ def test_pmultiqc_workflow_times_export_and_report_as_separate_steps(tmp_path: P
     assert [step.name for step in planned] == ["proteobench-export", "pmultiqc"]
     export = planned[0]
     report = planned[1]
-    assert export.command[1] == "run"
-    assert export.command[2] == str(secondary.parent)
+    assert export.command[1:3] == ["run", "quant"]
+    assert export.command[3] == str(secondary.parent)
     assert export.command[export.command.index("--level") + 1] == "ion"
-    assert "--x" in export.command
+    assert export.command[export.command.index("--layer") + 1] == "X"
     assert export.outputs[0].path.name == "scored.h5ad"
     assert [artifact.role for artifact in export.inputs] == [
         "vendor_table",
@@ -1422,8 +1473,60 @@ def test_proteobench_table_satisfies_every_proteobench_workflow() -> None:
         assert all(tuple(row) == columns for row in rows)
     config = packaged_config()
     assert sorted((row["module"], row["fasta"]) for row in rows) == sorted(
-        (module, f"fasta/{config.fasta_for_module(module)}") for module in config.module_names
-    ), "each configured module needs one row naming the FASTA config/proteobench.toml fetches"
+        (module, f"fasta/{config.fasta_for_module(module)}") for module in config.modules_in("all")
+    ), "each quant module needs one row naming the FASTA config/proteobench.toml fetches"
+
+
+def test_entrapment_workflow_runs_the_entrapment_command_with_the_pair_file(
+    tmp_path: Path,
+) -> None:
+    table = tmp_path / "workflow_proteobench_entrapment.csv"
+    write_rows(
+        table,
+        list(PROTEOBENCH_ENTRAPMENT_COLUMNS),
+        [
+            {
+                "module": "entrapment_dia_astral",
+                "fasta": "fasta/entrapment.fasta",
+                "pairs": "module_data/pairs.txt.gz",
+            }
+        ],
+    )
+    context = proteobench_context(tmp_path).model_copy(
+        update={
+            "workflow_table": table,
+            "dataset": dataset().model_copy(update={"module": "entrapment_dia_astral"}),
+        }
+    )
+
+    planned = proteobench_entrapment_steps(context)
+
+    assert [step.name for step in planned] == ["run-entrapment"]
+    command = planned[0].command
+    assert command[1:3] == ["run", "entrapment"]
+    assert command[command.index("--pairs") + 1] == str(tmp_path / "module_data/pairs.txt.gz")
+    assert command[command.index("--module") + 1] == "entrapment_dia_astral"
+    assert [artifact.role for artifact in planned[0].inputs] == [
+        "vendor_table",
+        "vendor_parameter_file",
+        "fasta",
+        "entrapment_pairs",
+    ]
+    assert planned[0].outputs[0].path.name == "scored.h5ad", "one level"
+
+
+def test_entrapment_table_names_what_acquisition_fetches() -> None:
+    rows = read_rows(
+        Path(__file__).parents[1] / "workflow_tables" / "workflow_proteobench_entrapment.csv"
+    )
+    config = packaged_config()
+    pair_files = {url.rsplit("/", 1)[-1] for url in config.module_data_urls}
+
+    assert all(tuple(row) == PROTEOBENCH_ENTRAPMENT_COLUMNS for row in rows)
+    assert sorted(row["module"] for row in rows) == sorted(config.modules_in("entrapment"))
+    for row in rows:
+        assert row["fasta"] == f"fasta/{config.fasta_for_module(row['module'])}"
+        assert row["pairs"].removeprefix("module_data/") in pair_files
 
 
 def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
@@ -1431,8 +1534,8 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
     all_rows = load_corpus(root / "corpuses" / "all.csv")
     proteobench_rows = load_corpus(root / "corpuses" / "proteobench.csv")
 
-    assert len(all_rows) == 224
-    assert len(proteobench_rows) == 219
+    assert len(all_rows) == 203
+    assert len(proteobench_rows) == 198
     assert proteobench_rows == [
         row for row in all_rows if row.module != "dda_peptidoform" and row.software_name != "Sage"
     ]

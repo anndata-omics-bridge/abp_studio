@@ -191,6 +191,7 @@ name = "apb-proteobench"
 version = "0.1.0"
 source = { editable = "../apb-proteobench" }
 dependencies = [
+    { name = "apb-catalog" },
     { name = "apb-fasta" },
     { name = "apb2" },
     { name = "cyclopts" },
@@ -205,6 +206,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "apb-catalog", editable = "../apb-catalog" },
     { name = "apb-fasta", editable = "../apb-fasta" },
     { name = "apb2", editable = "../apb2" },
     { name = "cyclopts", specifier = ">=4,<5" },

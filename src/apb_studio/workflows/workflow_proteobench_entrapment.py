@@ -1,22 +1,21 @@
-"""One-call ProteoBench workflow: the same scoring, in a single in-memory apb-proteobench run."""
+"""ProteoBench entrapment workflow: one apb-proteobench call from vendor files to FDP scores."""
 
 from __future__ import annotations
 
 from apb_studio.corpus.models import Artifact, StepSpec
 from apb_studio.corpus.tables import join_workflow, resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext, main
-from apb_studio.workflows.artifacts import representation, result_path
+from apb_studio.workflows.artifacts import representation, single_level_result_path
 from apb_studio.workflows.software import parameter_software
 
-WORKFLOW_COLUMNS = ("module", "fasta", "level")
-WORKFLOW_TABLE = "workflow_proteobench.csv"
+WORKFLOW_COLUMNS = ("module", "fasta", "pairs")
 TOOLS = ("apb-proteobench",)
 
 
 def steps(context: WorkflowContext) -> list[StepSpec]:
-    """Score one module in memory and persist only the selected APB2 format."""
+    """Convert, verify and score one entrapment upload for every precursor q-value kind."""
     if context.workflow_table is None:
-        raise ValueError("workflow_proteobench.csv is required")
+        raise ValueError("workflow_proteobench_entrapment.csv is required")
 
     dataset = context.dataset
     workflow = join_workflow(dataset.model_dump(), context.workflow_table, on=("module",))
@@ -27,18 +26,18 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
     vendor_source = source.parent if secondary_inputs else source
     parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
-    module = dataset.module
     fasta = resolve_file(context.data_root, workflow["fasta"])
-    scored = result_path(context.output_dir, "scored", context.format)
+    pairs = resolve_file(context.data_root, workflow["pairs"])
+    scored = single_level_result_path(context.output_dir, "scored", context.format)
     timings_dir = context.output_dir / "timings"
 
     return [
         StepSpec(
-            name="run",
+            name="run-entrapment",
             command=[
                 str(context.tool("apb-proteobench")),
                 "run",
-                "quant",
+                "entrapment",
                 str(vendor_source),
                 str(fasta),
                 "--params",
@@ -46,7 +45,9 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                 "--software",
                 parameter_software(dataset.software_name),
                 "--module",
-                module,
+                dataset.module,
+                "--pairs",
+                str(pairs),
                 "--output",
                 str(scored),
                 "--timings-dir",
@@ -60,6 +61,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                 ],
                 Artifact(role="vendor_parameter_file", path=parameters),
                 Artifact(role="fasta", path=fasta),
+                Artifact(role="entrapment_pairs", path=pairs),
             ],
             outputs=[
                 Artifact(role="result", path=scored, format=context.format),
@@ -79,4 +81,4 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
 
 
 if __name__ == "__main__":
-    main("proteobench_run", steps)
+    main("proteobench_entrapment", steps)

@@ -1,5 +1,7 @@
 {
   "all": "corpuses/all.csv",
+  "entrapment": "corpuses/entrapment.csv",
+  "plasma": "corpuses/plasma.csv",
   "proteobench": "corpuses/proteobench.csv",
   "routine": "corpuses/routine.csv"
 }

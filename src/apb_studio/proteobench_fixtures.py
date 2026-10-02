@@ -68,6 +68,7 @@ ModuleKey = Literal[
     "dia_zenotof",
     "dia_singlecell",
     "dia_plasma",
+    "entrapment_dia_astral",
 ]
 
 # The three corpus strategies, each a boolean column on the catalog: the smallest
@@ -554,8 +555,16 @@ def _download(target: Store, selected: pd.DataFrame, catalog_df: pd.DataFrame) -
             if not target.submission_summary(repo_name, intermediate_hash).is_file():
                 write_submission_summary(target, repo_name, intermediate_hash)
     _write_downloads(target, catalog_df, selected)
-    export_corpus(target)
+    for corpus in CONFIG.corpus_names:
+        export_corpus(
+            target, _corpus_dir(target) / f"{corpus}.csv", modules=CONFIG.modules_in(corpus)
+        )
     fixture_index.write(target)
+
+
+def _corpus_dir(target: Store) -> Path:
+    """Return the directory of the named corpus inventories beside the store."""
+    return target.root.parent / "corpuses"
 
 
 def download(*, store: Path | None = None, module: ModuleKey | None = None) -> None:
@@ -573,7 +582,7 @@ def download(*, store: Path | None = None, module: ModuleKey | None = None) -> N
 
 
 def resources(*, store: Path | None = None) -> None:
-    """Download both reference FASTAs.
+    """Download every reference FASTA and the module data files.
 
     Module definitions are not fixtures: workflows name apb-proteobench's packaged modules.
 
@@ -592,6 +601,14 @@ def resources(*, store: Path | None = None) -> None:
     if macos_metadata.exists():
         shutil.rmtree(macos_metadata)
     logger.info("extracted FASTAs to {}", target.fasta_dir)
+
+    target.module_data_dir.mkdir(parents=True, exist_ok=True)
+    for url in CONFIG.module_data_urls:
+        logger.info("downloading {}", url)
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        (target.module_data_dir / url.rsplit("/", 1)[-1]).write_bytes(response.content)
+    logger.info("wrote module data to {}", target.module_data_dir)
 
     _write_resource_summary(target)
     fixture_index.write(target)
@@ -724,18 +741,19 @@ def clean(
         logger.info("removed {}", path)
 
 
-def _acquire_corpus(selection: str | None, destination_name: str) -> None:
+def _acquire_corpus(selection: str | None, destination_name: str, corpus: str = "all") -> None:
     """Acquire one corpus selection and publish its runner-facing CSVs."""
     target = _store(None)
     catalog(store=target.root)
     catalog_df = pd.read_csv(target.catalog_csv)
-    selected = _selected_catalog(catalog_df, selection)
+    modules = CONFIG.modules_in(corpus)
+    selected = _selected_catalog(catalog_df[catalog_df["module"].isin(modules)], selection)
     _download(target, selected, catalog_df)
     resources(store=target.root)
-    directory = target.root.parent / "corpuses"
     corpus_path = export_corpus(
         target,
-        directory / destination_name,
+        _corpus_dir(target) / destination_name,
+        modules=modules,
         selection_column=selection,
     )
     ensure_config(config_path(target.root))
@@ -745,8 +763,20 @@ def _acquire_corpus(selection: str | None, destination_name: str) -> None:
 
 @corpus_app.command(name="all")
 def corpus_all() -> None:
-    """Download every fixture and write corpuses/all.csv."""
+    """Download every quant fixture and write corpuses/all.csv."""
     _acquire_corpus(None, "all.csv")
+
+
+@corpus_app.command(name="entrapment")
+def corpus_entrapment() -> None:
+    """Download every entrapment fixture and write corpuses/entrapment.csv."""
+    _acquire_corpus(None, "entrapment.csv", "entrapment")
+
+
+@corpus_app.command(name="plasma")
+def corpus_plasma() -> None:
+    """Download every plasma fixture and write corpuses/plasma.csv."""
+    _acquire_corpus(None, "plasma.csv", "plasma")
 
 
 @corpus_app.command(name="smallest-per-module")

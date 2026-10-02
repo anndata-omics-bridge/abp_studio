@@ -1,0 +1,5 @@
+module	software_name	fasta	level	layer
+dia_plasma	DIA-NN	fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta	ion	Precursor_Quantity
+dia_plasma	FragPipe (DIA-NN quant)	fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta	ion	Precursor_Quantity
+dia_plasma	AlphaDIA	fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta	ion	X
+dia_plasma	PEAKS	fasta/ProteoBenchFASTA_MixedSpecies_HYE.fasta	ion	X
