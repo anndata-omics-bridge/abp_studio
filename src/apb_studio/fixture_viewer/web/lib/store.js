@@ -99,7 +99,6 @@ export function storageRows (index, downloaded = []) {
     { key: 'Metadata size', value: gb(index.bytes?.metadata ?? 0) },
     { key: 'FASTA files', value: (index.fasta ?? []).join(', ') || 'none' },
     { key: 'FASTA size', value: gb(index.bytes?.fasta ?? 0) },
-    { key: 'Module TOMLs', value: (index.modules ?? []).join(', ') || 'none' },
     ...(index.tables ?? []).map((table) => ({
       key: table.name,
       value: `${(table.sizeBytes / 1e3).toFixed(1)} kB`

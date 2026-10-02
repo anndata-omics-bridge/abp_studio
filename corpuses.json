@@ -1,0 +1,5 @@
+{
+  "all": "corpuses/all.csv",
+  "proteobench": "corpuses/proteobench.csv",
+  "routine": "corpuses/routine.csv"
+}

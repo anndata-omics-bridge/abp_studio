@@ -11,9 +11,11 @@ from pathlib import Path
 
 
 def atomic_write_text(path: Path, text: str) -> None:
-    """Atomically replace ``path`` with UTF-8 text in the same directory."""
+    """Atomically replace ``path`` when its UTF-8 text changed."""
     target = path.expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_file() and target.read_bytes() == text.encode():
+        return
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{target.name}.",
         dir=target.parent,

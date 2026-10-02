@@ -1,4 +1,4 @@
-"""Minimal CSV inputs and explicit workflow-owned joins."""
+"""Minimal delimited inputs and explicit workflow-owned joins."""
 
 from __future__ import annotations
 
@@ -17,15 +17,16 @@ DOWNLOAD_SIZE_COLUMN = "input_file_size_bytes"
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
-    """Read CSV strings without guessing numbers, booleans or missing values."""
+    """Read CSV or TSV strings without guessing numbers, booleans or missing values."""
+    delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
     with path.open(encoding="utf-8", newline="") as stream:
-        reader = csv.DictReader(stream)
+        reader = csv.DictReader(stream, delimiter=delimiter)
         if not reader.fieldnames or len(set(reader.fieldnames)) != len(reader.fieldnames):
-            raise ValueError(f"Missing or duplicate CSV headers: {path}")
+            raise ValueError(f"Missing or duplicate delimited headers: {path}")
         rows: list[dict[str, str]] = []
         for row in reader:
             if None in row or any(value is None for value in row.values()):
-                raise ValueError(f"Malformed CSV row {reader.line_num}: {path}")
+                raise ValueError(f"Malformed delimited row {reader.line_num}: {path}")
             rows.append(dict(row))
         return rows
 
@@ -57,6 +58,16 @@ def resolve_file(root: Path, value: str) -> Path:
     if not path.is_relative_to(root.resolve()):
         raise ValueError(f"File path escapes data root: {value}")
     return path
+
+
+def resolve_secondary_inputs(root: Path, value: str) -> tuple[Path, ...]:
+    """Find fixture-owned secondary inputs derived from the primary input filename."""
+    primary = resolve_file(root, value)
+    return tuple(
+        path.resolve()
+        for path in sorted(primary.parent.glob(f"{primary.stem}_*"))
+        if path.is_file()
+    )
 
 
 def join_workflow(row: Mapping[str, str], table: Path, *, on: Sequence[str]) -> dict[str, str]:

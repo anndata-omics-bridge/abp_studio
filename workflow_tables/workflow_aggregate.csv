@@ -1,15 +1,15 @@
-software_name,start_level,method
-AlphaDIA,ion,mean
-AlphaPept,ion,mean
-DIA-NN,fragment,mean
-FragPipe,ion,mean
-FragPipe (DIA-NN quant),ion,mean
-MSAngel,ion,mean
-MaxQuant,ion,mean
-PEAKS,ion,mean
-ProlineStudio,ion,mean
-Sage,ion,mean
-Spectronaut,fragment,mean
-WOMBAT,ion,mean
-i2MassChroQ,ion,mean
-quantms,ion,mean
+software_name,start_level,fallback_level,method
+AlphaDIA,ion,,mean
+AlphaPept,ion,,mean
+DIA-NN,fragment,ion,mean
+FragPipe,ion,,mean
+FragPipe (DIA-NN quant),ion,,mean
+MSAngel,ion,,mean
+MaxQuant,ion,,mean
+PEAKS,ion,,mean
+ProlineStudio,ion,,mean
+Sage,ion,,mean
+Spectronaut,ion,,mean
+WOMBAT,ion,,mean
+i2MassChroQ,ion,,mean
+quantms,ion,,mean

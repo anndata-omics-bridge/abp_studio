@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chartPoints, counts, datasetArtifacts, datasetRows, executionGroups, formatBytes, statusFractions, workflowFields, workflowSteps } from '../../src/apb_studio/corpus_viewer/web/model.js'
-import { apbMetadataScopes, expandEmbeddedJsonForDisplay, layerChart, loadRepresentationArtifacts, preferredLoadedRepresentation, representationArtifacts, representationStorePath, representationViews, validatedRepresentation } from '../../src/apb_studio/corpus_viewer/web/representation.js'
+import { chartPoints, chartViews, counts, datasetArtifacts, datasetRows, formatBytes, runChoices, statusFractions, workflowFields, workflowSteps } from '../../src/apb_studio/corpus_viewer/web/model.js'
+import { alignedSummary, annDataDiagram, apbMetadataScopes, artifactAttemptStorePath, artifactStorePath, expandEmbeddedJsonForDisplay, layerChart, loadRepresentationArtifacts, matrixSummary, preferredLoadedRepresentation, representationArtifacts, representationIonVariables, representationViews, validatedRepresentation } from '../../src/apb_studio/corpus_viewer/web/representation.js'
+import { validatedToolTimings } from '../../src/apb_studio/corpus_viewer/web/tool-timings.js'
 import { readFileSync } from 'node:fs'
 
 test('viewer distinguishes pending, running, tool failure and interrupted work', () => {
@@ -135,11 +136,22 @@ test('failed-step evidence stays in Show More without becoming the summary outpu
 
 test('representation documents are versioned and projected into labelled Plotly boxes', () => {
   const document = validatedRepresentation({
-    format: 'apb2-result-representation', format_version: '2', artifact: { name: 'result.h5mu' },
+    format: 'apb2-result-representation', format_version: '4', artifact: { name: 'result.h5mu' },
     levels: [], annotation_tables: [], feature_relations: []
   })
   assert.equal(document.artifact.name, 'result.h5mu')
-  assert.throws(() => validatedRepresentation({ format: document.format, format_version: '1' }), /version/)
+  assert.equal(representationIonVariables({
+    ...document,
+    levels: [
+      { name: 'ion', dimensions: { observations: 6, variables: 4242 } },
+      { name: 'protein', dimensions: { observations: 6, variables: 100 } }
+    ]
+  }), 4242)
+  assert.equal(representationIonVariables({ ...document, levels: [
+    { name: 'protein', dimensions: { observations: 6, variables: 100 } }
+  ] }), null)
+  assert.throws(() => representationIonVariables({ ...document, format_version: '3' }), /version/)
+  assert.throws(() => validatedRepresentation({ format: document.format, format_version: '2' }), /version/)
   const chart = layerChart(
     {
       name: 'protein', obs: { key_columns: ['sample'] },
@@ -173,13 +185,13 @@ test('representation documents are versioned and projected into labelled Plotly 
 test('representation display expands known embedded JSON objects and arrays', () => {
   const nestedRule = JSON.stringify({ schema_version: '0.3', software_name: 'Sage' })
   const source = {
-    format: 'apb2-result-representation', format_version: '2',
+    format: 'apb2-result-representation', format_version: '4',
     artifact: { name: 'result.h5ad' }, annotation_tables: [], feature_relations: [],
-    levels: [{ uns: {
+    levels: [{ apb: { parse: {
       rule_json: nestedRule,
-      plan_json: JSON.stringify({ level: 'ion', provenance: { rule_json: nestedRule } }),
+      plan_json: JSON.stringify({ level: 'ion' }),
       search_parameters: JSON.stringify({ enzyme: 'Trypsin/P', allowed_miscleavages: 1 })
-    }, metadata: {
+    },
       aggregate: JSON.stringify([{
         source_level: 'ion', target_level: 'protein', method: 'mean'
       }])
@@ -188,20 +200,17 @@ test('representation display expands known embedded JSON objects and arrays', ()
 
   const displayed = validatedRepresentation(source)
 
-  assert.deepEqual(displayed.levels[0].uns.rule_json, {
+  assert.deepEqual(displayed.levels[0].apb.parse.rule_json, {
     schema_version: '0.3', software_name: 'Sage'
   })
-  assert.deepEqual(displayed.levels[0].uns.plan_json, {
-    level: 'ion',
-    provenance: { rule_json: { schema_version: '0.3', software_name: 'Sage' } }
-  })
-  assert.deepEqual(displayed.levels[0].uns.search_parameters, {
+  assert.deepEqual(displayed.levels[0].apb.parse.plan_json, { level: 'ion' })
+  assert.deepEqual(displayed.levels[0].apb.parse.search_parameters, {
     enzyme: 'Trypsin/P', allowed_miscleavages: 1
   })
-  assert.deepEqual(displayed.levels[0].metadata.aggregate, [{
+  assert.deepEqual(displayed.levels[0].apb.aggregate, [{
     source_level: 'ion', target_level: 'protein', method: 'mean'
   }])
-  assert.equal(source.levels[0].uns.rule_json, nestedRule)
+  assert.equal(source.levels[0].apb.parse.rule_json, nestedRule)
 })
 
 test('embedded JSON display preserves malformed, scalar and unrelated strings', () => {
@@ -236,6 +245,7 @@ test('representation views separate APB metadata, scientific levels and raw JSON
     { key: 'level-0', kind: 'level', label: 'AnnData · ion' },
     { key: 'level-1', kind: 'level', label: 'AnnData · protein' },
     { key: 'annotation-0', kind: 'annotation', label: 'AnnData · annotation/proteins' },
+    { key: 'anndata-structure', kind: 'anndata-structure', label: 'Structure' },
     { key: 'representation-json', kind: 'representation-json', label: 'Representation JSON' }
   ])
   assert.equal(h5muViews[0].representation, h5mu)
@@ -252,6 +262,7 @@ test('representation views separate APB metadata, scientific levels and raw JSON
     [
       { kind: 'apb-metadata', label: 'APB metadata' },
       { kind: 'level', label: 'AnnData · ion' },
+      { kind: 'anndata-structure', label: 'Structure' },
       { kind: 'representation-json', label: 'Representation JSON' }
     ]
   )
@@ -270,31 +281,95 @@ test('representation views separate APB metadata, scientific levels and raw JSON
   )
 })
 
+test('AnnData diagram separates X from persisted slots without losing their descriptors', () => {
+  const level = {
+    name: 'ion',
+    dimensions: { observations: 6, variables: 42 },
+    primary_layer: 'Intensity',
+    obs: { row_count: 6, key_columns: ['raw_file'], columns: [{ name: 'raw_file' }] },
+    var: { row_count: 42, key_columns: ['ion'], columns: [{ name: 'ion' }] },
+    layers: [
+      { name: 'Intensity', primary: true, storage_slot: 'X' },
+      { name: 'PEP', primary: false, storage_slot: 'layers' }
+    ],
+    aligned: { varm: [{ name: 'proteobench', row_count: 42, columns: [] }] },
+    apb: { parse: { rule_json: {}, produced_by: 'apb2' }, scoring: {} }
+  }
+  assert.deepEqual(annDataDiagram(level), {
+    name: 'ion',
+    dimensions: { observations: 6, variables: 42 },
+    x: level.layers[0],
+    layers: [level.layers[1]],
+    obs: level.obs,
+    var: level.var,
+    aligned: { obsm: [], varm: level.aligned.varm, obsp: [], varp: [] },
+    uns: level.apb
+  })
+})
+
+test('matrix summaries expose shape, semantics and compact completeness statistics', () => {
+  assert.deepEqual(matrixSummary({
+    name: 'PEP', role: 'quality', value_kind: 'quantitative', dtype: 'Float64',
+    shape: { observations: 6, variables: 42 },
+    statistics: {
+      total_count: 252, finite_count: 200, null_count: 40, nan_count: 10,
+      positive_infinity_count: 1, negative_infinity_count: 1, zero_count: 25,
+      mean: 0.12, median: 0.08, minimum: 0, maximum: 1
+    }
+  }), {
+    name: 'PEP', role: 'quality', shape: { observations: 6, variables: 42 },
+    dtype: 'Float64', valueKind: 'quantitative', unit: null, scale: null,
+    totalCount: 252, finiteCount: 200, missingCount: 50, infiniteCount: 2,
+    zeroCount: 25, mean: 0.12, median: 0.08, minimum: 0, maximum: 1
+  })
+})
+
+test('aligned summaries expose one object shape and its aggregate null burden', () => {
+  assert.deepEqual(alignedSummary({
+    name: 'proteobench', row_count: 42, key_columns: ['ion'],
+    columns: [
+      { name: 'included', dtype: 'Boolean', null_count: 0 },
+      { name: 'epsilon', dtype: 'Float64', null_count: 7 },
+      { name: 'ratio', dtype: 'Float64', null_count: 3 }
+    ]
+  }), {
+    name: 'proteobench', rowCount: 42, columnCount: 3, cellCount: 126,
+    nullCount: 10, keyColumns: ['ion'], dtypes: ['Boolean', 'Float64'],
+    columns: [
+      { name: 'included', dtype: 'Boolean', null_count: 0 },
+      { name: 'epsilon', dtype: 'Float64', null_count: 7 },
+      { name: 'ratio', dtype: 'Float64', null_count: 3 }
+    ]
+  })
+})
+
 test('APB metadata scopes preserve the physical uns namespace and level ownership', () => {
   const representation = {
     artifact: { physical_format: 'h5mu' },
-    shared: { uns: { produced_by: 'apb2' }, metadata: { annotation: { version: 1 } } },
+    root: { apb: { parse: { produced_by: 'apb2' }, proteobench: { provenance: {} } } },
     levels: [
-      { name: 'ion', uns: { rule_json: { software_name: 'FragPipe' } }, metadata: {} },
-      { name: 'protein', uns: { plan_json: { level: 'protein' } }, metadata: { aggregate: [] } }
+      { name: 'ion', apb: { parse: { rule_json: { software_name: 'FragPipe' } } } },
+      { name: 'protein', apb: { parse: { plan_json: { level: 'protein' } }, aggregate: [] } }
     ]
   }
 
   assert.deepEqual(apbMetadataScopes(representation), [
     {
       label: 'MuData',
-      value: { uns: { apb: { parse: { produced_by: 'apb2' }, annotation: { version: 1 } } } }
+      value: { uns: { apb: {
+        parse: { produced_by: 'apb2' }, proteobench: { provenance: {} }
+      } } }
     },
     {
       label: 'ion',
       value: { uns: { apb: {
-        parse: { rule_json: { software_name: 'FragPipe' } }, annotation: { version: 1 }
+        parse: { rule_json: { software_name: 'FragPipe' } }
       } } }
     },
     {
       label: 'protein',
       value: { uns: { apb: {
-        parse: { plan_json: { level: 'protein' } }, annotation: { version: 1 }, aggregate: []
+        parse: { plan_json: { level: 'protein' } }, aggregate: []
       } } }
     }
   ])
@@ -372,8 +447,12 @@ test('show more locates every intermediate and final representation inside the s
   const artifacts = representationArtifacts(record)
   assert.deepEqual(artifacts.map(artifact => artifact.step), ['convert', 'aggregate'])
   assert.equal(
-    representationStorePath('run-id', 'artifacts/hash', artifacts[0].path),
+    artifactStorePath('run-id', 'artifacts/hash', artifacts[0].path),
     'run-id/artifacts/hash/uuid/converted.h5ad.apb.json'
+  )
+  assert.equal(
+    artifactAttemptStorePath('run-id', 'artifacts/hash', artifacts[0].path),
+    'run-id/artifacts/hash/uuid'
   )
 })
 
@@ -386,67 +465,66 @@ test('status fractions preserve succeeded and failed proportions', () => {
   })
 })
 
-test('execution settings own saved runs and unconfigured historical runs stay hidden', () => {
-  const config = { workflow: 'convert', format: 'hdf5', corpus: '/corpuses/routine.csv', workflow_table: null, cores: 2 }
+test('stable run choices show corpus, workflow and format without hashes', () => {
   const runs = [
-    { path: 'a/run.json', manifest: { settings_id: 'routine' } },
-    { path: 'b/run.json', manifest: { settings_id: 'routine' } },
-    { path: 'c/run.json', manifest: { settings_id: 'all' } },
-    { path: 'old/run.json', manifest: {} }
+    { path: 'routine/convert/hdf5/run.json', manifest: { corpus_name: 'routine', workflow: 'convert', format: 'hdf5' } },
+    { path: 'all/aggregate/parquet/run.json', manifest: { corpus_name: 'all', workflow: 'aggregate', format: 'parquet' } }
   ]
-  const settings = new Map([['routine', config], ['all', { ...config, corpus: '/corpuses/all.csv' }]])
-  const groups = executionGroups(runs, settings)
-  assert.deepEqual(groups.map(group => group.runs.length), [2, 1])
-  assert.match(groups[0].label, /routine.csv/)
-  assert.equal(groups[0].settings.workflow_table, null)
-  assert.ok(groups.every(group => group.settings))
+  const choices = runChoices(runs)
+  assert.deepEqual(choices.map(choice => choice.label), [
+    'all · aggregate · parquet',
+    'routine · convert · hdf5'
+  ])
 })
 
-test('execution settings remain selectable before their first run', () => {
-  const config = { workflow: 'convert', format: 'hdf5', corpus: '/corpuses/all.csv', workflow_table: null, cores: 2 }
-  const groups = executionGroups([], new Map([['full', config]]))
-  assert.equal(groups.length, 1)
-  assert.equal(groups[0].runs.length, 0)
-  assert.equal(groups[0].settings.corpus, '/corpuses/all.csv')
+test('no stable runs produce no choices', () => {
+  assert.deepEqual(runChoices([]), [])
 })
 
 test('settings use bounded sub-tabs while file links remain outside them', () => {
   const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
-  assert.equal((html.match(/data-settings-tab=/g) ?? []).length, 6)
-  assert.equal((html.match(/class="settings-panel"/g) ?? []).length, 6)
-  assert.ok(html.indexOf('id="links"') < html.indexOf('aria-label="Settings and input views"'))
+  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
+  assert.match(shell, /const SETTINGS_TABS = \[[\s\S]*'workflow-source'/)
+  assert.equal((shell.match(/class="settings-panel"/g) ?? []).length, 6)
+  assert.ok(shell.indexOf('id="links"') < shell.indexOf('aria-label="Settings and input views"'))
   const stylesheet = html.match(/app\.css\?v=([^"']+)/)?.[1]
   const script = html.match(/app\.js\?v=([^"']+)/)?.[1]
   assert.equal(stylesheet, script)
 })
 
-test('run selectors share a compact row below the branding banner', () => {
-  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
+test('one stable-run selector sits below the branding banner', () => {
+  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
   const styles = readFileSync('src/apb_studio/corpus_viewer/web/app.css', 'utf8')
-  assert.ok(html.indexOf('</header>') < html.indexOf('class="run-controls"'))
-  assert.match(html, /class="run-controls"[\s\S]*id="execution"[\s\S]*id="run"[\s\S]*<\/section>/)
-  assert.match(styles, /\.run-controls\{[^}]*grid-template-columns:repeat\(2/)
-  assert.match(styles, /header\{padding:7px/)
-  assert.match(styles, /section\.summary\{[^}]*padding:7px 14px/)
+  assert.ok(shell.indexOf('</header>') < shell.indexOf('class="run-controls"'))
+  assert.match(shell, /class="run-controls"[\s\S]*Corpus · workflow · format[\s\S]*<\/section>/)
+  assert.equal((shell.match(/<select \.value=/g) ?? []).length, 1)
+  assert.match(shell, /id="visualization-x-axis"/)
+  assert.match(styles, /\.run-controls\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+  assert.match(styles, /\.masthead\s*\{[^}]*padding:\s*12px 0 8px/)
+  assert.match(styles, /\.run-summary\s*\{[^}]*min-height:\s*28px/)
 })
 
 test('chart projection preserves per-step and per-output evidence without inventing zeroes', () => {
   const record = {
+    status: 'failed',
     steps: [
       {
-        name: 'convert', status: 'succeeded', runtime_seconds: 1.5, peak_memory_bytes: 5 * 1024 ** 2,
-        outputs: [{ role: 'converted', path: '/result.h5mu', size_bytes: 3 * 1024 ** 2 }]
+        name: 'convert', command: ['/tools/apb2', 'convert'], status: 'succeeded', runtime_seconds: 1.5, peak_memory_bytes: 5 * 1024 ** 2,
+        outputs: [
+          { role: 'converted', path: '/result.h5mu', size_bytes: 3 * 1024 ** 2 },
+          { role: 'representation', path: '/result.h5mu.apb.json', size_bytes: 1024 }
+        ]
       },
       {
-        name: 'aggregate', status: 'failed', runtime_seconds: 0.75, peak_memory_bytes: 2 * 1024 ** 2,
+        name: 'aggregate', command: ['C:\\tools\\apb-aggregate'], status: 'failed', runtime_seconds: 0.75, peak_memory_bytes: 2 * 1024 ** 2,
         outputs: [{ role: 'aggregated', path: '/missing.h5mu', size_bytes: null }]
       },
-      { name: 'later', status: 'skipped', runtime_seconds: null, peak_memory_bytes: null, outputs: [] }
+      { name: 'later', command: [], status: 'skipped', runtime_seconds: null, peak_memory_bytes: null, outputs: [] }
     ]
   }
   const rows = [{
     input_file: 'vendor.tsv', input_file_size_bytes: String(10 * 1024 ** 2),
-    module: 'dia_aif', software_name: 'DIA-NN', record
+    module: 'dia_aif', software_name: 'DIA-NN', status: 'failed', record
   }]
 
   const points = chartPoints(rows)
@@ -458,89 +536,274 @@ test('chart projection preserves per-step and per-output evidence without invent
   assert.equal(points.outputs.length, 1)
   assert.equal(points.outputs[0].output_size_mib, 3)
   assert.deepEqual(chartPoints([{ ...rows[0], input_file_size_bytes: '' }]).steps.map(point => point.input_size_mib), [null, null])
+
+  const views = chartViews(rows)
+  assert.deepEqual(views.map(view => view.label), [
+    'Workflow', 'convert · apb2', 'aggregate · apb-aggregate', 'later · unknown tool'
+  ])
+  assert.equal(views[0].steps[0].runtime_seconds, 2.25)
+  assert.equal(views[0].steps[0].peak_memory_mib, 5)
+  assert.equal(views[0].steps[0].status, 'failed')
+  assert.deepEqual(views[0].outputs.map(point => point.step), ['convert'])
+  assert.equal(views[1].steps.length, 1)
+  assert.equal(views[2].steps.length, 1)
+  assert.equal(views[3].steps.length, 0)
+})
+
+test('optional tool timings remain separate from Studio runtime and output size', () => {
+  const document = validatedToolTimings({
+    format: 'apb-tool-timings', format_version: 1, tool: 'apb2', operation: 'convert',
+    phases: [{ name: 'compile', seconds: 2.5 }, { name: 'read', seconds: 1.25 }]
+  })
+  assert.throws(() => validatedToolTimings({ ...document, format_version: 2 }), /format or version/)
+  assert.throws(() => validatedToolTimings({ ...document, phases: [
+    { name: 'read', seconds: 1 }, { name: 'read', seconds: 2 }
+  ] }), /phase/)
+  const record = { steps: [{
+    name: 'convert', command: ['/tools/apb2', 'convert'], status: 'succeeded',
+    runtime_seconds: 5, outputs: [
+      { role: 'result', path: '/run/converted.h5mu', size_bytes: 1024 },
+      { role: 'representation', path: '/run/converted.h5mu.apb.json', size_bytes: 300 },
+      { role: 'tool_timings', path: '/run/converted.timings.json', size_bytes: 200 }
+    ]
+  }] }
+  const row = {
+    input_file: 'vendor.tsv', input_file_size_bytes: 1024 ** 2,
+    module: 'dia_aif', software_name: 'DIA-NN', record
+  }
+  const [dataset] = datasetRows(
+    { reports: [{ input_file: 'vendor.tsv', path: 'report' }] }, [], [],
+    new Map([['report', record]]), new Map(), null
+  )
+  assert.equal(dataset.output_file_name, 'converted.h5mu')
+  const files = new Map([['/run/converted.timings.json', document]])
+  const representations = new Map([['/run/converted.h5mu.apb.json', 4200]])
+  const [withCounts] = datasetRows(
+    { reports: [{ input_file: 'vendor.tsv', path: 'report' }] }, [], [],
+    new Map([['report', record]]), new Map(), null, [], representations
+  )
+  assert.equal(withCounts.ion_variables, 4200)
+  const points = chartPoints([withCounts], files, representations)
+  assert.equal(points.timings[0].ion_variables, 4200)
+  assert.deepEqual(points.timings.map(point => [point.phase, point.duration_seconds]), [
+    ['compile', 2.5], ['read', 1.25]
+  ])
+  assert.equal(points.steps[0].runtime_seconds, 5)
+  assert.deepEqual(points.outputs.map(point => point.output_role), ['result'])
+  assert.equal(chartViews([withCounts], files, representations)[1].timingViews.length, 1)
+  assert.equal(chartViews([withCounts], files, representations)[1].timingViews[0].label, 'apb2 · convert')
+  assert.equal(chartViews([withCounts], files, representations)[1].timingViews[0].points.length, 2)
+  assert.equal(chartViews([row])[1].timingViews.length, 0)
+})
+
+test('dataset variable count follows the latest successful APB representation', () => {
+  const record = { steps: [
+    { name: 'convert', status: 'succeeded', outputs: [
+      { role: 'result', path: '/run/converted.h5ad', size_bytes: 500 },
+      { role: 'representation', path: '/run/converted.h5ad.apb.json', size_bytes: 100 }
+    ] },
+    { name: 'pmultiqc', status: 'succeeded', outputs: [
+      { role: 'pmultiqc_report', path: '/run/report.html', size_bytes: 300 }
+    ] }
+  ] }
+  const representations = new Map([['/run/converted.h5ad.apb.json', 25000]])
+  const [row] = datasetRows(
+    { reports: [{ input_file: 'vendor.tsv', path: 'report' }] }, [], [],
+    new Map([['report', record]]), new Map(), null, [], representations
+  )
+  assert.equal(row.ion_variables, 25000)
+  assert.equal(row.output_file_name, 'report.html')
+  assert.equal(chartPoints([row], new Map(), representations).steps.length, 0)
+})
+
+test('integrated run groups three tool timing files into separate step subtabs', () => {
+  const outputs = [
+    ['apb2.convert.timings.json', 'apb2', 'convert', 'read'],
+    ['apb-fasta.verify-peptides.timings.json', 'apb-fasta', 'verify-peptides', 'verify_peptides'],
+    ['apb-proteobench.benchmark.timings.json', 'apb-proteobench', 'benchmark', 'analyze']
+  ]
+  const files = new Map(outputs.map(([name, tool, operation, phase]) => [
+    `/run/timings/${name}`,
+    validatedToolTimings({
+      format: 'apb-tool-timings', format_version: 1, tool, operation,
+      phases: [{ name: phase, seconds: 1.25 }]
+    })
+  ]))
+  const row = {
+    input_file: 'vendor.tsv', input_file_size_bytes: 1024 ** 2,
+    module: 'dia_aif', software_name: 'DIA-NN',
+    record: { steps: [{
+      name: 'run', command: ['/tools/apb-proteobench', 'run'],
+      status: 'succeeded', runtime_seconds: 8,
+      outputs: outputs.map(([name]) => ({
+        role: 'tool_timings', path: `/run/timings/${name}`, size_bytes: 200
+      }))
+    }] }
+  }
+  const view = chartViews([row], files)[1]
+  assert.deepEqual(view.timingViews.map(timing => timing.label), [
+    'apb2 · convert', 'apb-fasta · verify-peptides', 'apb-proteobench · benchmark'
+  ])
+  assert.deepEqual(view.timingViews.map(timing => timing.points[0].phase), [
+    'read', 'verify_peptides', 'analyze'
+  ])
+  assert.equal(view.steps[0].runtime_seconds, 8)
+  assert.equal(view.outputs.length, 0)
 })
 
 test('viewer exposes corpus charts and frozen input metadata', () => {
-  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
+  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
   const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
-  assert.match(html, /data-tab="visualizations"/)
-  assert.match(html, /id="runtime-chart"/)
-  assert.match(html, /id="memory-chart"/)
-  assert.match(html, /id="output-chart"/)
-  assert.match(html, /data-settings-tab="input-metadata"/)
+  const visualizations = readFileSync('src/apb_studio/corpus_viewer/web/panels/visualizations.js', 'utf8')
+  const plotly = readFileSync('src/apb_studio/corpus_viewer/web/render/plotly.js', 'utf8')
+  const styles = readFileSync('src/apb_studio/corpus_viewer/web/app.css', 'utf8')
+  assert.match(shell, /\['visualizations', 'Visualizations'\]/)
+  assert.match(shell, /id="visualization-tabs"[^>]*role="tablist"/)
+  assert.match(shell, /id="visualization-chart-panel"[^>]*role="tabpanel"/)
+  assert.match(shell, /\['input-metadata', 'Input sizes'\]/)
   assert.match(application, /manifest\.input_metadata/)
-  assert.match(application, /Plotly\.react/)
-  assert.match(application, /Vendor input size \(MiB\)/)
-  assert.match(application, /Runtime \(seconds\)/)
-  assert.match(application, /Peak process-tree RSS \(MiB\)/)
-  assert.match(application, /Generated artifact size \(MiB\)/)
-  assert.match(application, /xaxis: \{ title: \{ text: xTitle, standoff: 14 \}, automargin: true/)
-  assert.match(application, /yaxis: \{ title: \{ text: yTitle, standoff: 12 \}, automargin: true/)
+  assert.match(visualizations, /renderScalePlot/)
+  assert.match(visualizations, /timingFacetFigure\(chart\.points, xAxis\)/)
+  assert.match(plotly, /Plotly\.react/)
+  assert.match(visualizations, /xAxisChoices\(views\)/)
+  assert.match(visualizations, /Total workflow runtime \(seconds\)/)
+  assert.match(visualizations, /Step runtime \(seconds\)/)
+  assert.match(visualizations, /timingView\.label\} phases by/)
+  assert.match(visualizations, /Studio timings/)
+  assert.match(visualizations, /tool-timing-tabs/)
+  assert.match(visualizations, /Peak process-tree RSS \(MiB\)/)
+  assert.match(visualizations, /Maximum step peak RSS \(MiB\)/)
+  assert.match(visualizations, /Generated artifact size \(MiB\)/)
+  assert.match(visualizations, /stepSeries: workflow/)
+  assert.match(visualizations, /name: `\$\{step\} · \$\{name\}`/)
+  assert.match(visualizations, /let selectedKey/)
+  assert.match(visualizations, /if \(tabs\.dataset\.views === signature\) return/)
+  assert.match(visualizations, /panel\.querySelectorAll\('\.chart'\)/)
+  assert.match(visualizations, /chartLayout\(chart\.x, chart\.y, Boolean\(traces\.length\)\)/)
+  assert.match(styles, /\.subtabs\s*\{[^}]*overflow-x:\s*auto/)
+})
+
+test('run selection comes from the live server catalog', () => {
+  const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
+  const fetching = readFileSync('src/apb_studio/corpus_viewer/web/lib/fetch.js', 'utf8')
+  assert.match(fetching, /new URL\(`api\/\$\{path\}`/)
+  assert.match(application, /await readCatalog\(\)/)
+  assert.doesNotMatch(application, /await read\('index\.json'\)/)
 })
 
 test('dataset table stays compact while show more exposes every artifact and the persisted report', () => {
-  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
+  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
   const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
-  assert.match(html, /id="detail-files"/)
-  assert.match(application, /title: 'Input file', field: 'input_file_name'/)
-  assert.match(application, /title: 'Output', field: 'output_file_name'/)
-  assert.match(application, /fileCell\(row\.input_file, row\.input_file_name, row\.input_file_parent, row\.input_file_size_bytes\)/)
-  assert.match(application, /row\.input_file_parent/)
-  assert.match(application, /datasetArtifacts\(row\)/)
-  assert.match(application, /Complete execution report/)
-  assert.match(application, /renderApbMetadata/)
-  assert.match(application, /renderRepresentationJson/)
-  assert.match(application, /renderAnnData/)
-  assert.match(application, /renderAnnotationAnnData/)
-  assert.match(application, /representationArtifacts/)
-  assert.match(application, /preferredLoadedRepresentation\(row, loaded\)/)
-  assert.match(application, /button\.addEventListener\('click',[\s\S]*detail\(cell\.getRow\(\)\.getData\(\), true\)/)
-  assert.doesNotMatch(application, /title: 'Step'/)
-  assert.doesNotMatch(application, /title: 'Input file', field: 'input_file'/)
+  const detail = readFileSync('src/apb_studio/corpus_viewer/web/panels/detail.js', 'utf8')
+  assert.match(shell, /id="detail-files"/)
+  assert.match(detail, /title: 'Input file',[\s\S]*field: 'input_file_name'/)
+  assert.match(detail, /title: 'Output',[\s\S]*field: 'output_file_name'/)
+  assert.match(detail, /row\.input_file_parent/)
+  assert.match(detail, /datasetArtifacts\(row\)/)
+  assert.match(detail, /Complete execution report/)
+  assert.match(detail, /renderApbMetadata/)
+  assert.match(detail, /renderRepresentationJson/)
+  assert.match(detail, /renderAnnDataStructure/)
+  assert.match(detail, /renderAnnData/)
+  assert.match(detail, /renderAnnotationAnnData/)
+  assert.match(detail, /representationArtifacts/)
+  assert.match(detail, /preferredLoadedRepresentation\(row, loaded\)/)
+  assert.match(detail, /artifactAttemptStorePath\(runPath\(\), row\.output_dir, row\.output_file\)/)
+  assert.match(detail, /if \(!changed\) return/)
+  assert.doesNotMatch(detail, /if \(!changed\) \{[\s\S]*renderDatasetFiles/)
+  assert.match(detail, /button\.addEventListener\('click',[\s\S]*void show\(cell\.getRow\(\)\.getData\(\), true\)/)
+  assert.doesNotMatch(detail, /title: 'Step'/)
+  assert.doesNotMatch(detail, /title: 'Input file', field: 'input_file'/)
+  assert.doesNotMatch(application, /datasetArtifacts|Complete execution report/)
 })
 
 test('show more presents top-level metadata, AnnData and raw JSON tabs with nested layer tabs', () => {
-  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
-  const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
+  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
+  const detail = readFileSync('src/apb_studio/corpus_viewer/web/panels/detail.js', 'utf8')
+  const scientific = readFileSync('src/apb_studio/corpus_viewer/web/render/scientific.js', 'utf8')
   const styles = readFileSync('src/apb_studio/corpus_viewer/web/representation.css', 'utf8')
-  assert.match(html, /id="detail-tabs"[^>]*role="tablist"/)
-  assert.match(html, /id="detail-io"[^>]*data-detail-panel="io"[^>]*role="tabpanel"/)
-  assert.match(application, /registerDetailTab\('io', 'Inputs & outputs', ioPanel\)/)
-  assert.match(application, /const panelId = panel\.id \|\| `detail-panel-\$\{key\}`/)
-  assert.match(application, /\(\) => generation === state\.detailGeneration/)
-  assert.match(application, /const detailRun = state\.run[\s\S]*representationStorePath\(detailRun/)
-  assert.match(application, /async function loadRun \(path\) \{\n  resetDetailTabs\(\)[\s\S]*state\.manifest = await read\(path\)/)
-  const loadRun = application.slice(application.indexOf('async function loadRun'), application.indexOf('async function loadConfiguration'))
-  assert.ok(loadRun.indexOf('mounted.destroy()') < loadRun.indexOf('await read(path)'))
-  assert.match(application, /representationViews\(selected\.representation\)/)
-  assert.match(application, /registerDetailTab\(`scientific-\$\{view\.key\}`, view\.label/)
-  assert.match(application, /panel\.setAttribute\('aria-busy', 'true'\)/)
-  assert.match(application, /renderNestedTabs\(article, `\$\{level\.name\} AnnData sections`/)
-  assert.match(application, /renderNestedTabs\([\s\S]*'APB metadata scopes'/)
-  assert.match(application, /await renderApbMetadata/)
-  assert.match(application, /\.\.\.level\.layers\.map\(layer => \(\{/)
-  assert.match(application, /Plotly\.Plots\.resize\(chart\)/)
-  assert.match(styles, /\.detail-subtabs \{[\s\S]*overflow-x: auto/)
-  assert.match(styles, /\.representation-tabs \{[\s\S]*overflow-x: auto/)
+  assert.match(shell, /id="detail-tabs"[^>]*role="tablist"/)
+  assert.match(shell, /id="detail-io"[^>]*data-detail-panel="io"[^>]*role="tabpanel"/)
+  assert.match(detail, /registerTab\('io', 'Inputs & outputs', ioPanel\)/)
+  assert.match(detail, /const panelId = panel\.id \|\| `detail-panel-\$\{key\}`/)
+  assert.match(detail, /activeGeneration === generation/)
+  assert.match(detail, /artifactStorePath\(runPath\(\), row\.output_dir, artifact\.path\)/)
+  assert.match(detail, /representationViews\(preferred\.representation\)/)
+  assert.match(detail, /registerTab\(`scientific-\$\{view\.key\}`, view\.label/)
+  assert.match(detail, /panel\.setAttribute\('aria-busy', 'true'\)/)
+  assert.match(scientific, /renderNestedTabs\(article, `\$\{level\.name\} AnnData sections`/)
+  assert.match(scientific, /renderNestedTabs\([\s\S]*'APB metadata scopes'/)
+  assert.match(scientific, /\.\.\.level\.layers\.map\(layer => \(\{/)
+  assert.match(scientific, /resizeScalePlot\(chart\)/)
+  assert.match(scientific, /\['Logical type', layer\.type \?\? 'number'\]/)
+  assert.match(scientific, /\['Matrix dtype', layer\.dtype\]/)
+  assert.match(styles, /\.detail-subtabs,[\s\S]*\.representation-tabs \{[\s\S]*overflow-x: auto/)
 })
 
 test('structured JSON uses the pinned tree-viewer component', () => {
   const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
-  const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
+  const dom = readFileSync('src/apb_studio/corpus_viewer/web/render/dom.js', 'utf8')
+  const scientific = readFileSync('src/apb_studio/corpus_viewer/web/render/scientific.js', 'utf8')
   const adapter = readFileSync('src/apb_studio/corpus_viewer/web/vendor/json-viewer.js', 'utf8')
-  assert.match(html, /json-viewer\.css\?v=14/)
-  assert.match(application, /document\.createElement\('json-viewer'\)/)
-  assert.match(application, /viewer\.expandAll\(\)/)
-  assert.match(application, /viewer\.collapseAll\(\)/)
-  assert.match(application, /jsonTree\(scope\.value, \['uns', 'uns\.apb', 'uns\.apb\.parse'\]\)/)
+  assert.match(html, /assets\/[^/]+\/json-viewer\.css/)
+  assert.match(dom, /document\.createElement\('json-viewer'\)/)
+  assert.match(dom, /viewer\.expandAll\(\)/)
+  assert.match(dom, /viewer\.collapseAll\(\)/)
+  assert.match(scientific, /jsonTree\(scope\.value, \['uns', 'uns\.apb'\]\)/)
   assert.match(adapter, /@alenaksu\/json-viewer@2\.1\.2/)
 })
 
+test('the complete corpus viewer module graph has one cache-busting release path', () => {
+  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
+  const localAssets = [...html.matchAll(/(?:href|src)=["'](assets\/([^/]+)\/[^"']+)["']/g)]
+  assert.ok(localAssets.length > 0)
+  assert.equal(new Set(localAssets.map(match => match[2])).size, 1)
+  assert.ok(localAssets.some(match => match[1].endsWith('/app.js')))
+  assert.ok(localAssets.some(match => match[1].endsWith('/app.css')))
+})
+
 test('dataset navigation carries status-aware failure styling', () => {
-  const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
+  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
+  const detail = readFileSync('src/apb_studio/corpus_viewer/web/panels/detail.js', 'utf8')
   const styles = readFileSync('src/apb_studio/corpus_viewer/web/app.css', 'utf8')
-  assert.match(application, /showMoreTab\.dataset\.status = row\.status/)
-  assert.match(application, /button\.dataset\.status = cell\.getRow\(\)\.getData\(\)\.status/)
-  assert.match(styles, /button\[data-status=failed\]\[aria-selected=true\]/)
-  assert.match(styles, /\.show-more-button\[data-status=failed\]/)
+  assert.match(shell, /data-status=\$\{id === 'show-more' \? this\.showMoreStatus : ''\}/)
+  assert.match(detail, /app\.showMoreStatus = row\.status/)
+  assert.match(detail, /button\.dataset\.status = cell\.getRow\(\)\.getData\(\)\.status/)
+  assert.match(styles, /button\[data-status="failed"\]/)
+  assert.match(styles, /\.show-more-button\[data-status="failed"\]/)
+})
+
+test('corpus and fixture viewers share one pinned JavaScript stack', () => {
+  const corpusRoot = 'src/apb_studio/corpus_viewer/web'
+  const fixtureRoot = 'src/apb_studio/fixture_viewer/web'
+  for (const name of ['lit', 'd3-dsv', 'tabulator', 'plotly']) {
+    const corpus = readFileSync(`${corpusRoot}/vendor/${name}.js`, 'utf8')
+    const fixture = readFileSync(`${fixtureRoot}/vendor/${name}.js`, 'utf8')
+    assert.equal(
+      corpus.match(/https:\/\/[^'\"]+/)?.[0],
+      fixture.match(/https:\/\/[^'\"]+/)?.[0]
+    )
+  }
+  const shell = readFileSync(`${corpusRoot}/shell/corpus-app.js`, 'utf8')
+  const application = readFileSync(`${corpusRoot}/app.js`, 'utf8')
+  assert.match(shell, /extends LitElement/)
+  assert.match(shell, /createRenderRoot \(\) \{ return this \}/)
+  assert.match(application, /createDetailPanel/)
+  assert.match(application, /createSettingsPanel/)
+  assert.match(application, /createVisualizationPanel/)
+  assert.ok(application.split('\n').length < 300)
+  assert.doesNotMatch(application, /Plotly|TabulatorFull|LitElement|json-viewer/)
+})
+
+test('every quantitative Plotly chart switches its value axis between linear and log', () => {
+  const plotly = readFileSync('src/apb_studio/corpus_viewer/web/render/plotly.js', 'utf8')
+  const scientific = readFileSync('src/apb_studio/corpus_viewer/web/render/scientific.js', 'utf8')
+  const visualizations = readFileSync('src/apb_studio/corpus_viewer/web/panels/visualizations.js', 'utf8')
+  assert.match(plotly, /\['linear', 'Linear'\], \['log', 'Log'\]/)
+  assert.match(plotly, /tracesForScale\(state\.traces, scale\)/)
+  assert.match(plotly, /yAxesForScale\(state\.layout, scale\)/)
+  assert.match(plotly, /Non-positive values hidden; affected whiskers start at Q1/)
+  assert.match(plotly, /button\.disabled = !hasData/)
+  assert.match(scientific, /renderScalePlot/)
+  assert.match(visualizations, /renderScalePlot/)
 })

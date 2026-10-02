@@ -1,9 +1,8 @@
 .json-tree {
   max-height: 480px;
   overflow: auto;
-  background: #f1f5f4;
-  border: 1px solid #dce4e1;
-  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
 }
 
 .json-controls {
@@ -14,27 +13,27 @@
   justify-content: flex-end;
   gap: 6px;
   padding: 8px;
-  background: #e8efed;
-  border-bottom: 1px solid #d3dfdc;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
 }
 
 .json-controls button {
   padding: 6px 10px;
-  background: #fff;
+  background: var(--paper);
   font-size: 12px;
 }
 
 json-viewer {
   display: block;
   padding: 14px;
-  --background-color: #f1f5f4;
-  --color: #213c45;
-  --property-color: #176451;
+  --background-color: var(--panel);
+  --color: var(--ink);
+  --property-color: var(--accent);
   --string-color: #8a3d22;
   --number-color: #7656a5;
-  --boolean-color: #086c61;
-  --null-color: #77827f;
-  --preview-color: #58716b;
+  --boolean-color: var(--accent);
+  --null-color: var(--muted);
+  --preview-color: var(--muted);
   --highlight-color: #ffe4a8;
   --font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-size: 12px;

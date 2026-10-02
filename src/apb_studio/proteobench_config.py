@@ -1,7 +1,7 @@
 """What the fixture store fetches from ProteoBench, read from a packaged TOML.
 
-The module list, the results-repository URLs, the reference FASTAs and the pinned settings
-revision are ProteoBench's facts, not this package's behaviour, so they live in
+The module list, the results-repository URLs and the reference FASTAs are ProteoBench's
+facts, not this package's behaviour, so they live in
 ``config/proteobench.toml`` and are validated here. An override path lets a caller point at
 a different ProteoBench snapshot without editing the package.
 """
@@ -18,13 +18,12 @@ PACKAGED = Path(__file__).parent / "config" / "proteobench.toml"
 
 
 class ModuleConfig(BaseModel):
-    """One ProteoBench module: where its submissions, settings and FASTA come from."""
+    """One ProteoBench module: where its submissions and FASTA come from."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(min_length=1, pattern=r"^[a-z0-9_]+$")
     repo_url: str = Field(min_length=1)
-    settings_path: str = Field(min_length=1)
     fasta: str = Field(min_length=1)
 
     @property
@@ -40,8 +39,6 @@ class ProteoBenchConfig(BaseModel):
 
     schema_version: int
     datasets_base_url: str = Field(min_length=1)
-    settings_revision: str = Field(min_length=1)
-    settings_root: str = Field(min_length=1)
     fasta_urls: tuple[str, ...] = Field(min_length=1)
     modules: tuple[ModuleConfig, ...] = Field(min_length=1)
 
@@ -60,11 +57,6 @@ class ProteoBenchConfig(BaseModel):
             if module.name == name:
                 return module
         raise KeyError(name)
-
-    def settings_url(self, name: str) -> str:
-        """Return the pinned module-settings URL of one module."""
-        root = self.settings_root.format(revision=self.settings_revision)
-        return f"{root}/{self.module(name).settings_path}"
 
     def fasta_for_module(self, name: str) -> str:
         """Return the extracted FASTA file name one module uses."""

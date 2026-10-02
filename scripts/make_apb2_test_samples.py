@@ -23,8 +23,7 @@ import tempfile
 from pathlib import Path
 
 import polars as pl
-from apb2.parserV2.compile import NoCompatibleLevelError, header_predicate
-from apb2.parserV2.conversion_facade import ConversionError, convert_all_from_rule_config
+from apb2.command.conversion import ConversionError, convert_all_from_rule_config
 from apb2.parserV2.parse_rule_facade import ParseRuleFacade
 from apb2.parserV2.vendor_parse_rules.document import (
     RuleDocument,
@@ -109,7 +108,7 @@ def _delimiter_for(header_line: bytes) -> bytes:
 def document_admits(document: RuleDocument, header: tuple[str, ...]) -> bool:
     """Whether any declared level of the document accepts this header."""
     return any(
-        header_predicate(facade.working_parameters)(header) for facade in admitted_facades(document)
+        facade.working_parameters.accepts_header(header) for facade in admitted_facades(document)
     )
 
 
@@ -117,7 +116,7 @@ def run_columns(document: RuleDocument, header: tuple[str, ...]) -> list[int]:
     """Header indexes of the columns that can carry run identity, per the document itself."""
     sources: list[str] = []
     for facade in admitted_facades(document):
-        columns = facade.working_parameters.obs.columns
+        columns = facade.working_parameters.obs
         sources += [s.source for s in columns.required_selections]
         sources += [s.source for s in columns.optional_selections]
     return [header.index(name) for name in dict.fromkeys(sources) if name in header]
@@ -151,10 +150,10 @@ def expectations(sample: Path, rule_config: Path, params: Path | None) -> dict[s
     with tempfile.TemporaryDirectory() as scratch:
         summary = convert_all_from_rule_config(
             data=sample,
-            output=Path(scratch) / "sample",
+            output=Path(scratch) / "sample.h5mu",
             rule_config=rule_config,
             parameters_path=params,
-            parameters_software=None,
+            software=None,
             checks="standard",
         )
     return {
@@ -240,7 +239,7 @@ def make(output: Path = DEFAULT_OUTPUT, *, force: bool = False) -> None:
         try:
             write_artifacts(key, export, rule_config, output)
             made += 1
-        except (ConversionError, NoCompatibleLevelError) as error:
+        except ConversionError as error:
             logger.error(f"{key}: sample does not convert: {error}")
             absent += 1
     logger.info(f"done: {made} created, {kept} kept (append-only), {absent} without artifacts")

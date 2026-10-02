@@ -11,8 +11,8 @@ import zipfile
 from pathlib import Path
 
 _ENTRY_POINTS = {
-    "apb-studio-corpus": "apb_studio.corpus.cli:main",
-    "apb-studio-fixtures": "apb_studio.proteobench_fixtures:main",
+    "corpus": "apb_studio.corpus.cli:main",
+    "fixture": "apb_studio.proteobench_fixtures:main",
 }
 _REQUIRED_FILES = {
     "apb_studio/__init__.py",

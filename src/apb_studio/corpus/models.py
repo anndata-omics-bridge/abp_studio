@@ -79,7 +79,7 @@ class StepResult(StepSpec):
 class DatasetReport(Record):
     """Final report and live progress use the same browser-readable shape."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     run_id: str
     workflow: str
     format: StorageFormat
@@ -95,21 +95,23 @@ class ReportLink(Record):
     """Run-relative paths, available before any job starts."""
 
     input_file: str
+    dataset: str
     path: str
     progress: str
     output_dir: str
 
 
 class RunManifest(Record):
-    """Frozen settings, table links and expected reports for a corpus invocation.
+    """Current settings, snapshot links and reports for one stable combination.
 
     ``tools`` and ``tool_versions`` are keyed by the executable names the selected workflow
     declared in its ``TOOLS`` tuple; this record never names a particular tool.
     """
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     run_id: str
     created_at: str = Field(default_factory=utc_now)
+    corpus_name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
     workflow: str
     format: StorageFormat
     data_root: Path
@@ -120,9 +122,8 @@ class RunManifest(Record):
     workflow_table: str | None = None
     workflow_source: str
     reports: list[ReportLink]
-    settings_id: str | None = None
-    execution_settings: str | None = None
-    source_corpus: str | None = None
+    execution_settings: str = "execution_settings.json"
+    source_corpus: str = "corpus.csv"
     input_metadata: str | None = None
 
 
@@ -132,7 +133,8 @@ class ExecutionSettings(Record):
     ``tools`` maps every executable name the selected workflow declared to a resolved path.
     """
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
+    corpus_name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
     workflow: str
     format: StorageFormat
     corpus: Path
@@ -148,7 +150,7 @@ class ExecutionSettings(Record):
 class CorpusIndex(Record):
     """Final index, published only when every valid final report exists."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     run_id: str
     workflow: str
     format: StorageFormat
@@ -158,7 +160,7 @@ class CorpusIndex(Record):
 class Operation(Record):
     """Scheduler state; dataset failures are separately recorded results."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     status: Literal["running", "succeeded", "failed", "interrupted", "cleaned"]
     updated_at: str = Field(default_factory=utc_now)
     exit_code: int | None = None

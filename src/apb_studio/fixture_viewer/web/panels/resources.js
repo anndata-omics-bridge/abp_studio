@@ -1,11 +1,9 @@
-// Which module TOML and FASTA each module uses, and whether they are on disk.
+// Which FASTA each module uses, and whether it is on disk.
 
 const PRESENT = { formatter: 'tickCross', hozAlign: 'center', width: 90 }
 
 const COLUMNS = [
   { title: 'Module', field: 'module', width: 150 },
-  { title: 'Module TOML', field: 'module_toml' },
-  { title: 'Present', field: 'module_toml_present', ...PRESENT },
   { title: 'FASTA', field: 'fasta' },
   { title: 'Present', field: 'fasta_present', ...PRESENT }
 ]
@@ -19,7 +17,6 @@ const COLUMNS = [
 export function resourcesView (rows) {
   const typed = rows.map((row) => ({
     ...row,
-    module_toml_present: row.module_toml_present === 'True',
     fasta_present: row.fasta_present === 'True'
   }))
   return {

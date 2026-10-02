@@ -1,14 +1,10 @@
-"""The ProteoBench fixture store: download everything, summarise it, serve it.
+"""Manage ProteoBench fixtures.
 
-``catalog`` collects every submission's metadata and flags the three selection strategies
-as columns, ``download`` fetches every submission, and ``resources`` fetches both FASTAs
-and all module TOMLs. Each of the three summarises what it fetched and rewrites
-``index.json``, so there is no separate summarise or publish step. ``all`` runs the three
-in order, ``clean`` empties the store and ``serve`` opens the browser viewer on it.
-The store root defaults to Studio's configured test-data root.
-
-The download primitives are ported from ``proteobench.utils.server_io`` so this tool needs
-no proteobench install.
+``corpus`` refreshes the remote submission catalog, downloads the selected vendor tables
+and parameter files, downloads every reference FASTA and module TOML, and writes the
+fixture metadata and runner corpus CSV. ``clean`` deletes fixture-store contents.
+``view`` serves the fixture-store browser. The store root is Studio's configured
+``test_data_root``.
 """
 
 import csv
@@ -19,7 +15,6 @@ import shutil
 import sys
 import tempfile
 import time
-import tomllib
 import zipfile
 from collections.abc import Callable
 from contextlib import chdir
@@ -37,7 +32,8 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from apb_studio import fixture_index
-from apb_studio.corpus_export import export_corpus, export_proteobench_table
+from apb_studio.corpus.config import config_path, ensure_config
+from apb_studio.corpus_export import export_corpus
 from apb_studio.disk import atomic_write_text
 from apb_studio.fixture_store import INDEX_NAME, TABLE_NAMES, Store
 from apb_studio.fixture_viewer.server import run as serve_store
@@ -73,9 +69,9 @@ ModuleKey = Literal[
     "dia_singlecell",
 ]
 
-# The three selection strategies, each a boolean column on the catalog: the smallest
+# The three corpus strategies, each a boolean column on the catalog: the smallest
 # submission by feature count within the named grouping. Ties go to the lexicographically
-# smallest hash. They annotate; nothing filters on them.
+# smallest hash. Corpus acquisition uses these flags directly.
 STRATEGY_COLUMNS: dict[str, list[str]] = {
     "smallest_per_software_version": ["module", "software_name", "software_version"],
     "smallest_per_software": ["module", "software_name"],
@@ -126,7 +122,17 @@ class _CatalogRow(TypedDict):
     old_new: str | None
 
 
-app = App(name="apb-studio-fixtures", help=__doc__, help_on_error=True)
+app = App(name="fixture", help=__doc__, help_on_error=True)
+corpus_app = App(
+    name="corpus",
+    help=(
+        "Refresh the catalog; download selected vendor tables, parameter files, and FASTAs; "
+        "write catalog.csv, downloads.csv, resources.csv, index.json, "
+        "and the selected corpus CSV"
+    ),
+    help_on_error=True,
+)
+app.command(corpus_app)
 
 
 def _store(root: Path | None) -> Store:
@@ -391,7 +397,6 @@ def _strategy_flags(df: pd.DataFrame) -> pd.DataFrame:
     return df.assign(**flags)
 
 
-@app.command
 def catalog(*, store: Path | None = None) -> None:
     """Refresh the submission catalog for every ProteoBench module.
 
@@ -454,22 +459,76 @@ def get_datasets_to_download(
     return df[~df["intermediate_hash"].isin(set(present))], present
 
 
-@app.command
-def download(*, store: Path | None = None, module: ModuleKey | None = None) -> None:
-    """Download every catalogued submission's vendor table and parameter file.
+def _selected_catalog(df: pd.DataFrame, column: str | None) -> pd.DataFrame:
+    """Return rows selected by one validated catalog strategy column."""
+    if column is None:
+        return df
+    if column not in STRATEGY_COLUMNS:
+        raise ValueError(f"Unknown corpus selection strategy: {column}")
+    values = df[column].astype(str).str.casefold()
+    invalid = sorted(set(values) - {"true", "false"})
+    if invalid:
+        raise ValueError(f"Catalog selection {column!r} has invalid values: {invalid}")
+    return df[values == "true"]
 
-    Args:
-        store: The store root; defaults to Studio's configured test-data root.
-        module: Restrict the download to one ProteoBench module.
-    """
-    target = _store(store)
-    _require(target.catalog_csv, "catalog")
-    df = pd.read_csv(target.catalog_csv)
-    if module is not None:
-        df = df[df["module"] == module]
 
-    hash_to_dir: dict[str, Path] = {}
-    for repo_name, group in df.groupby("repo_name"):
+def _write_downloads(target: Store, catalog_df: pd.DataFrame, requested: pd.DataFrame) -> None:
+    """Describe every catalog row while distinguishing unrequested missing fixtures."""
+    requested_keys = {
+        (row["repo_name"], row["intermediate_hash"]) for row in requested.to_dict(orient="records")
+    }
+    out_rows: list[dict[str, Any]] = []
+    for row in catalog_df.to_dict(orient="records"):
+        repo_name = row["repo_name"]
+        intermediate_hash = row["intermediate_hash"]
+        if not isinstance(repo_name, str) or not isinstance(intermediate_hash, str):
+            raise TypeError("repo_name and intermediate_hash values must be strings")
+        record: dict[str, Any] = {
+            key: row[key]
+            for key in (
+                "module",
+                "repo_name",
+                "intermediate_hash",
+                "software_name",
+                "software_version",
+            )
+        }
+        extract_dir = target.submission_dir(repo_name, intermediate_hash)
+        inputs = sorted(extract_dir.glob("input_file.*")) if extract_dir.is_dir() else []
+        if inputs:
+            record |= {
+                "input_file_path": inputs[0].relative_to(target.root).as_posix(),
+                "input_file_size_bytes": inputs[0].stat().st_size,
+                "status": "ok",
+            }
+        elif extract_dir.is_dir():
+            record |= {
+                "input_file_path": "",
+                "input_file_size_bytes": None,
+                "status": "input_file_missing",
+            }
+        else:
+            record |= {
+                "input_file_path": "",
+                "input_file_size_bytes": None,
+                "status": (
+                    "not_on_server"
+                    if (repo_name, intermediate_hash) in requested_keys
+                    else "not_selected"
+                ),
+            }
+        out_rows.append(record)
+
+    out_df = pd.DataFrame(out_rows)
+    atomic_write_text(target.downloads_csv, out_df.to_csv(index=False))
+    logger.info("total rows: {}", len(out_df))
+    logger.info("status breakdown:\n{}", out_df["status"].value_counts().to_string())
+    logger.info("written to {}", target.downloads_csv)
+
+
+def _download(target: Store, selected: pd.DataFrame, catalog_df: pd.DataFrame) -> None:
+    """Fetch selected catalog rows and refresh the complete on-disk status table."""
+    for repo_name, group in selected.groupby("repo_name"):
         if not isinstance(repo_name, str):
             raise TypeError("repo_name values must be strings")
         repo_dir = target.submissions_dir / repo_name
@@ -493,63 +552,29 @@ def download(*, store: Path | None = None, module: ModuleKey | None = None) -> N
         for intermediate_hash in sorted(present):
             if not target.submission_summary(repo_name, intermediate_hash).is_file():
                 write_submission_summary(target, repo_name, intermediate_hash)
-        hash_to_dir.update(present)
-
-    out_rows: list[dict[str, Any]] = []
-    for row in df.to_dict(orient="records"):
-        record: dict[str, Any] = {
-            key: row[key]
-            for key in (
-                "module",
-                "repo_name",
-                "intermediate_hash",
-                "software_name",
-                "software_version",
-            )
-        }
-        extract_dir = hash_to_dir.get(row["intermediate_hash"])
-        inputs = sorted(extract_dir.glob("input_file.*")) if extract_dir is not None else []
-        if extract_dir is None:
-            record |= {
-                "input_file_path": "",
-                "input_file_size_bytes": None,
-                "status": "not_on_server",
-            }
-        elif not inputs:
-            record |= {
-                "input_file_path": "",
-                "input_file_size_bytes": None,
-                "status": "input_file_missing",
-            }
-        else:
-            record |= {
-                "input_file_path": inputs[0].relative_to(target.root).as_posix(),
-                "input_file_size_bytes": inputs[0].stat().st_size,
-                "status": "ok",
-            }
-        out_rows.append(record)
-
-    out_df = pd.DataFrame(out_rows)
-    atomic_write_text(target.downloads_csv, out_df.to_csv(index=False))
-    logger.info("total rows: {}", len(out_df))
-    logger.info("status breakdown:\n{}", out_df["status"].value_counts().to_string())
-    logger.info("written to {}", target.downloads_csv)
+    _write_downloads(target, catalog_df, selected)
     export_corpus(target)
     fixture_index.write(target)
 
 
-def _validate_module_settings(path: Path) -> None:
-    """Reject a download that is not a complete TOML document."""
-    with path.open("rb") as handle:
-        tomllib.load(handle)
+def download(*, store: Path | None = None, module: ModuleKey | None = None) -> None:
+    """Download every catalogued submission's vendor table and parameter file.
+
+    Args:
+        store: The store root; defaults to Studio's configured test-data root.
+        module: Restrict the download to one ProteoBench module.
+    """
+    target = _store(store)
+    _require(target.catalog_csv, "catalog")
+    catalog_df = pd.read_csv(target.catalog_csv)
+    selected = catalog_df if module is None else catalog_df[catalog_df["module"] == module]
+    _download(target, selected, catalog_df)
 
 
-@app.command
 def resources(*, store: Path | None = None) -> None:
-    """Download both reference FASTAs and every module's settings TOML.
+    """Download both reference FASTAs.
 
-    Each TOML must parse before it replaces the cached copy, so a truncated response never
-    lands in the store. Whether it is a valid ProteoBench module is apb-proteobench's call.
+    Module definitions are not fixtures: workflows name apb-proteobench's packaged modules.
 
     Args:
         store: The store root; defaults to Studio's configured test-data root.
@@ -567,21 +592,6 @@ def resources(*, store: Path | None = None) -> None:
         shutil.rmtree(macos_metadata)
     logger.info("extracted FASTAs to {}", target.fasta_dir)
 
-    target.modules_dir.mkdir(parents=True, exist_ok=True)
-    for module in CONFIG.module_names:
-        url = CONFIG.settings_url(module)
-        logger.info("downloading {}: {}", module, url)
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        destination = target.modules_dir / f"{module}.toml"
-        temporary = target.modules_dir / f".{module}.download.toml"
-        temporary.write_bytes(response.content)
-        try:
-            _validate_module_settings(temporary)
-            temporary.replace(destination)
-        finally:
-            temporary.unlink(missing_ok=True)
-    logger.info("downloaded {} module settings to {}", len(CONFIG.modules), target.modules_dir)
     _write_resource_summary(target)
     fixture_index.write(target)
 
@@ -659,15 +669,12 @@ def write_submission_summary(target: Store, repo_name: str, intermediate_hash: s
 
 
 def _write_resource_summary(target: Store) -> None:
-    """Say which module TOML and FASTA each module has, and whether both are there."""
+    """Say which FASTA each module uses, and whether it is there."""
     resource_rows = []
     for module in CONFIG.module_names:
-        toml = target.modules_dir / f"{module}.toml"
         fasta = target.fasta_dir / CONFIG.fasta_for_module(module)
         resource_rows.append({
             "module": module,
-            "module_toml": toml.relative_to(target.root).as_posix(),
-            "module_toml_present": toml.is_file(),
             "fasta": fasta.relative_to(target.root).as_posix(),
             "fasta_present": fasta.is_file(),
         })
@@ -681,15 +688,16 @@ def clean(
     store: Path | None = None,
     tables_only: bool = False,
 ) -> None:
-    """Empty the store, so the next run starts from nothing.
+    """Delete downloaded fixtures and generated metadata from the fixture store.
 
-    Everything in the store root goes, not only what the current commands write: a store
-    is entirely re-downloadable, and leftovers from an older layout would otherwise sit
-    there being mistaken for live data.
+    By default, delete every file and directory inside the store root. With
+    ``--tables-only``, delete only ``catalog.csv``, ``downloads.csv``, ``resources.csv``,
+    and ``index.json`` while preserving downloaded submission files, FASTAs, and any other
+    store contents.
 
     Args:
         store: The store root; defaults to Studio's configured test-data root.
-        tables_only: Remove only the generated tables and index, keeping the downloads.
+        tables_only: Delete only catalog.csv, downloads.csv, resources.csv, and index.json.
     """
     target = _store(store)
     if target.root in {Path(target.root.anchor), Path.home().resolve()}:
@@ -715,38 +723,51 @@ def clean(
         logger.info("removed {}", path)
 
 
-@app.command(name="all")
-def run_all(*, store: Path | None = None, module: ModuleKey | None = None) -> None:
-    """Run catalog, download and resources in order.
-
-    Args:
-        store: The store root; defaults to Studio's configured test-data root.
-        module: Restrict the download to one ProteoBench module.
-    """
-    catalog(store=store)
-    download(store=store, module=module)
-    resources(store=store)
-
-
-@app.command
-def corpus(
-    *,
-    store: Path | None = None,
-    workflow_tables: Path | None = None,
-    corpuses: Path | None = None,
-) -> None:
-    """Export existing fixtures and a separate workflow_proteobench.csv without downloading."""
-    target = _store(store)
-    directory = corpuses or target.root.parent / "corpuses"
-    logger.info("written to {}", export_corpus(target, directory / "all.csv"))
-    if target.resources_csv.is_file():
-        tables = workflow_tables or target.root.parent / "workflow_tables"
-        logger.info("written to {}", export_proteobench_table(target, tables))
+def _acquire_corpus(selection: str | None, destination_name: str) -> None:
+    """Acquire one corpus selection and publish its runner-facing CSVs."""
+    target = _store(None)
+    catalog(store=target.root)
+    catalog_df = pd.read_csv(target.catalog_csv)
+    selected = _selected_catalog(catalog_df, selection)
+    _download(target, selected, catalog_df)
+    resources(store=target.root)
+    directory = target.root.parent / "corpuses"
+    corpus_path = export_corpus(
+        target,
+        directory / destination_name,
+        selection_column=selection,
+    )
+    ensure_config(config_path(target.root))
+    logger.info("written to {}", corpus_path)
     fixture_index.write(target)
 
 
+@corpus_app.command(name="all")
+def corpus_all() -> None:
+    """Download every fixture and write corpuses/all.csv."""
+    _acquire_corpus(None, "all.csv")
+
+
+@corpus_app.command(name="smallest-per-module")
+def corpus_smallest_per_module() -> None:
+    """Download the smallest fixture per module and write corpuses/routine.csv."""
+    _acquire_corpus("smallest_per_module", "routine.csv")
+
+
+@corpus_app.command(name="smallest-per-software")
+def corpus_smallest_per_software() -> None:
+    """Download the smallest fixture per module/software and write corpuses/routine.csv."""
+    _acquire_corpus("smallest_per_software", "routine.csv")
+
+
+@corpus_app.command(name="smallest-per-software-version")
+def corpus_smallest_per_software_version() -> None:
+    """Download the smallest fixture per module/software/version into corpuses/routine.csv."""
+    _acquire_corpus("smallest_per_software_version", "routine.csv")
+
+
 @app.command
-def serve(*, store: Path | None = None, host: str = "127.0.0.1", port: int = 8765) -> None:
+def view(*, store: Path | None = None, host: str = "127.0.0.1", port: int = 8765) -> None:
     """Serve the browser viewer on the store until interrupted.
 
     Args:

@@ -7,15 +7,15 @@ import json
 import re
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
 from apb_studio.corpus.discovery import (
-    SNAKEFILE,
     workflow_implementation_paths,
     workflow_path,
+    workflow_uses_vendor_parameters,
 )
 from apb_studio.corpus.models import (
     CorpusIndex,
@@ -24,14 +24,15 @@ from apb_studio.corpus.models import (
     ExecutionSettings,
     ReportLink,
     RunManifest,
+    utc_now,
     write_record,
 )
 from apb_studio.corpus.tables import (
     CORPUS_COLUMNS,
     INPUT_METADATA_COLUMNS,
     join_input_metadata,
-    load_corpus,
     resolve_file,
+    resolve_secondary_inputs,
     write_rows,
 )
 from apb_studio.disk import atomic_write_text
@@ -86,15 +87,6 @@ def select_datasets(rows: list[Dataset], selection: Path | None, limit: int) -> 
     return selected
 
 
-def _file_digest(path: Path) -> bytes:
-    """Hash a file with bounded peak memory."""
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.digest()
-
-
 def _distribution_info_path(executable: Path, distribution: str) -> Path | None:
     """Find distribution metadata beside a Python entry-point without importing it."""
     prefix = executable.resolve().parent.parent
@@ -142,51 +134,30 @@ def _implementation_files(root: Path) -> tuple[Path, ...]:
     )
 
 
-def _tool_identity(executable: Path, distribution: str, version: str) -> str:
-    """Hash the launcher, metadata, and editable package tree for one tool."""
-    digest = hashlib.sha256()
-    digest.update(str(executable.resolve()).encode())
-    digest.update(version.encode())
-    digest.update(_file_digest(executable))
+def _tool_dependencies(executable: Path, distribution: str) -> tuple[Path, ...]:
+    """Return files Snakemake must watch for one command-line tool."""
+    dependencies = [executable.resolve()]
     dist_info = _distribution_info_path(executable, distribution)
     if dist_info is None:
-        return digest.hexdigest()
+        return tuple(dependencies)
     for name in ("METADATA", "RECORD", "direct_url.json"):
         metadata = dist_info / name
         if metadata.is_file():
-            digest.update(name.encode())
-            digest.update(_file_digest(metadata))
+            dependencies.append(metadata.resolve())
     package_root = _editable_package_root(dist_info, distribution)
     if package_root is not None:
-        for path in _implementation_files(package_root):
-            digest.update(path.relative_to(package_root).as_posix().encode())
-            digest.update(_file_digest(path))
-    return digest.hexdigest()
+        dependencies.extend(_implementation_files(package_root))
+    return tuple(dependencies)
 
 
-def _fingerprint(
-    rows: Sequence[Dataset],
-    data_root: Path,
-    files: Sequence[Path],
-    implementation_identities: Sequence[str],
-) -> str:
-    digest = hashlib.sha256()
-    digest.update(str(data_root).encode())
-    for identity in implementation_identities:
-        digest.update(identity.encode())
-    for row in rows:
-        digest.update(row.model_dump_json().encode())
-        for value in (row.input_file, row.vendor_parameter_file):
-            path = resolve_file(data_root, value)
-            if path.is_file():
-                stat = path.stat()
-                digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
-            else:
-                digest.update(b"missing")
-    for file in files:
-        digest.update(str(file.resolve()).encode())
-        digest.update(_file_digest(file))
-    return digest.hexdigest()[:16]
+def tool_dependencies(tools: Mapping[str, Path]) -> tuple[Path, ...]:
+    """Return deterministic, duplicate-free dependencies for declared tools."""
+    paths = (
+        path
+        for tool, executable in sorted(tools.items())
+        for path in _tool_dependencies(executable, tool)
+    )
+    return tuple(dict.fromkeys(paths))
 
 
 def _tool_version(executable: Path) -> str:
@@ -200,71 +171,31 @@ def _tool_version(executable: Path) -> str:
     ).stdout.strip()
 
 
-def save_execution_settings(root: Path, settings: ExecutionSettings) -> tuple[str, Path]:
-    """Publish reusable settings and a CSV preview without creating or executing a run."""
-    settings_id = hashlib.sha256(settings.model_dump_json().encode()).hexdigest()[:16]
-    directory = root / "settings" / settings_id
-    atomic_write_text(directory / "corpus.csv", settings.corpus.read_text())
-    if settings.downloads is not None:
-        metadata = join_input_metadata(load_corpus(settings.corpus), settings.downloads)
-        write_rows(
-            directory / "input_metadata.csv",
-            INPUT_METADATA_COLUMNS,
-            [
-                {
-                    "input_file": item.input_file,
-                    "input_file_size_bytes": str(item.input_file_size_bytes),
-                }
-                for item in metadata
-            ],
-        )
-    if settings.workflow_table is not None:
-        atomic_write_text(
-            directory / settings.workflow_table.name, settings.workflow_table.read_text()
-        )
-    path = directory / "execution_settings.json"
-    write_record(path, settings)
-    return settings_id, path
-
-
 def prepare_run(
     rows: list[Dataset],
     *,
     output_root: Path,
     settings: ExecutionSettings,
 ) -> tuple[Path, RunManifest]:
-    """Snapshot readable CSVs and source before scheduling; reuse identical experiments."""
+    """Update one stable corpus/workflow/format workspace before scheduling."""
     source = workflow_path(settings.workflow)
-    files = [
-        SNAKEFILE,
-        settings.corpus,
-        *sorted(Path(__file__).parent.rglob("*.py")),
-        *workflow_implementation_paths(settings.workflow),
-    ]
-    if settings.workflow_table is not None:
-        files.append(settings.workflow_table)
-    if settings.downloads is not None:
-        files.append(settings.downloads)
-    # Each declared tool name is also its distribution name, so identity needs no tool table.
     tools = dict(sorted(settings.tools.items()))
     tool_versions = {tool: _tool_version(path) for tool, path in tools.items()}
-    implementation_identities = [
-        _tool_identity(path, tool, tool_versions[tool]) for tool, path in tools.items()
-    ]
-    settings_id, _ = save_execution_settings(output_root.resolve() / "corpus", settings)
-    implementation_identities.append(settings_id)
-    fingerprint = _fingerprint(
-        rows,
-        settings.data_root,
-        files,
-        implementation_identities,
+    run_id = f"{settings.corpus_name}-{settings.workflow}-{settings.format}"
+    root = (
+        output_root.resolve()
+        / "corpus"
+        / settings.corpus_name
+        / settings.workflow
+        / settings.format
     )
-    run_id = f"{settings.workflow}-{settings.format}-{fingerprint}"
-    root = output_root.resolve() / "corpus" / run_id
     root.mkdir(parents=True, exist_ok=True)
     manifest_path = root / "run.json"
-    if manifest_path.is_file():
-        return root, RunManifest.model_validate_json(manifest_path.read_text())
+    created_at = (
+        RunManifest.model_validate_json(manifest_path.read_text()).created_at
+        if manifest_path.is_file()
+        else utc_now()
+    )
     write_rows(root / "selected_corpus.csv", CORPUS_COLUMNS, [row.model_dump() for row in rows])
     metadata_file: str | None = None
     if settings.downloads is not None:
@@ -289,9 +220,12 @@ def prepare_run(
     links = []
     for row in rows:
         key = hashlib.sha256(row.input_file.encode()).hexdigest()[:16]
+        dataset_file = f"datasets/{key}.csv"
+        write_rows(root / dataset_file, CORPUS_COLUMNS, [row.model_dump()])
         links.append(
             ReportLink(
                 input_file=row.input_file,
+                dataset=dataset_file,
                 path=f"reports/{key}.json",
                 progress=f"reports/{key}.progress.json",
                 output_dir=f"artifacts/{key}",
@@ -299,6 +233,8 @@ def prepare_run(
         )
     manifest = RunManifest(
         run_id=run_id,
+        created_at=created_at,
+        corpus_name=settings.corpus_name,
         workflow=settings.workflow,
         format=settings.format,
         data_root=settings.data_root,
@@ -308,7 +244,6 @@ def prepare_run(
         corpus="selected_corpus.csv",
         source_corpus="corpus.csv",
         input_metadata=metadata_file,
-        settings_id=settings_id,
         execution_settings="execution_settings.json",
         workflow_source=source.name,
         workflow_table=settings.workflow_table.name
@@ -320,32 +255,41 @@ def prepare_run(
     return root, manifest
 
 
+def dataset_dependencies(
+    root: Path,
+    manifest: RunManifest,
+    row: Dataset,
+    link: ReportLink,
+) -> tuple[Path, ...]:
+    """Return every file that can change one dataset workflow result."""
+    runtime = Path(__file__).parent
+    dependencies = [
+        root / link.dataset,
+        resolve_file(manifest.data_root, row.input_file),
+        *resolve_secondary_inputs(manifest.data_root, row.input_file),
+        root / manifest.workflow_source,
+        *workflow_implementation_paths(manifest.workflow),
+        runtime / "models.py",
+        runtime / "runner.py",
+        runtime / "runs.py",
+        runtime / "tables.py",
+        runtime / "workflow_cli.py",
+        runtime.parent / "disk.py",
+        *tool_dependencies(manifest.tools),
+    ]
+    if workflow_uses_vendor_parameters(manifest.workflow):
+        dependencies.append(resolve_file(manifest.data_root, row.vendor_parameter_file))
+    if manifest.workflow_table is not None:
+        dependencies.append(root / manifest.workflow_table)
+    return tuple(dict.fromkeys(path.resolve() for path in dependencies))
+
+
 def publish_catalog(root: Path) -> None:
-    """Publish only runs linked to a saved, inspectable execution configuration."""
-    manifests = sorted(
-        (path for path in root.glob("*/run.json") if _has_execution_settings(root, path)),
-        key=lambda path: path.stat().st_mtime_ns,
-        reverse=True,
-    )
-    payload = {
-        "schema_version": 1,
-        "runs": [str(path.relative_to(root)) for path in manifests],
-        "settings": [
-            str(path.relative_to(root))
-            for path in sorted((root / "settings").glob("*/execution_settings.json"))
-        ],
-    }
+    """Publish the same stable-run catalog exposed by the live viewer."""
+    from apb_studio.corpus.catalog import build_catalog
+
+    payload = build_catalog(root)
     atomic_write_text(root / "index.json", json.dumps(payload, indent=2) + "\n")
-
-
-def _has_execution_settings(root: Path, manifest: Path) -> bool:
-    payload = json.loads(manifest.read_text())
-    settings_id = payload.get("settings_id")
-    return (
-        isinstance(settings_id, str)
-        and re.fullmatch(r"[0-9a-f]{16}", settings_id) is not None
-        and (root / "settings" / settings_id / "execution_settings.json").is_file()
-    )
 
 
 def command_for(root: Path, manifest: RunManifest, link: ReportLink) -> list[str]:
@@ -355,7 +299,7 @@ def command_for(root: Path, manifest: RunManifest, link: ReportLink) -> list[str
         "-m",
         f"apb_studio.workflows.workflow_{manifest.workflow}",
         "--corpus",
-        str(root / manifest.corpus),
+        str(root / link.dataset),
         "--data-root",
         str(manifest.data_root),
         "--input-file",

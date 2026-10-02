@@ -15,8 +15,6 @@ def _store(tmp_path: Path) -> Store:
     (store.submission_dir("Repo", "a") / "input_file.tsv").write_text("x\n1\n", encoding="utf-8")
     store.fasta_dir.mkdir()
     (store.fasta_dir / "ref.fasta").write_text(">P\nAA\n", encoding="utf-8")
-    store.modules_dir.mkdir()
-    (store.modules_dir / "dda.toml").write_text("[g]\n", encoding="utf-8")
     store.catalog_csv.write_text("module\ndda\n", encoding="utf-8")
     return store
 
@@ -24,7 +22,7 @@ def _store(tmp_path: Path) -> Store:
 def test_the_index_names_the_stores_files(tmp_path: Path) -> None:
     document = fixture_index.build(_store(tmp_path))
     assert document["fasta"] == ["ref.fasta"]
-    assert document["modules"] == ["dda"]
+    assert "modules" not in document and "modules" not in document["bytes"]
     assert [table["name"] for table in document["tables"]] == ["catalog.csv"]
     assert document["bytes"]["fasta"] == 6
 

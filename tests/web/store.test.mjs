@@ -77,7 +77,7 @@ test('an index missing its byte counts degrades instead of reporting NaN', () =>
   const byKey = new Map(rows.map((row) => [row.key, row.value]))
   assert.equal(byKey.get('Metadata size'), '0.00 GB')
   assert.equal(byKey.get('FASTA files'), 'none')
-  assert.equal(byKey.get('Module TOMLs'), 'none')
+  assert.equal(byKey.has('Module TOMLs'), false)
 })
 
 test('a bare NaN in a submission document parses as a missing value', () => {
@@ -93,9 +93,8 @@ test('storage rows report sizes in gigabytes and name what is absent', () => {
   const index = {
     root: '/store',
     fasta: [],
-    modules: ['dda'],
     tables: [{ name: 'catalog.csv', sizeBytes: 27287 }],
-    bytes: { metadata: 1e8, fasta: 0, modules: 1e4 }
+    bytes: { metadata: 1e8, fasta: 0 }
   }
   const rows = storageRows(index, [{ size_bytes: 1.5e9 }, { size_bytes: 5e8 }])
   const byKey = new Map(rows.map((row) => [row.key, row.value]))

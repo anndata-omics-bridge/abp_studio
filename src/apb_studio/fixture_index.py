@@ -1,6 +1,6 @@
 """``index.json``: where the store's files are, written by the script that changed it.
 
-It names the tables, the FASTAs, the module TOMLs, and the URL pattern of a submission's
+It names the tables, the FASTAs, and the URL pattern of a submission's
 own ``summary.json``. It does not list which submissions are downloaded: the viewer asks
 for each summary by name, and its presence is the answer. So a submission that lands
 mid-run needs no listing to be refreshed, and the server needs no directory walk.
@@ -39,22 +39,15 @@ def build(store: Store) -> dict[str, Any]:
     fasta = (
         sorted(p.name for p in store.fasta_dir.glob("*.fasta")) if store.fasta_dir.is_dir() else []
     )
-    modules = (
-        sorted(p.stem for p in store.modules_dir.glob("*.toml"))
-        if store.modules_dir.is_dir()
-        else []
-    )
     return {
         "storeVersion": STORE_VERSION,
         "root": str(store.root),
         "tables": tables,
         "submissionSummary": SUMMARY_URL_PATTERN,
         "fasta": fasta,
-        "modules": modules,
         "bytes": {
             "metadata": _tree_bytes(store.metadata_dir),
             "fasta": _tree_bytes(store.fasta_dir),
-            "modules": _tree_bytes(store.modules_dir),
         },
     }
 

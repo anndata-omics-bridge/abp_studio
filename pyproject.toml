@@ -24,11 +24,21 @@ dependencies = [
 
 [tool.uv.sources]
 apb-aggregate = { path = "../apb-aggregate", editable = true }
+apb-fasta = { path = "../apb-fasta", editable = true }
+apb-proteobench = { path = "../apb-proteobench", editable = true }
 apb2 = { path = "../apb2", editable = true }
 carpet-scan = { git = "https://github.com/anndata-omics-bridge/carpet_scan.git", rev = "a98f45d21884a95fa79b7660b153bbadb9268e03" }
 
 [project.optional-dependencies]
-samples = ["apb2", "apb-aggregate", "polars"]
+samples = [
+    "apb2",
+    "apb-aggregate",
+    "apb-fasta",
+    "apb-proteobench",
+    "multiqc>=1.35,<1.36",
+    "pmultiqc>=0.0.48,<0.1",
+    "polars",
+]
 dev = [
     "apb-studio[samples]",
     # Carpet diagnostics; must live in Studio's own environment so grimp can import it.
@@ -54,8 +64,8 @@ docs = [
 ]
 
 [project.scripts]
-apb-studio-fixtures = "apb_studio.proteobench_fixtures:main"
-apb-studio-corpus = "apb_studio.corpus.cli:main"
+corpus = "apb_studio.corpus.cli:main"
+fixture = "apb_studio.proteobench_fixtures:main"
 
 [build-system]
 requires = ["hatchling>=1.28,<2"]
@@ -146,7 +156,7 @@ optional_dependencies_dev_groups = ["dev"]
 
 [tool.deptry.per_rule_ignores]
 # These tools are invoked through their executables and never imported by Studio.
-DEP002 = ["apb-aggregate", "snakemake"]
+DEP002 = ["apb-aggregate", "apb-fasta", "apb-proteobench", "multiqc", "pmultiqc", "snakemake"]
 
 [tool.deptry.package_module_name_map]
 pyyaml = "yaml"

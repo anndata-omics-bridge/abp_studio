@@ -4,8 +4,8 @@ import subprocess
 from pathlib import Path
 
 from apb_studio.corpus.models import RunManifest
-from apb_studio.corpus.clean import archive_results
-from apb_studio.corpus.runs import command_for, publish_index
+from apb_studio.corpus.runs import command_for, dataset_dependencies, publish_index
+from apb_studio.corpus.tables import load_corpus
 
 if not workflow.configfiles:
     raise ValueError("Pass the generated run.json using --configfile")
@@ -13,6 +13,7 @@ if not workflow.configfiles:
 ROOT = Path(workflow.configfiles[-1]).resolve().parent
 RUN = RunManifest.model_validate_json((ROOT / "run.json").read_text())
 BY_KEY = {Path(link.path).stem: link for link in RUN.reports}
+BY_INPUT = {row.input_file: row for row in load_corpus(ROOT / RUN.corpus)}
 
 
 rule all:
@@ -21,10 +22,16 @@ rule all:
 
 
 rule dataset:
+    input:
+        dependencies=lambda wc: dataset_dependencies(
+            ROOT, RUN, BY_INPUT[BY_KEY[wc.key].input_file], BY_KEY[wc.key]
+        )
     output:
         str(ROOT / "reports/{key}.json")
     params:
-        command=lambda wc: command_for(ROOT, RUN, BY_KEY[wc.key])
+        command=lambda wc: command_for(ROOT, RUN, BY_KEY[wc.key]),
+        dataset=lambda wc: BY_INPUT[BY_KEY[wc.key].input_file].model_dump_json(),
+        tool_versions=tuple(sorted(RUN.tool_versions.items())),
     run:
         subprocess.run(params.command, check=True)
 
@@ -36,11 +43,3 @@ rule index:
         str(ROOT / "corpus_index.json")
     run:
         publish_index(ROOT, RUN)
-
-
-localrules: clean
-
-
-rule clean:
-    run:
-        print(f"Results preserved in {archive_results(ROOT)}")

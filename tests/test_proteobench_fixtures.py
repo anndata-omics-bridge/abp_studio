@@ -7,7 +7,6 @@ import io
 import json
 import math
 import os
-import tomllib
 import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -457,6 +456,17 @@ def test_existing_dataset_detection(tmp_path: Path) -> None:
     assert untouched is frame and empty == {}
 
 
+def test_catalog_selection_rejects_unknown_or_corrupt_strategy_columns() -> None:
+    catalog = _catalog_frame()
+    assert rawdb._selected_catalog(catalog, None) is catalog
+    with pytest.raises(ValueError, match="Unknown corpus selection strategy"):
+        rawdb._selected_catalog(catalog, "smallest_by_magic")
+
+    corrupt = catalog.assign(smallest_per_module="maybe")
+    with pytest.raises(ValueError, match="has invalid values"):
+        rawdb._selected_catalog(corrupt, "smallest_per_module")
+
+
 def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = Store(tmp_path)
     with pytest.raises(SystemExit, match="Run 'catalog' first"):
@@ -476,7 +486,7 @@ def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.M
     assert manifest.loc["a", "input_file_path"] == "submissions/Repo/a/input_file.tsv"
     assert manifest.loc["b", "status"] == "input_file_missing", "extracted, but no table in it"
     assert manifest.loc["c", "status"] == "not_on_server"
-    assert "e" not in manifest.index, "--module restricts the download"
+    assert manifest.loc["e", "status"] == "not_selected", "manifest still covers the catalog"
 
     calls: list[Path] = []
     monkeypatch.setattr(
@@ -488,15 +498,22 @@ def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.M
     assert calls == [store.submissions_dir / "Other", store.submissions_dir / "Repo"]
     assert store.downloads_csv.read_text().count("input_file_path,input_file_size_bytes") == 1
 
+    present_only = _catalog_frame().loc[lambda frame: frame["intermediate_hash"] == "a"]
+    present_only.to_csv(store.catalog_csv, index=False)
+    calls.clear()
+    rawdb.download(store=tmp_path)
+    assert calls == []
+
     numeric = _catalog_frame().assign(repo_name=1)
     numeric.to_csv(store.catalog_csv, index=False)
     with pytest.raises(TypeError, match="repo_name"):
         rawdb.download(store=tmp_path)
 
+    with pytest.raises(TypeError, match="repo_name and intermediate_hash"):
+        rawdb._write_downloads(store, numeric, numeric)
 
-def test_resources_fetch_fastas_and_valid_tomls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+
+def test_resources_fetch_only_fastas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = Store(tmp_path)
     archive = _zip_bytes({"reference.fasta": b">P1\nAAAA\n", "__MACOSX/meta": b"x"})
     one_module = rawdb.CONFIG.model_copy(
@@ -506,21 +523,18 @@ def test_resources_fetch_fastas_and_valid_tomls(
         }
     )
     monkeypatch.setattr(rawdb, "CONFIG", one_module)
-    settings_url = one_module.settings_url("dda_qexactive")
-    responses = {
-        "https://server/fasta.zip": _Response(content=archive),
-        settings_url: _Response(content=b"[general]\nlevel='ion'\n"),
-    }
-    monkeypatch.setattr(rawdb.requests, "get", lambda url, **_kwargs: responses[url])
+    requested: list[str] = []
+
+    def get(url: str, **_kwargs: object) -> _Response:
+        requested.append(url)
+        return _Response(content=archive)
+
+    monkeypatch.setattr(rawdb.requests, "get", get)
     rawdb.resources(store=tmp_path)
+    assert requested == ["https://server/fasta.zip"], "module definitions are not fetched"
     assert (store.fasta_dir / "reference.fasta").exists()
     assert not (store.fasta_dir / "__MACOSX").exists()
-    assert (store.modules_dir / "dda_qexactive.toml").exists()
-
-    responses[settings_url] = _Response(content=b"not = toml = at all")
-    with pytest.raises(tomllib.TOMLDecodeError):
-        rawdb.resources(store=tmp_path)
-    assert not list(store.modules_dir.glob(".*.download.toml"))
+    assert not (tmp_path / "modules").exists()
 
 
 def test_summarize_table_reads_delimited_and_parquet(tmp_path: Path) -> None:
@@ -585,32 +599,98 @@ def test_a_summary_is_written_beside_each_submission(tmp_path: Path) -> None:
 
 def test_resource_summary_covers_every_module(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    store.modules_dir.mkdir(parents=True)
-    (store.modules_dir / "dda_qexactive.toml").write_text("[general]\n", encoding="utf-8")
 
     rawdb._write_resource_summary(store)
 
     resources = pd.read_csv(store.resources_csv).set_index("module")
     assert len(resources) == len(rawdb.CONFIG.modules)
-    assert bool(resources.loc["dda_qexactive", "module_toml_present"]) is True
+    assert list(resources.columns) == ["fasta", "fasta_present"]
     assert bool(resources.loc["dda_qexactive", "fasta_present"]) is False
     assert str(resources.loc["dia_singlecell", "fasta"]).endswith("noecoli.fasta")
 
 
-def test_all_runs_every_step_in_order(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    order: list[str] = []
-    for name in ("catalog", "download", "resources"):
-        monkeypatch.setattr(rawdb, name, lambda *_a, _name=name, **_k: order.append(_name))
-    rawdb.run_all(store=tmp_path, module="dia_aif")
-    assert order == ["catalog", "download", "resources"]
+def test_corpus_commands_expose_all_selection_strategies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str | None, str]] = []
+    monkeypatch.setattr(
+        rawdb,
+        "_acquire_corpus",
+        lambda strategy, name: calls.append((strategy, name)),
+    )
+
+    commands = {
+        "all": (None, "all.csv"),
+        "smallest-per-module": ("smallest_per_module", "routine.csv"),
+        "smallest-per-software": ("smallest_per_software", "routine.csv"),
+        "smallest-per-software-version": ("smallest_per_software_version", "routine.csv"),
+    }
+    for command in commands:
+        rawdb.app(["corpus", command], exit_on_error=False, result_action="return_value")
+
+    assert calls == list(commands.values())
 
 
-def test_serve_and_main_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_acquire_corpus_materializes_the_selected_strategy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(tmp_path / "test_data_download")
+    catalog_frame = rawdb._strategy_flags(_catalog_frame())
+    store.root.mkdir()
+    catalog_frame.to_csv(store.catalog_csv, index=False)
+    for row in catalog_frame.to_dict(orient="records"):
+        folder = store.submission_dir(row["repo_name"], row["intermediate_hash"])
+        folder.mkdir(parents=True)
+        (folder / "input_file.tsv").write_text("value\n", encoding="utf-8")
+        (folder / "param_0.txt").write_text("params", encoding="utf-8")
+
+    selected_hashes: list[str] = []
+
+    def download_selected(
+        _target: Store,
+        selected: pd.DataFrame,
+        _catalog: pd.DataFrame,
+    ) -> None:
+        selected_hashes.extend(selected["intermediate_hash"].tolist())
+
+    def write_resources(_store: Path | None = None, **_kwargs: object) -> None:
+        pd.DataFrame([
+            {
+                "module": "dda_qexactive",
+                "fasta": "fasta/reference.fasta",
+            }
+        ]).to_csv(store.resources_csv, index=False)
+
+    monkeypatch.setattr(rawdb, "_store", lambda _root: store)
+    monkeypatch.setattr(rawdb, "catalog", lambda **_kwargs: None)
+    monkeypatch.setattr(rawdb, "_download", download_selected)
+    monkeypatch.setattr(rawdb, "resources", write_resources)
+    monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
+    workflow_table = tmp_path / "workflow_tables" / "workflow_proteobench.csv"
+    workflow_table.parent.mkdir()
+    workflow_table.write_text("module,fasta,level\ndda_qexactive,fasta/a.fasta,ion\n")
+
+    rawdb._acquire_corpus("smallest_per_module", "routine.csv")
+
+    assert workflow_table.read_text() == "module,fasta,level\ndda_qexactive,fasta/a.fasta,ion\n"
+    assert [path.name for path in workflow_table.parent.iterdir()] == [workflow_table.name]
+    assert selected_hashes == ["a", "e"]
+    written = pd.read_csv(tmp_path / "corpuses" / "routine.csv")
+    assert written["software_name"].tolist() == ["A", "C"]
+    assert json.loads((tmp_path / "corpuses.json").read_text(encoding="utf-8")) == {
+        "all": "corpuses/all.csv",
+        "proteobench": "corpuses/proteobench.csv",
+        "routine": "corpuses/routine.csv",
+    }
+
+
+def test_view_and_main_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     served: list[Any] = []
     monkeypatch.setattr(
         rawdb, "serve_store", lambda store, host, port: served.append((store, host, port))
     )
-    rawdb.serve(store=tmp_path, host="0.0.0.0", port=1)
+    rawdb.view(store=tmp_path, host="0.0.0.0", port=1)
     assert served == [(Store(tmp_path.resolve()), "0.0.0.0", 1)]
 
     called: list[str] = []

@@ -5,74 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>APB Corpus Viewer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tabulator-tables@6.5.2/dist/css/tabulator.min.css">
-  <link rel="stylesheet" href="app.css?v=26">
-  <link rel="stylesheet" href="json-viewer.css?v=14">
-  <link rel="stylesheet" href="representation.css?v=18">
+  <link rel="stylesheet" href="assets/44/app.css">
+  <link rel="stylesheet" href="assets/44/json-viewer.css">
+  <link rel="stylesheet" href="assets/44/representation.css">
 </head>
 <body>
-  <header><div><span class="eyebrow">ANNData PROTEOMICS BRIDGE</span><h1>Corpus viewer</h1></div></header>
-  <main>
-    <section class="run-controls" aria-label="Run selection">
-      <label><span>Execution settings</span><select id="execution"><option>No settings yet</option></select></label>
-      <label><span>Saved run</span><select id="run"><option>No runs yet</option></select></label>
-    </section>
-    <p id="error" role="alert" hidden></p>
-    <section class="summary"><div><span class="eyebrow">EXECUTION</span><h2 id="status">Waiting for a run</h2>
-      <p id="counts">Run a workflow from the command line. Its saved files will appear here.</p>
-      <p id="workflow-steps">Steps: waiting for a run</p></div>
-      <div id="status-bar" class="status-bar" role="img" aria-label="No dataset results">
-        <span data-status="succeeded"></span><span data-status="failed"></span><span data-status="running"></span><span data-status="interrupted"></span>
-      </div>
-    </section>
-    <nav aria-label="Run views">
-      <button data-tab="results" aria-selected="true">Datasets</button>
-      <button id="show-more-tab" data-tab="show-more" disabled>Show more</button>
-      <button data-tab="visualizations">Visualizations</button>
-      <button data-tab="settings">Settings & inputs</button>
-      <button data-tab="log">Scheduler log</button>
-    </nav>
-    <section id="results" class="panel"><div id="datasets"></div></section>
-    <section id="show-more" class="panel" hidden>
-      <h2 id="detail-title">Select a dataset using its Show more button</h2>
-      <nav id="detail-tabs" class="subtabs detail-subtabs" aria-label="Dataset detail views" role="tablist" hidden></nav>
-      <section id="detail-io" class="detail-panel" data-detail-panel="io" role="tabpanel" hidden>
-        <h3>Inputs, outputs & intermediates</h3>
-        <dl id="detail-files" class="dataset-files" hidden></dl>
-        <div id="detail-notices"></div>
-        <div id="detail-diagnostics"></div>
-      </section>
-      <div id="detail"></div>
-    </section>
-    <section id="visualizations" class="panel" hidden>
-      <div class="chart-intro"><h2>Corpus resource profiles</h2><p>Each point is persisted evidence from one dataset step or generated output. Software defines the series; hover a point for its module, step, status, file, and exact values.</p></div>
-      <div class="chart-grid">
-        <article class="chart-card"><h3>Runtime by vendor input size</h3><div id="runtime-chart" class="chart"></div></article>
-        <article class="chart-card"><h3>Peak memory by vendor input size</h3><div id="memory-chart" class="chart"></div></article>
-        <article class="chart-card"><h3>Generated artifact size by vendor input size</h3><div id="output-chart" class="chart"></div></article>
-      </div>
-    </section>
-    <section id="settings" class="panel" hidden>
-      <div class="file-strip"><span>Files</span><div id="links"></div></div>
-      <nav class="subtabs" aria-label="Settings and input views">
-        <button data-settings-tab="execution-settings" aria-selected="true">Execution settings</button>
-        <button data-settings-tab="saved-run">Saved run</button>
-        <button data-settings-tab="corpus-input">Corpus</button>
-        <button data-settings-tab="input-metadata">Input sizes</button>
-        <button data-settings-tab="workflow-input">Workflow table</button>
-        <button data-settings-tab="workflow-source">Workflow script</button>
-      </nav>
-      <section id="execution-settings" class="settings-panel"><h2>Execution settings</h2><div id="manifest"></div></section>
-      <section id="saved-run" class="settings-panel" hidden><h2>Saved run</h2><div id="run-manifest"></div></section>
-      <section id="corpus-input" class="settings-panel" hidden>
-        <h2 id="corpus-title">Corpus inventory</h2><p id="corpus-description"></p><div id="corpus"></div>
-      </section>
-      <section id="input-metadata" class="settings-panel" hidden><h2 id="input-metadata-title">Input-size metadata</h2><div id="input-metadata-table"></div></section>
-      <section id="workflow-input" class="settings-panel" hidden><h2 id="workflow-table-title">Workflow table</h2><div id="workflow-table"></div></section>
-      <section id="workflow-source" class="settings-panel" hidden><h2>Workflow script</h2><pre id="source"></pre></section>
-    </section>
-    <section id="log" class="panel" hidden><h2>Snakemake</h2><pre id="scheduler-log"></pre></section>
-  </main>
-  <footer>Reads persisted run files · refreshes every 2 seconds · APB failures remain inspectable results</footer>
-  <script type="module" src="app.js?v=26"></script>
+  <corpus-app></corpus-app>
+  <noscript>This viewer is a JavaScript application and needs scripting enabled.</noscript>
+  <script type="module" src="assets/44/app.js"></script>
 </body>
 </html>

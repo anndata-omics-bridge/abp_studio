@@ -54,13 +54,8 @@ class Store:
         return self.root / "fasta"
 
     @property
-    def modules_dir(self) -> Path:
-        """The ProteoBench module settings, one TOML per module."""
-        return self.root / "modules"
-
-    @property
     def resources_csv(self) -> Path:
-        """Which module TOML and FASTA each module uses, and whether they are present."""
+        """Which FASTA each module uses, and whether it is present."""
         return self.root / RESOURCES_NAME
 
     @property

@@ -12,14 +12,11 @@ from apb_studio.proteobench_config import PACKAGED, load_config, packaged_config
 MINIMAL = """
 schema_version = 1
 datasets_base_url = "https://example.invalid/datasets/"
-settings_revision = "abc123"
-settings_root = "https://example.invalid/{revision}/settings"
 fasta_urls = ["https://example.invalid/one.zip"]
 
 [[modules]]
 name = "dda_qexactive"
 repo_url = "https://github.com/Proteobench/Results_quant_ion_DDA/archive/refs/heads/main.zip"
-settings_path = "DDA/ion/QExactive/module_settings.toml"
 fasta = "mix.fasta"
 """
 
@@ -31,8 +28,6 @@ def test_the_packaged_configuration_covers_every_module() -> None:
     assert config.module_names[0] == "dda_qexactive"
     assert packaged_config() is config, "read once"
     for name in config.module_names:
-        assert config.settings_url(name).startswith("https://raw.githubusercontent.com/")
-        assert config.settings_revision in config.settings_url(name)
         assert config.fasta_for_module(name).endswith(".fasta")
     assert config.fasta_for_module("dia_singlecell").endswith("noecoli.fasta")
     assert config.module("dia_aif").repo_name == "Results_quant_ion_DIA_AIF"
@@ -49,9 +44,7 @@ def test_an_override_file_replaces_the_packaged_one(tmp_path: Path) -> None:
     path.write_text(MINIMAL, encoding="utf-8")
     config = load_config(path)
     assert config.module_names == ("dda_qexactive",)
-    assert config.settings_url("dda_qexactive") == (
-        "https://example.invalid/abc123/settings/DDA/ion/QExactive/module_settings.toml"
-    )
+    assert config.fasta_for_module("dda_qexactive") == "mix.fasta"
 
 
 def test_a_malformed_configuration_is_refused(tmp_path: Path) -> None:
