@@ -234,6 +234,7 @@ test('embedded JSON display preserves malformed, scalar and unrelated strings', 
 test('representation views separate APB metadata, scientific levels and raw JSON', () => {
   const h5mu = {
     artifact: { name: 'aggregated.h5mu', physical_format: 'h5mu' },
+    root: { apb: { hierarchy: { name: 'lfq', identities: [['ion', 'ion'], ['protein', 'protein']] } } },
     levels: [{ name: 'protein' }, { name: 'ion' }],
     annotation_tables: [{ name: 'proteins', row_count: 2, key_columns: ['accession'] }]
   }

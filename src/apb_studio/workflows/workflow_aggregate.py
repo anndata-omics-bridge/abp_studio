@@ -12,11 +12,10 @@ from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.artifacts import (
     representation,
     result_path,
-    single_level_result_path,
 )
 from apb_studio.workflows.software import parameter_software
 
-WORKFLOW_COLUMNS = ("software_name", "start_level", "fallback_level", "method")
+WORKFLOW_COLUMNS = ("software_name", "method")
 TOOLS = ("apb2", "apb-aggregate")
 
 
@@ -29,32 +28,22 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
     workflow = join_workflow(dataset.model_dump(), context.workflow_table, on=("software_name",))
     if tuple(workflow) != WORKFLOW_COLUMNS:
         raise ValueError(f"{context.workflow_table} must have exactly {','.join(WORKFLOW_COLUMNS)}")
-    start_level = workflow["start_level"]
-    fallback_level = workflow["fallback_level"]
     methods = [selection.strip() for selection in workflow["method"].split(";")]
-    if not start_level or not all(methods):
-        raise ValueError("workflow_aggregate.csv requires nonempty start_level and method values")
+    if not all(methods):
+        raise ValueError("workflow_aggregate.csv requires nonempty method values")
     if len(set(methods)) != len(methods):
         raise ValueError(f"workflow_aggregate.csv repeats a method in {workflow['method']!r}")
-    if fallback_level == start_level:
-        raise ValueError("workflow_aggregate.csv fallback_level must differ from start_level")
 
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
     vendor_source = source.parent if secondary_inputs else source
     parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
-    converted = (
-        result_path(context.output_dir, "converted", context.format)
-        if fallback_level
-        else single_level_result_path(context.output_dir, "converted", context.format)
-    )
+    converted = result_path(context.output_dir, "converted", context.format)
     convert_command = [
         str(context.tool("apb2")),
         "convert",
         str(vendor_source),
     ]
-    if not fallback_level:
-        convert_command.append(start_level)
     convert_command.extend([
         "--params",
         str(parameters),
@@ -87,14 +76,10 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
         )
         command = [
             str(context.tool("apb-aggregate")),
-            start_level,
-            "protein",
-            method,
             str(source_artifact.path),
             str(aggregated),
+            method,
         ]
-        if fallback_level:
-            command.extend(["--fallback-source-level", fallback_level])
         output = Artifact(
             role="result" if last else "aggregated", path=aggregated, format=context.format
         )

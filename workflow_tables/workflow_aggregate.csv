@@ -1,15 +1,15 @@
-software_name,start_level,fallback_level,method
-AlphaDIA,ion,,all
-AlphaPept,ion,,all;rlm_confidence_case;rlm_confidence_precision
-DIA-NN,fragment,ion,all;rlm_confidence_case;rlm_confidence_precision
-FragPipe,ion,,all
-FragPipe (DIA-NN quant),ion,,all
-MSAngel,ion,,all
-MaxQuant,ion,,all;rlm_confidence_case;rlm_confidence_precision
-PEAKS,ion,,all
-ProlineStudio,ion,,all
-Sage,ion,,all
-Spectronaut,ion,,all;rlm_confidence_case;rlm_confidence_precision
-WOMBAT,ion,,all
-i2MassChroQ,ion,,all
-quantms,ion,,all
+software_name,method
+AlphaDIA,all
+AlphaPept,all;rlm_confidence_case;rlm_confidence_precision
+DIA-NN,all;rlm_confidence_case;rlm_confidence_precision
+FragPipe,all
+FragPipe (DIA-NN quant),all
+MSAngel,all
+MaxQuant,all;rlm_confidence_case;rlm_confidence_precision
+PEAKS,all
+ProlineStudio,all
+Sage,all
+Spectronaut,all;rlm_confidence_case;rlm_confidence_precision
+WOMBAT,all
+i2MassChroQ,all
+quantms,all

@@ -51,6 +51,7 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
   const representation = {
     artifact: { physical_format: 'h5mu' }, root: { apb: {
       ...provenance,
+      hierarchy: { name: 'lfq', identities: [['ion', 'ion'], ['protein', 'protein']] },
       annotation_tables: { 'fasta proteins': { key_columns: ['id'], metadata: annotation.metadata } },
       feature_relations: { peptide_protein: { annotation_table: annotation.name, target_level: 'ion', metadata: relation.metadata } }
     } }, levels: [protein, ion],
@@ -82,4 +83,15 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
   assert.equal(annotations.diagram.var, annotation)
   assert.deepEqual(representation.levels, [protein, ion], 'projection must not reorder the sidecar')
   assert.equal('annotation_tables' in provenance, false, 'projection must not mutate the sidecar')
+})
+
+
+test('custom hierarchy determines embedded AnnData order', () => {
+  const representation = {
+    artifact: { physical_format: 'h5mu' },
+    root: { apb: { hierarchy: { name: 'enrichment', identities: [['peptidoform', 'form'], ['multisite', 'multisite'], ['site', 'site']] } } },
+    levels: [{ name: 'site' }, { name: 'peptidoform' }, { name: 'multisite' }]
+  }
+  const [root] = structureViews(representation)
+  assert.deepEqual(root.modalities.map(item => item.name), ['peptidoform', 'multisite', 'site'])
 })

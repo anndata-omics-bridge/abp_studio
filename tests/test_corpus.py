@@ -747,30 +747,26 @@ def test_corpus_config_bootstrap_preserves_existing_config(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize(
-    ("software_name", "start_level", "fallback_level", "storage_format", "suffix"),
+    ("software_name", "storage_format", "suffix"),
     [
-        ("DIA-NN", "fragment", "ion", "hdf5", ".h5mu"),
-        ("Spectronaut", "ion", "", "parquet", ".parquet"),
-        ("MaxQuant", "ion", "", "duckdb", ".duckdb"),
+        ("DIA-NN", "hdf5", ".h5mu"),
+        ("Spectronaut", "parquet", ".parquet"),
+        ("MaxQuant", "duckdb", ".duckdb"),
     ],
 )
 def test_aggregate_workflow_is_two_steps_configured_by_software(
     tmp_path: Path,
     software_name: str,
-    start_level: str,
-    fallback_level: str,
     storage_format: StorageFormat,
     suffix: str,
 ) -> None:
     workflow_table = tmp_path / "workflow_aggregate.csv"
     write_rows(
         workflow_table,
-        ["software_name", "start_level", "fallback_level", "method"],
+        ["software_name", "method"],
         [
             {
                 "software_name": software_name,
-                "start_level": start_level,
-                "fallback_level": fallback_level,
                 "method": "mean",
             }
         ],
@@ -789,19 +785,15 @@ def test_aggregate_workflow_is_two_steps_configured_by_software(
     planned = aggregate_steps(context)
 
     assert [step.name for step in planned] == ["convert", "aggregate-mean"]
-    if fallback_level:
-        assert planned[0].command[3] == "--params"
-        assert planned[1].command[-2:] == ["--fallback-source-level", fallback_level]
-    else:
-        assert planned[0].command[3] == start_level
-        assert "--fallback-source-level" not in planned[1].command
-    converted_suffix = (
-        (".h5mu" if fallback_level else ".h5ad") if storage_format == "hdf5" else suffix
-    )
-    assert planned[0].outputs[0].path.suffix == converted_suffix
+    assert planned[0].command[3] == "--params"
+    assert planned[0].outputs[0].path.suffix == suffix
     assert planned[0].outputs[0].format == storage_format
     assert planned[0].command[planned[0].command.index("--format") + 1] == storage_format
-    assert planned[1].command[1:4] == [start_level, "protein", "mean"]
+    assert planned[1].command[1:] == [
+        str(planned[0].outputs[0].path),
+        str(planned[1].outputs[0].path),
+        "mean",
+    ]
     assert planned[0].outputs[1].path.name.endswith(f"{planned[0].outputs[0].path.suffix}.apb.json")
     assert planned[0].outputs[1].role == "representation"
     assert planned[1].outputs[0].path.suffix == suffix
@@ -812,17 +804,13 @@ def test_aggregate_workflow_is_two_steps_configured_by_software(
 def test_aggregate_table_covers_every_corpus_software_with_explicit_policy() -> None:
     root = Path(__file__).parents[1]
     table = root / "workflow_tables" / "workflow_aggregate.csv"
-    fragment_software = {"DIA-NN"}
     # Software whose every rule variant catalogues ion identification confidence.
     confidence_software = {"AlphaPept", "DIA-NN", "MaxQuant", "Spectronaut"}
 
     for row in load_corpus(root / "corpuses" / "all.csv"):
         workflow = join_workflow(row.model_dump(), table, on=("software_name",))
-        expected = "fragment" if row.software_name in fragment_software else "ion"
         assert workflow == {
             "software_name": row.software_name,
-            "start_level": expected,
-            "fallback_level": "ion" if row.software_name in fragment_software else "",
             "method": "all;rlm_confidence_case;rlm_confidence_precision"
             if row.software_name in confidence_software
             else "all",
@@ -833,12 +821,10 @@ def _aggregate_context(tmp_path: Path, method: str) -> WorkflowContext:
     workflow_table = tmp_path / "workflow_aggregate.csv"
     write_rows(
         workflow_table,
-        ["software_name", "start_level", "fallback_level", "method"],
+        ["software_name", "method"],
         [
             {
                 "software_name": "DIA-NN",
-                "start_level": "fragment",
-                "fallback_level": "ion",
                 "method": method,
             }
         ],
@@ -868,12 +854,11 @@ def test_listed_aggregate_methods_chain_onto_one_final_result(tmp_path: Path) ->
     assert first.outputs[0].role == "aggregated"
     assert first.outputs[0].path.name == "aggregated_all.h5mu"
     assert second.inputs == [first.outputs[0]]
-    assert second.command[3:6] == [
-        "rlm_confidence_case",
+    assert second.command[1:] == [
         str(first.outputs[0].path),
         str(second.outputs[0].path),
+        "rlm_confidence_case",
     ]
-    assert second.command[-2:] == ["--fallback-source-level", "ion"]
     assert second.outputs[0].role == "result"
     assert second.outputs[0].path.name == "aggregated.h5mu"
     assert all(step.outputs[1].role == "representation" for step in planned)
@@ -884,34 +869,9 @@ def test_aggregate_workflow_rejects_a_repeated_method(tmp_path: Path) -> None:
         aggregate_steps(_aggregate_context(tmp_path, "all;mean;all"))
 
 
-def test_aggregate_workflow_rejects_the_same_preferred_and_fallback_level(
-    tmp_path: Path,
-) -> None:
-    workflow_table = tmp_path / "workflow_aggregate.csv"
-    write_rows(
-        workflow_table,
-        ["software_name", "start_level", "fallback_level", "method"],
-        [
-            {
-                "software_name": "DIA-NN",
-                "start_level": "ion",
-                "fallback_level": "ion",
-                "method": "mean",
-            }
-        ],
-    )
-    context = WorkflowContext(
-        corpus=tmp_path / "corpus.csv",
-        data_root=tmp_path,
-        dataset=dataset(),
-        workflow_table=workflow_table,
-        output_dir=tmp_path / "outputs",
-        report=tmp_path / "report.json",
-        tools={"apb2": tmp_path / "apb2", "apb-aggregate": tmp_path / "apb-aggregate"},
-    )
-
-    with pytest.raises(ValueError, match="fallback_level must differ"):
-        aggregate_steps(context)
+def test_aggregate_workflow_rejects_an_empty_method(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="nonempty method"):
+        aggregate_steps(_aggregate_context(tmp_path, "all;"))
 
 
 def test_compound_software_uses_the_base_parameter_parser(tmp_path: Path) -> None:

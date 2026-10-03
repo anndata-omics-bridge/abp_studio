@@ -4,7 +4,10 @@ export const REPRESENTATION_VERSION = '4'
 const EMBEDDED_JSON_FIELDS = new Set([
   'rule_json', 'plan_json', 'search_parameters'
 ])
-const LEVEL_ORDER = ['ion', 'peptidoform', 'peptide', 'protein', 'fragment']
+function hierarchyOrder (representation) {
+  const hierarchy = representation?.root?.apb?.hierarchy ?? representation?.levels?.[0]?.apb?.hierarchy
+  return (hierarchy?.identities ?? []).map(([name]) => name)
+}
 
 export function expandEmbeddedJsonForDisplay (value) {
   return expandValue(value, '')
@@ -95,9 +98,10 @@ export function representationViews (representation) {
     label: 'APB metadata',
     representation
   }
+  const order = hierarchyOrder(representation)
   const sourceLevels = [...(representation?.levels ?? [])]
   if (isAnnDataFormat) {
-    sourceLevels.sort((left, right) => LEVEL_ORDER.indexOf(left.name) - LEVEL_ORDER.indexOf(right.name))
+    sourceLevels.sort((left, right) => order.indexOf(left.name) - order.indexOf(right.name))
   }
   const levels = sourceLevels.map((level, index) => ({
     key: `level-${index}`,
@@ -156,8 +160,9 @@ export function annDataDiagram (level) {
 /** Project each physical AnnData separately from its MuData container. */
 export function structureViews (representation) {
   const format = representation.artifact?.physical_format
+  const order = hierarchyOrder(representation)
   const levels = [...(representation.levels ?? [])]
-    .sort((left, right) => LEVEL_ORDER.indexOf(left.name) - LEVEL_ORDER.indexOf(right.name))
+    .sort((left, right) => order.indexOf(left.name) - order.indexOf(right.name))
   const embedded = format === 'h5mu'
   const modalities = levels.map(level => ({
     kind: 'anndata',
