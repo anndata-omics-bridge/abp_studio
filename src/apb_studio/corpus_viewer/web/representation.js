@@ -2,7 +2,7 @@
 export const REPRESENTATION_FORMAT = 'apb2-result-representation'
 export const REPRESENTATION_VERSION = '4'
 const EMBEDDED_JSON_FIELDS = new Set([
-  'rule_json', 'plan_json', 'search_parameters', 'aggregate'
+  'rule_json', 'plan_json', 'search_parameters'
 ])
 const LEVEL_ORDER = ['ion', 'peptidoform', 'peptide', 'protein', 'fragment']
 

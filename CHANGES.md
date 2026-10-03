@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-03: The corpus viewer reads apb-aggregate's history in `uns["apb"]["aggregate"]` as the native JSON list apb-aggregate now writes, and no longer parses `aggregate` as an embedded JSON string; `rule_json`, `plan_json` and `search_parameters` are still expanded.
+
 - 2026-10-02: The `aggregate` workflow's `method` cell takes `;`-separated apb-aggregate selections. Each runs as its own `aggregate-<method>` step and adds its layers to the previous step's result; intermediate results are `aggregated_<method>` with role `aggregated`, the last is `aggregated` with role `result`. `workflow_aggregate.csv` now runs `all` everywhere, and adds `rlm_confidence_case` and `rlm_confidence_precision` for AlphaPept, DIA-NN, MaxQuant and Spectronaut, whose every rule variant catalogues ion identification confidence.
 
 - 2026-10-02: `dia_plasma` forms its own `plasma` corpus (`fixture corpus plasma`) and leaves `all`, `proteobench` and the standard ProteoBench table. The new `plasma` workflow runs the `proteobench_pmultiqc` export and report, now shared in `workflows/proteobench_export.py`, with the layer `workflow_plasma.tsv` names per module and software: DIA-NN and FragPipe (DIA-NN quant) score `Precursor_Quantity`, as upstream's plasma module does; AlphaDIA and PEAKS score `X`. `proteobench_pmultiqc` passes `--layer X` in place of the removed `--x`; `proteobench` and `proteobench_run` now score only `X`, apb-proteobench's new default.

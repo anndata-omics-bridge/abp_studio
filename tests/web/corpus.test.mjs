@@ -182,7 +182,7 @@ test('representation documents are versioned and projected into labelled Plotly 
   assert.deepEqual(chart.trace.x, ['run A'])
 })
 
-test('representation display expands known embedded JSON objects and arrays', () => {
+test('representation display expands known embedded JSON and keeps native aggregate history', () => {
   const nestedRule = JSON.stringify({ schema_version: '0.3', software_name: 'Sage' })
   const source = {
     format: 'apb2-result-representation', format_version: '4',
@@ -192,9 +192,9 @@ test('representation display expands known embedded JSON objects and arrays', ()
       plan_json: JSON.stringify({ level: 'ion' }),
       search_parameters: JSON.stringify({ enzyme: 'Trypsin/P', allowed_miscleavages: 1 })
     },
-      aggregate: JSON.stringify([{
+      aggregate: [{
         source_level: 'ion', target_level: 'protein', method: 'mean'
-      }])
+      }]
     } }]
   }
 
@@ -218,7 +218,6 @@ test('embedded JSON display preserves malformed, scalar and unrelated strings', 
     rule_json: '{not valid JSON',
     plan_json: '42',
     search_parameters: 'null',
-    aggregate: '"mean"',
     note: '{"looks":"like JSON"}',
     existing: { rule_json: ['already', { plan_json: '{"level":"protein"}' }] }
   }
@@ -227,7 +226,6 @@ test('embedded JSON display preserves malformed, scalar and unrelated strings', 
     rule_json: '{not valid JSON',
     plan_json: '42',
     search_parameters: 'null',
-    aggregate: '"mean"',
     note: '{"looks":"like JSON"}',
     existing: { rule_json: ['already', { plan_json: { level: 'protein' } }] }
   })
