@@ -1,4 +1,8 @@
-"""Linear aggregation workflow: convert configured source levels, then aggregate to protein."""
+"""Linear aggregation workflow: convert configured source levels, then aggregate to protein.
+
+The ``method`` cell lists one or more apb-aggregate selections separated by ``;``. Each runs as
+its own step and adds its layers to the previous step's result.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ TOOLS = ("apb2", "apb-aggregate")
 
 
 def steps(context: WorkflowContext) -> list[StepSpec]:
-    """Convert configured source levels and aggregate the preferred available one."""
+    """Convert configured source levels, then run each listed aggregate on the previous result."""
     if context.workflow_table is None:
         raise ValueError("workflow_aggregate.csv is required")
 
@@ -27,9 +31,11 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
         raise ValueError(f"{context.workflow_table} must have exactly {','.join(WORKFLOW_COLUMNS)}")
     start_level = workflow["start_level"]
     fallback_level = workflow["fallback_level"]
-    method = workflow["method"]
-    if not start_level or not method:
+    methods = [selection.strip() for selection in workflow["method"].split(";")]
+    if not start_level or not all(methods):
         raise ValueError("workflow_aggregate.csv requires nonempty start_level and method values")
+    if len(set(methods)) != len(methods):
+        raise ValueError(f"workflow_aggregate.csv repeats a method in {workflow['method']!r}")
     if fallback_level == start_level:
         raise ValueError("workflow_aggregate.csv fallback_level must differ from start_level")
 
@@ -42,7 +48,6 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
         if fallback_level
         else single_level_result_path(context.output_dir, "converted", context.format)
     )
-    aggregated = result_path(context.output_dir, "aggregated", context.format)
     convert_command = [
         str(context.tool("apb2")),
         "convert",
@@ -60,44 +65,49 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
         "--format",
         context.format,
     ])
-    aggregate_command = [
-        str(context.tool("apb-aggregate")),
-        start_level,
-        "protein",
-        method,
-        str(converted),
-        str(aggregated),
-    ]
-    if fallback_level:
-        aggregate_command.extend(["--fallback-source-level", fallback_level])
-
-    return [
-        StepSpec(
-            name="convert",
-            command=convert_command,
-            inputs=[
-                Artifact(role="vendor_table", path=source),
-                *[
-                    Artifact(role="vendor_secondary", path=secondary)
-                    for secondary in secondary_inputs
-                ],
-                Artifact(role="vendor_parameter_file", path=parameters),
-            ],
-            outputs=[
-                Artifact(role="converted", path=converted, format=context.format),
-                representation(converted),
-            ],
-        ),
-        StepSpec(
-            name="aggregate",
-            command=aggregate_command,
-            inputs=[Artifact(role="converted", path=converted, format=context.format)],
-            outputs=[
-                Artifact(role="result", path=aggregated, format=context.format),
-                representation(aggregated),
-            ],
-        ),
-    ]
+    convert = StepSpec(
+        name="convert",
+        command=convert_command,
+        inputs=[
+            Artifact(role="vendor_table", path=source),
+            *[Artifact(role="vendor_secondary", path=secondary) for secondary in secondary_inputs],
+            Artifact(role="vendor_parameter_file", path=parameters),
+        ],
+        outputs=[
+            Artifact(role="converted", path=converted, format=context.format),
+            representation(converted),
+        ],
+    )
+    planned = [convert]
+    source_artifact = convert.outputs[0]
+    for position, method in enumerate(methods, start=1):
+        last = position == len(methods)
+        aggregated = result_path(
+            context.output_dir, "aggregated" if last else f"aggregated_{method}", context.format
+        )
+        command = [
+            str(context.tool("apb-aggregate")),
+            start_level,
+            "protein",
+            method,
+            str(source_artifact.path),
+            str(aggregated),
+        ]
+        if fallback_level:
+            command.extend(["--fallback-source-level", fallback_level])
+        output = Artifact(
+            role="result" if last else "aggregated", path=aggregated, format=context.format
+        )
+        planned.append(
+            StepSpec(
+                name=f"aggregate-{method}",
+                command=command,
+                inputs=[source_artifact],
+                outputs=[output, representation(aggregated)],
+            )
+        )
+        source_artifact = output
+    return planned
 
 
 if __name__ == "__main__":

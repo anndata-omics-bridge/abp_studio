@@ -788,7 +788,7 @@ def test_aggregate_workflow_is_two_steps_configured_by_software(
 
     planned = aggregate_steps(context)
 
-    assert [step.name for step in planned] == ["convert", "aggregate"]
+    assert [step.name for step in planned] == ["convert", "aggregate-mean"]
     if fallback_level:
         assert planned[0].command[3] == "--params"
         assert planned[1].command[-2:] == ["--fallback-source-level", fallback_level]
@@ -813,6 +813,8 @@ def test_aggregate_table_covers_every_corpus_software_with_explicit_policy() -> 
     root = Path(__file__).parents[1]
     table = root / "workflow_tables" / "workflow_aggregate.csv"
     fragment_software = {"DIA-NN"}
+    # Software whose every rule variant catalogues ion identification confidence.
+    confidence_software = {"AlphaPept", "DIA-NN", "MaxQuant", "Spectronaut"}
 
     for row in load_corpus(root / "corpuses" / "all.csv"):
         workflow = join_workflow(row.model_dump(), table, on=("software_name",))
@@ -821,8 +823,65 @@ def test_aggregate_table_covers_every_corpus_software_with_explicit_policy() -> 
             "software_name": row.software_name,
             "start_level": expected,
             "fallback_level": "ion" if row.software_name in fragment_software else "",
-            "method": "mean",
+            "method": "all;rlm_confidence_case;rlm_confidence_precision"
+            if row.software_name in confidence_software
+            else "all",
         }
+
+
+def _aggregate_context(tmp_path: Path, method: str) -> WorkflowContext:
+    workflow_table = tmp_path / "workflow_aggregate.csv"
+    write_rows(
+        workflow_table,
+        ["software_name", "start_level", "fallback_level", "method"],
+        [
+            {
+                "software_name": "DIA-NN",
+                "start_level": "fragment",
+                "fallback_level": "ion",
+                "method": method,
+            }
+        ],
+    )
+    return WorkflowContext(
+        corpus=tmp_path / "corpus.csv",
+        data_root=tmp_path,
+        dataset=dataset(),
+        workflow_table=workflow_table,
+        output_dir=tmp_path / "outputs",
+        report=tmp_path / "report.json",
+        tools={"apb2": tmp_path / "apb2", "apb-aggregate": tmp_path / "apb-aggregate"},
+    )
+
+
+def test_listed_aggregate_methods_chain_onto_one_final_result(tmp_path: Path) -> None:
+    planned = aggregate_steps(_aggregate_context(tmp_path, "all; rlm_confidence_case"))
+
+    assert [step.name for step in planned] == [
+        "convert",
+        "aggregate-all",
+        "aggregate-rlm_confidence_case",
+    ]
+    convert, first, second = planned
+    assert first.inputs == [convert.outputs[0]]
+    assert first.command[3] == "all"
+    assert first.outputs[0].role == "aggregated"
+    assert first.outputs[0].path.name == "aggregated_all.h5mu"
+    assert second.inputs == [first.outputs[0]]
+    assert second.command[3:6] == [
+        "rlm_confidence_case",
+        str(first.outputs[0].path),
+        str(second.outputs[0].path),
+    ]
+    assert second.command[-2:] == ["--fallback-source-level", "ion"]
+    assert second.outputs[0].role == "result"
+    assert second.outputs[0].path.name == "aggregated.h5mu"
+    assert all(step.outputs[1].role == "representation" for step in planned)
+
+
+def test_aggregate_workflow_rejects_a_repeated_method(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="repeats a method"):
+        aggregate_steps(_aggregate_context(tmp_path, "all;mean;all"))
 
 
 def test_aggregate_workflow_rejects_the_same_preferred_and_fallback_level(

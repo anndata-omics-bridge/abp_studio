@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-02: The `aggregate` workflow's `method` cell takes `;`-separated apb-aggregate selections. Each runs as its own `aggregate-<method>` step and adds its layers to the previous step's result; intermediate results are `aggregated_<method>` with role `aggregated`, the last is `aggregated` with role `result`. `workflow_aggregate.csv` now runs `all` everywhere, and adds `rlm_confidence_case` and `rlm_confidence_precision` for AlphaPept, DIA-NN, MaxQuant and Spectronaut, whose every rule variant catalogues ion identification confidence.
+
 - 2026-10-02: `dia_plasma` forms its own `plasma` corpus (`fixture corpus plasma`) and leaves `all`, `proteobench` and the standard ProteoBench table. The new `plasma` workflow runs the `proteobench_pmultiqc` export and report, now shared in `workflows/proteobench_export.py`, with the layer `workflow_plasma.tsv` names per module and software: DIA-NN and FragPipe (DIA-NN quant) score `Precursor_Quantity`, as upstream's plasma module does; AlphaDIA and PEAKS score `X`. `proteobench_pmultiqc` passes `--layer X` in place of the removed `--x`; `proteobench` and `proteobench_run` now score only `X`, apb-proteobench's new default.
 
 - 2026-10-02: The fixture store and corpus include ProteoBench's plasma module: `config/proteobench.toml` fetches `Results_quant_ion_DIA_plasma` with the HYE FASTA, `ModuleKey` accepts `dia_plasma`, and `workflow_proteobench.csv` gains its row. The ProteoBench workflows score it through apb-proteobench's packaged `dia_plasma` module.
