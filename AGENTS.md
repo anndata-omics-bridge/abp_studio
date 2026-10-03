@@ -28,6 +28,7 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 | Acquire routine corpus | `uv run fixture corpus smallest-per-module` |
 | Acquire entrapment corpus | `uv run fixture corpus entrapment` |
 | Acquire plasma corpus | `uv run fixture corpus plasma` |
+| Rebuild FASTA protein databases | `uv run fixture databases` |
 | List packaged workflows | `uv run corpus workflows` |
 | Inspect configuration | `uv run corpus configure` |
 | Run named integration fixtures | `uv run corpus run routine --workflow <name>` |

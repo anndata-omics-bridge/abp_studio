@@ -540,6 +540,8 @@ def test_resources_fetch_fastas_and_module_data(
         "https://server/module_data/pairs.txt.gz",
     ], "module definitions are not fetched"
     assert (store.fasta_dir / "reference.fasta").exists()
+    database = pq.read_table(store.fasta_dir / "reference.parquet", columns=["id", "sequence"])
+    assert database.to_pylist() == [{"id": "P1", "sequence": "AAAA"}], "parsed by protein-fasta"
     assert not (store.fasta_dir / "__MACOSX").exists()
     assert (store.module_data_dir / "pairs.txt.gz").read_bytes() == pairs, "kept as fetched"
     assert not (tmp_path / "modules").exists()

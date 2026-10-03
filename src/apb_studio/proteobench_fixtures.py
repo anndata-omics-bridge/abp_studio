@@ -12,6 +12,7 @@ import io
 import json
 import math
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -601,6 +602,7 @@ def resources(*, store: Path | None = None) -> None:
     if macos_metadata.exists():
         shutil.rmtree(macos_metadata)
     logger.info("extracted FASTAs to {}", target.fasta_dir)
+    _write_protein_databases(target)
 
     target.module_data_dir.mkdir(parents=True, exist_ok=True)
     for url in CONFIG.module_data_urls:
@@ -684,6 +686,24 @@ def write_submission_summary(target: Store, repo_name: str, intermediate_hash: s
     summary = target.submission_summary(repo_name, intermediate_hash)
     summary.write_text(json.dumps(document, indent=1), encoding="utf-8")
     return summary
+
+
+def _write_protein_databases(target: Store) -> None:
+    """Parse each FASTA once into the Parquet protein database tools read in its place."""
+    tool = Path(sys.executable).with_name("protein-fasta")
+    for fasta in sorted(target.fasta_dir.glob("*.fasta")):
+        subprocess.run([tool, "database", fasta.with_suffix(".parquet"), fasta], check=True)
+    logger.info("wrote protein databases to {}", target.fasta_dir)
+
+
+@app.command
+def databases(*, store: Path | None = None) -> None:
+    """Rebuild the Parquet protein database beside every FASTA, as after protein_fasta changes.
+
+    Args:
+        store: The store root; defaults to Studio's configured test-data root.
+    """
+    _write_protein_databases(_store(store))
 
 
 def _write_resource_summary(target: Store) -> None:

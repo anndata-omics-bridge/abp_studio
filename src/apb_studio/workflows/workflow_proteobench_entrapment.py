@@ -8,12 +8,16 @@ from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.artifacts import representation, single_level_result_path
 from apb_studio.workflows.software import parameter_software
 
-WORKFLOW_COLUMNS = ("module", "fasta", "pairs")
+WORKFLOW_COLUMNS = ("module", "fasta")
 TOOLS = ("apb-proteobench",)
 
 
 def steps(context: WorkflowContext) -> list[StepSpec]:
-    """Convert, verify and score one entrapment upload for every precursor q-value kind."""
+    """Convert, verify and score one entrapment upload for every precursor q-value kind.
+
+    ``fasta`` names the entrapment FASTA's Parquet protein database, which also gives each
+    peptide its label and pair.
+    """
     if context.workflow_table is None:
         raise ValueError("workflow_proteobench_entrapment.csv is required")
 
@@ -27,7 +31,6 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
     vendor_source = source.parent if secondary_inputs else source
     parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
     fasta = resolve_file(context.data_root, workflow["fasta"])
-    pairs = resolve_file(context.data_root, workflow["pairs"])
     scored = single_level_result_path(context.output_dir, "scored", context.format)
     timings_dir = context.output_dir / "timings"
 
@@ -46,8 +49,6 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                 parameter_software(dataset.software_name),
                 "--module",
                 dataset.module,
-                "--pairs",
-                str(pairs),
                 "--output",
                 str(scored),
                 "--timings-dir",
@@ -61,7 +62,6 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                 ],
                 Artifact(role="vendor_parameter_file", path=parameters),
                 Artifact(role="fasta", path=fasta),
-                Artifact(role="entrapment_pairs", path=pairs),
             ],
             outputs=[
                 Artifact(role="result", path=scored, format=context.format),

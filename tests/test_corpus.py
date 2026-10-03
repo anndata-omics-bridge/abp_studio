@@ -1496,7 +1496,7 @@ def test_proteobench_table_satisfies_every_proteobench_workflow() -> None:
     ), "each quant module needs one row naming the FASTA config/proteobench.toml fetches"
 
 
-def test_entrapment_workflow_runs_the_entrapment_command_with_the_pair_file(
+def test_entrapment_workflow_runs_the_entrapment_command_on_the_protein_database(
     tmp_path: Path,
 ) -> None:
     table = tmp_path / "workflow_proteobench_entrapment.csv"
@@ -1506,8 +1506,7 @@ def test_entrapment_workflow_runs_the_entrapment_command_with_the_pair_file(
         [
             {
                 "module": "entrapment_dia_astral",
-                "fasta": "fasta/entrapment.fasta",
-                "pairs": "module_data/pairs.txt.gz",
+                "fasta": "fasta/entrapment.parquet",
             }
         ],
     )
@@ -1523,13 +1522,13 @@ def test_entrapment_workflow_runs_the_entrapment_command_with_the_pair_file(
     assert [step.name for step in planned] == ["run-entrapment"]
     command = planned[0].command
     assert command[1:3] == ["run", "entrapment"]
-    assert command[command.index("--pairs") + 1] == str(tmp_path / "module_data/pairs.txt.gz")
+    assert command[4] == str(tmp_path / "fasta/entrapment.parquet")
+    assert "--pairs" not in command
     assert command[command.index("--module") + 1] == "entrapment_dia_astral"
     assert [artifact.role for artifact in planned[0].inputs] == [
         "vendor_table",
         "vendor_parameter_file",
         "fasta",
-        "entrapment_pairs",
     ]
     assert planned[0].outputs[0].path.name == "scored.h5ad", "one level"
 
@@ -1539,13 +1538,12 @@ def test_entrapment_table_names_what_acquisition_fetches() -> None:
         Path(__file__).parents[1] / "workflow_tables" / "workflow_proteobench_entrapment.csv"
     )
     config = packaged_config()
-    pair_files = {url.rsplit("/", 1)[-1] for url in config.module_data_urls}
 
     assert all(tuple(row) == PROTEOBENCH_ENTRAPMENT_COLUMNS for row in rows)
     assert sorted(row["module"] for row in rows) == sorted(config.modules_in("entrapment"))
     for row in rows:
-        assert row["fasta"] == f"fasta/{config.fasta_for_module(row['module'])}"
-        assert row["pairs"].removeprefix("module_data/") in pair_files
+        database = Path(config.fasta_for_module(row["module"])).with_suffix(".parquet")
+        assert row["fasta"] == f"fasta/{database}", "the protein database acquisition writes"
 
 
 def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
