@@ -61,6 +61,7 @@ from apb_studio.workflows.workflow_convert_ion import steps as convert_ion_steps
 from apb_studio.workflows.workflow_convert_no_param import steps as convert_no_param_steps
 from apb_studio.workflows.workflow_plasma import WORKFLOW_COLUMNS as PLASMA_COLUMNS
 from apb_studio.workflows.workflow_plasma import steps as plasma_steps
+from apb_studio.workflows.workflow_plasma_run import steps as plasma_run_steps
 from apb_studio.workflows.workflow_proteobench import WORKFLOW_COLUMNS as PROTEOBENCH_COLUMNS
 from apb_studio.workflows.workflow_proteobench import steps as proteobench_steps
 from apb_studio.workflows.workflow_proteobench_entrapment import (
@@ -672,6 +673,7 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "convert_ion",
         "convert_no_param",
         "plasma",
+        "plasma_run",
         "proteobench",
         "proteobench_entrapment",
         "proteobench_pmultiqc",
@@ -1353,6 +1355,28 @@ def test_one_call_proteobench_declares_every_input_of_the_single_command(tmp_pat
         timing_dir / "apb-fasta.verify-peptides.timings.json",
         timing_dir / "apb-proteobench.benchmark.timings.json",
     ]
+    scores = Path(planned[0].command[planned[0].command.index("--scores") + 1])
+    assert scores == context.output_dir / "scores.json"
+    assert Artifact(role="proteobench_scores", path=scores) in planned[0].outputs
+
+
+def test_plasma_run_scores_the_layer_its_table_names_without_a_report(tmp_path: Path) -> None:
+    table = tmp_path / "workflow_plasma.tsv"
+    table.write_text(
+        "module\tsoftware_name\tfasta\tlevel\tlayer\n"
+        "dia_aif\tDIA-NN\tfasta/HYE.fasta\tion\tPrecursor_Quantity\n"
+    )
+    context = proteobench_context(tmp_path).model_copy(update={"workflow_table": table})
+
+    (run,) = plasma_run_steps(context)
+
+    assert workflow_tools("plasma_run") == ("apb-proteobench",)
+    assert workflow_table_name("plasma_run") == "workflow_plasma.tsv"
+    assert run.command[1:3] == ["run", "quant"]
+    assert run.command[run.command.index("--layer") + 1] == "Precursor_Quantity"
+    assert run.command[run.command.index("--level") + 1] == "ion"
+    assert run.outputs[0].path.name == "scored.h5ad", "one level"
+    assert "--scores" in run.command
 
 
 def test_pmultiqc_workflow_times_export_and_report_as_separate_steps(tmp_path: Path) -> None:
@@ -1531,6 +1555,8 @@ def test_entrapment_workflow_runs_the_entrapment_command_on_the_protein_database
         "fasta",
     ]
     assert planned[0].outputs[0].path.name == "scored.h5ad", "one level"
+    scores = Path(command[command.index("--scores") + 1])
+    assert Artifact(role="proteobench_scores", path=scores) in planned[0].outputs
 
 
 def test_entrapment_table_names_what_acquisition_fetches() -> None:

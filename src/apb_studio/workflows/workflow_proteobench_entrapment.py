@@ -6,6 +6,7 @@ from apb_studio.corpus.models import Artifact, StepSpec
 from apb_studio.corpus.tables import join_workflow, resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.artifacts import representation, single_level_result_path
+from apb_studio.workflows.proteobench_scoring import SCORES_NAME
 from apb_studio.workflows.software import parameter_software
 
 WORKFLOW_COLUMNS = ("module", "fasta")
@@ -32,6 +33,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
     parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
     fasta = resolve_file(context.data_root, workflow["fasta"])
     scored = single_level_result_path(context.output_dir, "scored", context.format)
+    scores = context.output_dir / SCORES_NAME
     timings_dir = context.output_dir / "timings"
 
     return [
@@ -51,6 +53,8 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                 dataset.module,
                 "--output",
                 str(scored),
+                "--scores",
+                str(scores),
                 "--timings-dir",
                 str(timings_dir),
             ],
@@ -66,6 +70,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
             outputs=[
                 Artifact(role="result", path=scored, format=context.format),
                 representation(scored),
+                Artifact(role="proteobench_scores", path=scores),
                 Artifact(role="tool_timings", path=timings_dir / "apb2.convert.timings.json"),
                 Artifact(
                     role="tool_timings",
