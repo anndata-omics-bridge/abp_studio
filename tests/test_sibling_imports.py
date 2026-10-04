@@ -6,18 +6,17 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
-SIBLINGS = frozenset(
-    {
-        "apb2",
-        "apb_aggregate",
-        "apb_catalog",
-        "apb_fasta",
-        "apb_msmu",
-        "apb_proteobench",
-        "protein_fasta",
-        "prozor",
-    }
-) - {"apb_studio"}
+FOLDERS = ("src", "tests", "scripts")
+SIBLINGS = frozenset({
+    "apb2",
+    "apb_aggregate",
+    "apb_catalog",
+    "apb_fasta",
+    "apb_msmu",
+    "apb_proteobench",
+    "protein_fasta",
+    "prozor",
+}) - {"apb_studio"}
 
 
 def _sibling_modules(path: Path) -> list[str]:
@@ -35,7 +34,7 @@ def _sibling_modules(path: Path) -> list[str]:
 
 
 def test_siblings_are_imported_only_through_their_api() -> None:
-    sources = sorted((ROOT / "src").rglob("*.py")) + sorted((ROOT / "tests").rglob("*.py"))
+    sources = sorted(path for folder in FOLDERS for path in (ROOT / folder).rglob("*.py"))
     offenders = [
         f"{path.relative_to(ROOT)}: {module}"
         for path in sources

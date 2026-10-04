@@ -36,9 +36,6 @@ def test_the_packaged_configuration_covers_every_module() -> None:
     assert entrapment.repo_name == "Results_entrapment_ion_DIA_Astral"
     assert entrapment.fasta.endswith("_entrapment_pep.fasta")
     assert len(config.fasta_urls) == 4
-    assert [url.rsplit("/", 1)[-1] for url in config.module_data_urls] == [
-        "ProteoBenchFASTA_Entrapment_Human_with_contaminants_entrapment_pep.txt.gz"
-    ]
 
 
 def test_a_module_the_configuration_does_not_declare_is_an_error() -> None:

@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-04: Studio imports no other anndata_bridge package. `scripts/make_apb2_test_samples.py` moved to apb2 as `scripts/make_test_samples.py`, `polars` left the `samples` extra, and the sibling-import test also scans `scripts/`. `fixture resources` no longer downloads ProteoBench's entrapment pairs file, which apb-proteobench stopped using; the `module_data_urls` setting is gone.
+
 - 2026-10-03: The corpus viewer reads apb-aggregate's history in `uns["apb"]["aggregate"]` as the native JSON list apb-aggregate now writes, and no longer parses `aggregate` as an embedded JSON string; `rule_json`, `plan_json` and `search_parameters` are still expanded.
 
 - 2026-10-02: The `aggregate` workflow's `method` cell takes `;`-separated apb-aggregate selections. Each runs as its own `aggregate-<method>` step and adds its layers to the previous step's result; intermediate results are `aggregated_<method>` with role `aggregated`, the last is `aggregated` with role `result`. `workflow_aggregate.csv` now runs `all` everywhere, and adds `rlm_confidence_case` and `rlm_confidence_precision` for AlphaPept, DIA-NN, MaxQuant and Spectronaut, whose every rule variant catalogues ion identification confidence.

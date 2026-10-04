@@ -41,7 +41,6 @@ class ProteoBenchConfig(BaseModel):
     schema_version: int
     datasets_base_url: str = Field(min_length=1)
     fasta_urls: tuple[str, ...] = Field(min_length=1)
-    module_data_urls: tuple[str, ...] = ()
     modules: tuple[ModuleConfig, ...] = Field(min_length=1)
 
     @property

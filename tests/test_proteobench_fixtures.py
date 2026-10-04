@@ -513,17 +513,15 @@ def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.M
         rawdb._write_downloads(store, numeric, numeric)
 
 
-def test_resources_fetch_fastas_and_module_data(
+def test_resources_fetch_fastas_and_write_their_databases(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = Store(tmp_path)
     archive = _zip_bytes({"reference.fasta": b">P1\nAAAA\n", "__MACOSX/meta": b"x"})
-    pairs = b"sequence\tpeptide_type\nAAAA\ttarget\n"
     one_module = rawdb.CONFIG.model_copy(
         update={
             "modules": (rawdb.CONFIG.module("dda_qexactive"),),
             "fasta_urls": ("https://server/fasta.zip",),
-            "module_data_urls": ("https://server/module_data/pairs.txt.gz",),
         }
     )
     monkeypatch.setattr(rawdb, "CONFIG", one_module)
@@ -531,19 +529,15 @@ def test_resources_fetch_fastas_and_module_data(
 
     def get(url: str, **_kwargs: object) -> _Response:
         requested.append(url)
-        return _Response(content=pairs if url.endswith(".txt.gz") else archive)
+        return _Response(content=archive)
 
     monkeypatch.setattr(rawdb.requests, "get", get)
     rawdb.resources(store=tmp_path)
-    assert requested == [
-        "https://server/fasta.zip",
-        "https://server/module_data/pairs.txt.gz",
-    ], "module definitions are not fetched"
+    assert requested == ["https://server/fasta.zip"], "module definitions are not fetched"
     assert (store.fasta_dir / "reference.fasta").exists()
     database = pq.read_table(store.fasta_dir / "reference.parquet", columns=["id", "sequence"])
     assert database.to_pylist() == [{"id": "P1", "sequence": "AAAA"}], "parsed by protein-fasta"
     assert not (store.fasta_dir / "__MACOSX").exists()
-    assert (store.module_data_dir / "pairs.txt.gz").read_bytes() == pairs, "kept as fetched"
     assert not (tmp_path / "modules").exists()
 
 

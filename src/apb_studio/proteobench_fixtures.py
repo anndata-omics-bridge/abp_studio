@@ -583,7 +583,7 @@ def download(*, store: Path | None = None, module: ModuleKey | None = None) -> N
 
 
 def resources(*, store: Path | None = None) -> None:
-    """Download every reference FASTA and the module data files.
+    """Download every reference FASTA and write its protein-fasta database.
 
     Module definitions are not fixtures: workflows name apb-proteobench's packaged modules.
 
@@ -603,14 +603,6 @@ def resources(*, store: Path | None = None) -> None:
         shutil.rmtree(macos_metadata)
     logger.info("extracted FASTAs to {}", target.fasta_dir)
     _write_protein_databases(target)
-
-    target.module_data_dir.mkdir(parents=True, exist_ok=True)
-    for url in CONFIG.module_data_urls:
-        logger.info("downloading {}", url)
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        (target.module_data_dir / url.rsplit("/", 1)[-1]).write_bytes(response.content)
-    logger.info("wrote module data to {}", target.module_data_dir)
 
     _write_resource_summary(target)
     fixture_index.write(target)

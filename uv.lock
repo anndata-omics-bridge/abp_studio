@@ -285,7 +285,6 @@ dev = [
     { name = "pandas-stubs" },
     { name = "pip-audit" },
     { name = "pmultiqc" },
-    { name = "polars" },
     { name = "pre-commit" },
     { name = "protein-fasta", extra = ["cli"] },
     { name = "pylint" },
@@ -301,7 +300,6 @@ samples = [
     { name = "apb2" },
     { name = "multiqc" },
     { name = "pmultiqc" },
-    { name = "polars" },
     { name = "protein-fasta", extra = ["cli"] },
 ]
 
@@ -332,7 +330,6 @@ requires-dist = [
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.10,<3" },
     { name = "platformdirs", specifier = ">=4" },
     { name = "pmultiqc", marker = "extra == 'samples'", specifier = ">=0.0.48,<0.1" },
-    { name = "polars", marker = "extra == 'samples'" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5,<5" },
     { name = "protein-fasta", extras = ["cli"], marker = "extra == 'samples'", editable = "../protein_fasta" },
     { name = "psutil", specifier = ">=7" },

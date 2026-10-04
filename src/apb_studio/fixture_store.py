@@ -54,11 +54,6 @@ class Store:
         return self.root / "fasta"
 
     @property
-    def module_data_dir(self) -> Path:
-        """Return the directory holding module data other than FASTAs."""
-        return self.root / "module_data"
-
-    @property
     def resources_csv(self) -> Path:
         """Which FASTA each module uses, and whether it is present."""
         return self.root / RESOURCES_NAME
