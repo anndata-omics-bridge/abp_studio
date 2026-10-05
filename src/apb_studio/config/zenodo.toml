@@ -1,0 +1,108 @@
+# What the fixture store fetches from Zenodo.
+#
+# One [[records]] block per Zenodo record; its `name` is both the store folder
+# (`zenodo/<name>/`) and the corpus it is exported into (`corpuses/<name>.csv`). Each
+# dataset lands in `zenodo/<record>/<dataset>/`, with every record file stored under the
+# name on the left of `files` (gzipped record files are decompressed). `input` names the
+# vendor table a corpus row points at; without it the row points at the dataset folder, so
+# APB reads related tables together by their own names. `parameters` names the vendor
+# parameter file; without it the row has none, and only workflows that read no vendor
+# parameters can run it. docs/datasets.md describes the records.
+
+schema_version = 1
+
+[[records]]
+name = "maxquant_entrapment"
+record_id = 23150735
+
+[[records.datasets]]
+name = "maxquant_v2.8.1.0"
+module = "entrapment_dia_astral"
+software_name = "MaxQuant"
+software_version = "2.8.1.0"
+parameters = "mqpar.xml"
+files = { "evidence.txt" = "evidence.txt.gz", "peptides.txt" = "peptides.txt.gz", "modificationSpecificPeptides.txt" = "modificationSpecificPeptides.txt.gz", "proteinGroups.txt" = "proteinGroups.txt.gz", "mqpar.xml" = "mqpar.xml.gz", "sdrf.tsv" = "sdrf.tsv.gz" }
+
+[[records]]
+name = "directlfq"
+record_id = 22301508
+
+[[records.datasets]]
+name = "MaxQuant_boxcar"
+module = "directlfq"
+software_name = "MaxQuant"
+files = { "evidence.txt" = "MaxQuant_boxcar__evidence.txt.gz", "peptides.txt" = "MaxQuant_boxcar__peptides.txt.gz" }
+
+[[records.datasets]]
+name = "MaxQuant_Kuster200"
+module = "directlfq"
+software_name = "MaxQuant"
+files = { "evidence.txt" = "MaxQuant_Kuster200__evidence.txt.gz", "peptides.txt" = "MaxQuant_Kuster200__peptides.txt.gz" }
+
+[[records.datasets]]
+name = "kuster_tissue_data"
+module = "directlfq"
+software_name = "MaxQuant"
+files = { "evidence.txt" = "kuster_tissue_data__evidence.txt.gz", "peptides.txt" = "kuster_tissue_data__peptides.txt.gz" }
+
+[[records.datasets]]
+name = "maxquant_yeast_interactome"
+module = "directlfq"
+software_name = "MaxQuant"
+files = { "evidence.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__evidence.txt.gz", "peptides.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__peptides.txt.gz" }
+
+[[records.datasets]]
+name = "Spectronaut_LargeFC"
+module = "directlfq"
+software_name = "Spectronaut"
+input = "20210210_154121_S209-S-1-240min_Report.tsv"
+files = { "20210210_154121_S209-S-1-240min_Report.tsv" = "Spectronaut_LargeFC__20210210_154121_S209-S-1-240min_Report.tsv.gz" }
+
+[[records.datasets]]
+name = "Spectronaut_LargeFC_re_run_SN15"
+module = "directlfq"
+software_name = "Spectronaut"
+input = "20220607_153923_MP-LFC-MS1var-OT-S1-120kMS1_Report.tsv"
+files = { "20220607_153923_MP-LFC-MS1var-OT-S1-120kMS1_Report.tsv" = "Spectronaut_LargeFC__re_run_SN15__20220607_153923_MP-LFC-MS1var-OT-S1-120kMS1_Report.tsv.gz" }
+
+[[records.datasets]]
+name = "Spectronaut_LargeFC_re_run_DIANN"
+module = "directlfq"
+software_name = "DIA-NN"
+input = "report.tsv"
+files = { "report.tsv" = "Spectronaut_LargeFC__re_run_DIANN__report.tsv.gz" }
+
+[[records.datasets]]
+name = "diann_charite_dataset"
+module = "directlfq"
+software_name = "DIA-NN"
+input = "Charite-DIA-NN_analysis.txt"
+files = { "Charite-DIA-NN_analysis.txt" = "diann_charite_dataset__Charite-DIA-NN_analysis.txt.gz" }
+
+[[records.datasets]]
+name = "iq_spectronaut_example_file"
+module = "directlfq"
+software_name = "Spectronaut"
+input = "DIA-report-long-format.txt"
+files = { "DIA-report-long-format.txt" = "iq_spectronaut_example_file__DIA-report-long-format.txt.gz" }
+
+[[records.datasets]]
+name = "quicktests_diann"
+module = "directlfq"
+software_name = "DIA-NN"
+input = "shortened_input.tsv"
+files = { "shortened_input.tsv" = "quicktests__diann__shortened_input.tsv.gz" }
+
+[[records.datasets]]
+name = "quicktests_mq_evidence"
+module = "directlfq"
+software_name = "MaxQuant"
+input = "shortened_input.tsv"
+files = { "shortened_input.tsv" = "quicktests__mq_evidence__shortened_input.tsv.gz" }
+
+[[records.datasets]]
+name = "quicktests_spectronaut"
+module = "directlfq"
+software_name = "Spectronaut"
+input = "shortened_input.tsv"
+files = { "shortened_input.tsv" = "quicktests__spectronaut__shortened_input.tsv.gz" }

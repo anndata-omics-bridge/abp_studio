@@ -1,8 +1,9 @@
-"""Manage ProteoBench fixtures.
+"""Manage ProteoBench and Zenodo fixtures.
 
 ``corpus`` refreshes the remote submission catalog, downloads the selected vendor tables
 and parameter files, downloads every reference FASTA, and writes the
-fixture metadata and runner corpus CSV. ``clean`` deletes fixture-store contents.
+fixture metadata and runner corpus CSV; its Zenodo commands download one configured
+record instead. ``clean`` deletes fixture-store contents.
 ``view`` serves the fixture-store browser. The store root is Studio's configured
 ``test_data_root``.
 """
@@ -15,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import zipfile
 from collections.abc import Callable
 from contextlib import chdir
@@ -32,11 +32,13 @@ from cyclopts import App
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from apb_studio import fixture_index
+from apb_studio import fixture_index, zenodo_fixtures
 from apb_studio.corpus.config import config_path, ensure_config
+from apb_studio.corpus.tables import CORPUS_COLUMNS, read_rows, write_rows
 from apb_studio.corpus_export import export_corpus
 from apb_studio.disk import atomic_write_text
-from apb_studio.fixture_store import INDEX_NAME, TABLE_NAMES, Store
+from apb_studio.fetch import DOWNLOAD_ATTEMPTS, REQUEST_TIMEOUT, fetch_file
+from apb_studio.fixture_store import DOWNLOAD_COLUMNS, INDEX_NAME, TABLE_NAMES, Store
 from apb_studio.fixture_viewer.server import run as serve_store
 from apb_studio.proteobench_config import packaged_config
 from apb_studio.settings import load_settings
@@ -44,20 +46,8 @@ from apb_studio.settings import load_settings
 # The modules, their results repositories, their settings URLs and the reference FASTAs are
 # ProteoBench's facts and live in config/proteobench.toml; see proteobench_config.py.
 CONFIG = packaged_config()
-
-# Connect and read timeouts for every request. Without a read timeout a server that
-# accepts the connection and then stops sending hangs the download forever: the socket
-# stays ESTABLISHED, no bytes arrive, and nothing on screen ever changes. The read
-# timeout applies per chunk, so a stalled transfer fails instead of waiting out the night.
-REQUEST_TIMEOUT = (10, 120)
-
-# A stalled transfer costs an attempt, not the whole file: the bytes already on disk stay
-# in a ``.part`` file and the next attempt asks for the rest with a Range header. The
-# datasets server answers 206, so a 36 MB archive that died at 69% resumes there.
-DOWNLOAD_ATTEMPTS = 5
-FIRST_RETRY_SECONDS = 2.0
-MAX_RETRY_SECONDS = 30.0
-CHUNK_BYTES = 1 << 20
+# The published Zenodo records live in config/zenodo.toml; see zenodo_fixtures.py.
+ZENODO = zenodo_fixtures.packaged_config()
 
 ModuleKey = Literal[
     "dda_qexactive",
@@ -201,93 +191,19 @@ def _hrefs_ending_with(soup: BeautifulSoup, suffix: str) -> list[str]:
     return hrefs
 
 
-def _accept(part: Path, destination: Path) -> Path:
-    """Move a finished download into place, refusing bytes that are not a ZIP."""
-    if not part.is_file():
-        raise OSError(f"nothing downloaded: {part.name}")
+def _check_zip(part: Path) -> None:
+    """Refuse finished bytes that are not a ZIP archive."""
     if not zipfile.is_zipfile(part):
         part.unlink()
         raise OSError(f"not a ZIP archive: {part.name}")
-    return part.replace(destination)
-
-
-def _expected_total(response: Any, resumed_from: int) -> int | None:
-    """Read the archive's full length from a response, ``None`` when it says nothing."""
-    content_range = response.headers.get("Content-Range", "")
-    if "/" in content_range:
-        total = content_range.rsplit("/", 1)[1].strip()
-        return int(total) if total.isdigit() else None
-    length = response.headers.get("Content-Length", "")
-    return resumed_from + int(length) if length.isdigit() else None
-
-
-def _is_permanent(error: Exception) -> bool:
-    """Say whether retrying an HTTP failure could ever help."""
-    response = getattr(error, "response", None)
-    status = getattr(response, "status_code", None)
-    return isinstance(status, int) and 400 <= status < 500 and status not in {408, 429}
 
 
 def fetch_zip(url: str, destination: Path, attempts: int = DOWNLOAD_ATTEMPTS) -> Path:
-    """Download one archive, resuming a partial file and retrying a stalled transfer.
+    """Download one archive, resuming and retrying as :func:`apb_studio.fetch.fetch_file` does.
 
-    Bytes accumulate in ``<destination>.part`` so an interrupted transfer is never mistaken
-    for a complete archive. Each attempt asks for the remainder with a ``Range`` header; a
-    server that ignores it answers 200 and the file restarts. The archive moves into place
-    only once its length matches what the server reports and it reads as a ZIP: a remote
-    file replaced between two attempts would otherwise leave two halves spliced together.
-
-    A 4xx other than 408 or 429 is raised at once — no amount of waiting fixes a URL that
-    is not there.
+    The archive moves into place only once it reads as a ZIP.
     """
-    part = destination.with_name(destination.name + ".part")
-    destination.unlink(missing_ok=True)
-    delay = FIRST_RETRY_SECONDS
-    for attempt in range(1, attempts + 1):
-        resumed_from = part.stat().st_size if part.is_file() else 0
-        headers = {"Range": f"bytes={resumed_from}-"} if resumed_from else {}
-        logger.info(
-            "downloading: {}{}",
-            url,
-            f" (resuming at {resumed_from} bytes)" if resumed_from else "",
-        )
-        try:
-            with requests.get(
-                url, stream=True, timeout=REQUEST_TIMEOUT, headers=headers
-            ) as response:
-                if response.status_code == 416:
-                    # Nothing left to send — but only believe that if what is on disk is
-                    # the length the server names. A shrunken remote file lands here too.
-                    total = _expected_total(response, 0)
-                    if resumed_from and total in {None, resumed_from}:
-                        logger.info("server reports nothing left to send: {}", part.name)
-                        return _accept(part, destination)
-                    logger.warning("range refused for {} bytes; restarting", resumed_from)
-                    part.unlink(missing_ok=True)
-                    raise OSError(f"range refused: {resumed_from} bytes on disk, {total} remote")
-                if resumed_from and response.status_code != 206:
-                    logger.warning("server ignored the range request; restarting {}", part.name)
-                    resumed_from = 0
-                response.raise_for_status()
-                total = _expected_total(response, resumed_from)
-                with part.open("ab" if resumed_from else "wb") as handle:
-                    for data in response.iter_content(CHUNK_BYTES):
-                        handle.write(data)
-            size = part.stat().st_size
-            if total is not None and size != total:
-                raise OSError(f"incomplete download: {size} of {total} bytes")
-            return _accept(part, destination)
-        except (requests.RequestException, OSError) as error:
-            if _is_permanent(error):
-                raise
-            if attempt == attempts:
-                raise
-            logger.warning(
-                "attempt {}/{} failed ({}); retrying in {:.0f}s", attempt, attempts, error, delay
-            )
-            time.sleep(delay)
-            delay = min(delay * 2, MAX_RETRY_SECONDS)
-    raise OSError(f"could not download {url}")  # pragma: no cover - the loop returns or raises
+    return fetch_file(url, destination, _check_zip, attempts)
 
 
 def get_raw_data(
@@ -521,6 +437,7 @@ def _write_downloads(target: Store, catalog_df: pd.DataFrame, requested: pd.Data
                 ),
             }
         out_rows.append(record)
+    out_rows.extend(zenodo_fixtures.download_rows(target, ZENODO))
 
     out_df = pd.DataFrame(out_rows)
     atomic_write_text(target.downloads_csv, out_df.to_csv(index=False))
@@ -807,6 +724,47 @@ def corpus_smallest_per_software() -> None:
 def corpus_smallest_per_software_version() -> None:
     """Download the smallest fixture per module/software/version into corpuses/routine.csv."""
     _acquire_corpus("smallest_per_software_version", "routine.csv")
+
+
+def _write_zenodo_downloads(target: Store) -> None:
+    """Refresh the Zenodo rows of downloads.csv, keeping every ProteoBench row as written."""
+    kept = (
+        [
+            row
+            for row in read_rows(target.downloads_csv)
+            if not row["repo_name"].startswith(zenodo_fixtures.REPO_PREFIX)
+        ]
+        if target.downloads_csv.is_file()
+        else []
+    )
+    rows = [*kept, *zenodo_fixtures.download_rows(target, ZENODO)]
+    write_rows(target.downloads_csv, DOWNLOAD_COLUMNS, rows)
+    logger.info("written to {}", target.downloads_csv)
+
+
+def _acquire_zenodo_corpus(name: str) -> None:
+    """Acquire one Zenodo record and publish its runner-facing CSVs."""
+    target = _store(None)
+    record = ZENODO.record(name)
+    zenodo_fixtures.acquire(target, record)
+    corpus_path = _corpus_dir(target) / f"{record.name}.csv"
+    write_rows(corpus_path, CORPUS_COLUMNS, zenodo_fixtures.corpus_rows(target, record))
+    _write_zenodo_downloads(target)
+    ensure_config(config_path(target.root))
+    logger.info("written to {}", corpus_path)
+    fixture_index.write(target)
+
+
+@corpus_app.command(name="maxquant-entrapment")
+def corpus_maxquant_entrapment() -> None:
+    """Download the related MaxQuant entrapment tables from Zenodo; write its corpus CSV."""
+    _acquire_zenodo_corpus("maxquant_entrapment")
+
+
+@corpus_app.command(name="directlfq")
+def corpus_directlfq() -> None:
+    """Download the directLFQ benchmark mirror from Zenodo and write corpuses/directlfq.csv."""
+    _acquire_zenodo_corpus("directlfq")
 
 
 @app.command

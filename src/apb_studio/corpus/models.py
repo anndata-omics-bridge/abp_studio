@@ -26,10 +26,14 @@ class Record(BaseModel):
 
 
 class Dataset(Record):
-    """Exactly the four corpus CSV columns; paths are relative to the data root."""
+    """Exactly the four corpus CSV columns; paths are relative to the data root.
+
+    ``input_file`` names one vendor table or a folder of related tables. An empty
+    ``vendor_parameter_file`` means the dataset has none.
+    """
 
     input_file: str = Field(min_length=1)
-    vendor_parameter_file: str = Field(min_length=1)
+    vendor_parameter_file: str
     module: str = Field(min_length=1)
     software_name: str = Field(min_length=1)
 

@@ -1,6 +1,6 @@
 # APB Studio
 
-APB Studio downloads ProteoBench fixtures, runs concrete Python workflows over existing files, and serves two local JavaScript viewers.
+APB Studio downloads ProteoBench and Zenodo fixtures, runs concrete Python workflows over existing files, and serves two local JavaScript viewers.
 
 ## Start
 
@@ -24,8 +24,12 @@ uv run fixture corpus all
 uv run fixture corpus smallest-per-module
 uv run fixture corpus smallest-per-software
 uv run fixture corpus smallest-per-software-version
+uv run fixture corpus maxquant-entrapment
+uv run fixture corpus directlfq
 uv run fixture view
 ```
+
+`maxquant-entrapment` and `directlfq` download the Zenodo records described in [docs/datasets.md](docs/datasets.md) and write `maxquant_entrapment.csv` and `directlfq.csv`.
 
 Every generated corpus has the same minimal schema:
 

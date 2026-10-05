@@ -54,6 +54,8 @@ def load_corpus(path: Path) -> list[Dataset]:
 
 def resolve_file(root: Path, value: str) -> Path:
     """Resolve a file path within the explicit data root; presence is checked at execution."""
+    if not value:
+        raise ValueError(f"Empty file path below data root {root}")
     path = (root / value).resolve()
     if not path.is_relative_to(root.resolve()):
         raise ValueError(f"File path escapes data root: {value}")
@@ -61,8 +63,13 @@ def resolve_file(root: Path, value: str) -> Path:
 
 
 def resolve_secondary_inputs(root: Path, value: str) -> tuple[Path, ...]:
-    """Find fixture-owned secondary inputs derived from the primary input filename."""
+    """Find fixture-owned secondary inputs derived from the primary input filename.
+
+    A folder input has none: APB reads the related tables inside it by their own names.
+    """
     primary = resolve_file(root, value)
+    if primary.is_dir():
+        return ()
     return tuple(
         path.resolve()
         for path in sorted(primary.parent.glob(f"{primary.stem}_*"))

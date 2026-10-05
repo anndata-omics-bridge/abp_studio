@@ -21,6 +21,7 @@ import requests
 from bs4 import BeautifulSoup
 from pydantic import ValidationError
 
+from apb_studio import fetch, zenodo_fixtures
 from apb_studio import proteobench_fixtures as rawdb
 from apb_studio.fixture_store import Store
 from apb_studio.settings import StudioSettings
@@ -135,9 +136,13 @@ def test_get_merged_json_discovers_redirected_root(
 
 def test_every_request_carries_a_timeout() -> None:
     """A server that accepts and then stops sending must fail, not hang the run."""
-    tree = ast.parse(Path(rawdb.__file__).read_text(encoding="utf-8"))
+    trees = [
+        ast.parse(Path(module.__file__ or "").read_text(encoding="utf-8"))
+        for module in (rawdb, fetch, zenodo_fixtures)
+    ]
     calls = [
         node
+        for tree in trees
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
@@ -157,7 +162,7 @@ def test_a_stalled_archive_resumes_where_it_stopped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A dead connection costs one attempt, not the bytes already on disk."""
-    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _seconds: None)
     payload = _zip_bytes({"input_file.tsv": b"a\tb\n1\t2\n"})
     half = len(payload) // 2
     calls: list[dict[str, str]] = []
@@ -192,7 +197,7 @@ def test_a_stalled_archive_resumes_where_it_stopped(
 def test_a_server_that_ignores_the_range_restarts_the_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _seconds: None)
     (tmp_path / "archive.zip.part").write_bytes(b"stale prefix")
     payload = _zip_bytes({"input_file.tsv": b"x\n"})
     monkeypatch.setattr(
@@ -207,7 +212,7 @@ def test_a_server_that_ignores_the_range_restarts_the_archive(
 def test_a_download_that_never_completes_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _seconds: None)
     attempts = 0
 
     def _get(_url: str, **_kwargs: Any) -> _Response:
@@ -223,7 +228,7 @@ def test_a_download_that_never_completes_raises(
 
 def test_a_missing_url_is_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No amount of waiting turns a 404 into an archive."""
-    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _seconds: None)
     attempts = 0
 
     def _get(_url: str, **_kwargs: Any) -> _Response:
@@ -241,7 +246,7 @@ def test_bytes_that_are_not_an_archive_are_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A remote file replaced mid-resume splices two halves; the result is not a ZIP."""
-    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         rawdb.requests, "get", lambda _url, **_k: _Response(content=b"an error page, not a zip")
     )
@@ -253,7 +258,7 @@ def test_bytes_that_are_not_an_archive_are_refused(
 def test_nothing_left_to_send_accepts_only_a_complete_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rawdb.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _seconds: None)
     payload = _zip_bytes({"input_file.tsv": b"x\n"})
     part = tmp_path / "archive.zip.part"
     part.write_bytes(payload)
@@ -686,7 +691,9 @@ def test_acquire_corpus_materializes_the_selected_strategy(
     assert written["software_name"].tolist() == ["A", "C"]
     assert json.loads((tmp_path / "corpuses.json").read_text(encoding="utf-8")) == {
         "all": "corpuses/all.csv",
+        "directlfq": "corpuses/directlfq.csv",
         "entrapment": "corpuses/entrapment.csv",
+        "maxquant_entrapment": "corpuses/maxquant_entrapment.csv",
         "plasma": "corpuses/plasma.csv",
         "proteobench": "corpuses/proteobench.csv",
         "routine": "corpuses/routine.csv",

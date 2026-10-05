@@ -1,6 +1,8 @@
 {
   "all": "corpuses/all.csv",
+  "directlfq": "corpuses/directlfq.csv",
   "entrapment": "corpuses/entrapment.csv",
+  "maxquant_entrapment": "corpuses/maxquant_entrapment.csv",
   "plasma": "corpuses/plasma.csv",
   "proteobench": "corpuses/proteobench.csv",
   "routine": "corpuses/routine.csv"

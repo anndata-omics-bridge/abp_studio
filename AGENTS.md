@@ -4,7 +4,7 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 
 ## Boundaries
 
-- Acquisition owns `downloads.csv`, `resources.csv`, and downloaded fixtures. `corpus_export.py` publishes existing input/parameter pairs as exactly `input_file,vendor_parameter_file,module,software_name`.
+- Acquisition owns `downloads.csv`, `resources.csv`, and downloaded fixtures. `corpus_export.py` publishes existing ProteoBench input/parameter pairs, and `zenodo_fixtures.py` the Zenodo records of `config/zenodo.toml`, as exactly `input_file,vendor_parameter_file,module,software_name`. A Zenodo row may name a dataset folder as `input_file` and leave `vendor_parameter_file` empty.
 - Execution settings explicitly name an inventory in `corpuses/`, an optional `workflow_<name>.csv`, and an independent data root. CSV row paths are relative to that data root, never the CSV directory. Download status never enters execution.
 - The viewer selects one stable corpus/workflow/format combination. `configure` groups effective values under their exact source files, expands selection and workflow-table rows, and never writes configuration or creates a run. Current snapshots preserve both the full inventory and selected rows; do not infer unrecorded provenance for older runs.
 - Each concrete `workflows/workflow_<name>.py` uses the common CLI and shared `corpus/runner.py`. Scripts own their linear APB commands and explicit CSV joins.
@@ -28,6 +28,8 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 | Acquire routine corpus | `uv run fixture corpus smallest-per-module` |
 | Acquire entrapment corpus | `uv run fixture corpus entrapment` |
 | Acquire plasma corpus | `uv run fixture corpus plasma` |
+| Acquire Zenodo MaxQuant entrapment corpus | `uv run fixture corpus maxquant-entrapment` |
+| Acquire Zenodo directLFQ corpus | `uv run fixture corpus directlfq` |
 | Rebuild FASTA protein databases | `uv run fixture databases` |
 | List packaged workflows | `uv run corpus workflows` |
 | Inspect configuration | `uv run corpus configure` |

@@ -128,6 +128,47 @@ def test_secondary_inputs_are_fixture_owned_siblings(tmp_path: Path) -> None:
     assert resolve_secondary_inputs(tmp_path, "submission/input_file.tsv") == (secondary.resolve(),)
 
 
+def test_a_folder_input_has_no_secondary_inputs(tmp_path: Path) -> None:
+    """APB reads the related tables inside a folder by their own names."""
+    folder = tmp_path / "dataset"
+    folder.mkdir()
+    (folder / "evidence.txt").write_text("ion", encoding="utf-8")
+    (tmp_path / "dataset_peptides.txt").write_text("not a companion", encoding="utf-8")
+
+    assert resolve_secondary_inputs(tmp_path, "dataset") == ()
+
+
+def test_a_dataset_without_parameters_refuses_parameter_workflows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = Dataset.model_validate({**dataset().model_dump(), "vendor_parameter_file": ""})
+    (tmp_path / row.input_file).write_text("data")
+    corpus = tmp_path / "corpus.csv"
+    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump()])
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "__init__.py").write_text("")
+    (workflows / "workflow_convert.py").write_text("TOOLS = ('apb2',)\n")
+    monkeypatch.setattr(discovery, "WORKFLOWS", workflows)
+    monkeypatch.setattr(runs, "_tool_version", lambda _executable: "apb2 1.0")
+    settings = ExecutionSettings(
+        corpus_name="routine",
+        corpus=corpus,
+        data_root=tmp_path,
+        workflow="convert",
+        format="hdf5",
+        workflow_table=None,
+        tools={"apb2": Path(sys.executable)},
+        cores=1,
+    )
+    root, manifest = prepare_run([row], output_root=tmp_path / "output", settings=settings)
+
+    with pytest.raises(ValueError, match="has no vendor parameter file"):
+        runs.dataset_dependencies(root, manifest, row, manifest.reports[0])
+    with pytest.raises(ValueError, match="Empty file path"):
+        resolve_file(tmp_path, row.vendor_parameter_file)
+
+
 def test_download_sizes_join_only_selected_inputs_with_explicit_columns(tmp_path: Path) -> None:
     first = dataset()
     second = first.model_copy(update={"input_file": "other.txt"})
@@ -729,7 +770,9 @@ def test_corpus_config_bootstrap_preserves_existing_config(tmp_path: Path) -> No
     ensure_config(source)
     assert load_corpuses(source) == {
         "all": tmp_path / "corpuses" / "all.csv",
+        "directlfq": tmp_path / "corpuses" / "directlfq.csv",
         "entrapment": tmp_path / "corpuses" / "entrapment.csv",
+        "maxquant_entrapment": tmp_path / "corpuses" / "maxquant_entrapment.csv",
         "plasma": tmp_path / "corpuses" / "plasma.csv",
         "proteobench": tmp_path / "corpuses" / "proteobench.csv",
         "routine": tmp_path / "corpuses" / "routine.csv",

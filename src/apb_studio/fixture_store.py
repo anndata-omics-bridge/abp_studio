@@ -15,6 +15,18 @@ RESOURCES_NAME = "resources.csv"
 INDEX_NAME = "index.json"
 SUMMARY_NAME = "summary.json"
 TABLE_NAMES = (CATALOG_NAME, DOWNLOADS_NAME, RESOURCES_NAME)
+# downloads.csv: one row per catalogued ProteoBench submission and per configured Zenodo
+# dataset, keyed by (repo_name, intermediate_hash).
+DOWNLOAD_COLUMNS = (
+    "module",
+    "repo_name",
+    "intermediate_hash",
+    "software_name",
+    "software_version",
+    "input_file_path",
+    "input_file_size_bytes",
+    "status",
+)
 
 # Where the viewer looks for one submission's summary, given its catalog row. The pattern
 # is published in ``index.json`` so the browser composes the URL and asks for the file:
@@ -74,3 +86,12 @@ class Store:
     def submission_summary(self, repo_name: str, intermediate_hash: str) -> Path:
         """Return one submission's summary sidecar, written when its files land."""
         return self.submission_dir(repo_name, intermediate_hash) / SUMMARY_NAME
+
+    @property
+    def zenodo_dir(self) -> Path:
+        """Datasets downloaded from Zenodo records, ``<record>/<dataset>/``."""
+        return self.root / "zenodo"
+
+    def zenodo_dataset_dir(self, record: str, dataset: str) -> Path:
+        """Return the folder holding one Zenodo dataset's decompressed files."""
+        return self.zenodo_dir / record / dataset

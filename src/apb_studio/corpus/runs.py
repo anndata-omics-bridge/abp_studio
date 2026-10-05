@@ -278,6 +278,11 @@ def dataset_dependencies(
         *tool_dependencies(manifest.tools),
     ]
     if workflow_uses_vendor_parameters(manifest.workflow):
+        if not row.vendor_parameter_file:
+            raise ValueError(
+                f"Workflow {manifest.workflow} reads vendor parameters, "
+                f"but {row.input_file} has no vendor parameter file"
+            )
         dependencies.append(resolve_file(manifest.data_root, row.vendor_parameter_file))
     if manifest.workflow_table is not None:
         dependencies.append(root / manifest.workflow_table)

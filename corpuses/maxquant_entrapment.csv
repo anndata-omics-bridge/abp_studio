@@ -1,0 +1,2 @@
+input_file,vendor_parameter_file,module,software_name
+zenodo/maxquant_entrapment/maxquant_v2.8.1.0,zenodo/maxquant_entrapment/maxquant_v2.8.1.0/mqpar.xml,entrapment_dia_astral,MaxQuant

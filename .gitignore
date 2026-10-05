@@ -21,6 +21,4 @@ public/
 *.h5ad
 *.h5mu
 
-# Carpet diagnostics output (make carpets)
 build/
-.carpet/

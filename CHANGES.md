@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-05: Carpet Scan is gone: the `dev` extra no longer installs `carpet-scan`, and the report-only `carpet-scan` pre-commit hook is removed. Carpet Scan moved to a personal experimental repository.
+
 - 2026-10-04: `proteobench_run` and `proteobench_entrapment` write each dataset's ProteoBench datapoint as `scores.json` through `apb-proteobench --scores`; the new `plasma_run` workflow scores the plasma corpus's table-named layers the same way, without pMultiQC. `proteobench_run` and `plasma_run` share one step builder in `workflows/proteobench_scoring.py`.
 
 - 2026-10-04: Studio imports no other anndata_bridge package. `scripts/make_apb2_test_samples.py` moved to apb2 as `scripts/make_test_samples.py`, `polars` left the `samples` extra, and the sibling-import test also scans `scripts/`. `fixture resources` no longer downloads ProteoBench's entrapment pairs file, which apb-proteobench stopped using; the `module_data_urls` setting is gone.

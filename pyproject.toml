@@ -28,7 +28,6 @@ apb-fasta = { path = "../apb-fasta", editable = true }
 apb-proteobench = { path = "../apb-proteobench", editable = true }
 apb2 = { path = "../apb2", editable = true }
 protein-fasta = { path = "../protein_fasta", editable = true }
-carpet-scan = { git = "https://github.com/anndata-omics-bridge/carpet_scan.git", rev = "a98f45d21884a95fa79b7660b153bbadb9268e03" }
 
 [project.optional-dependencies]
 samples = [
@@ -42,8 +41,6 @@ samples = [
 ]
 dev = [
     "apb-studio[samples]",
-    # Carpet diagnostics; must live in Studio's own environment so grimp can import it.
-    "carpet-scan",
     "anndata",
     "deptry>=0.25.1,<0.26",
     "diff-cover>=10.4,<11",
