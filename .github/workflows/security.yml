@@ -21,23 +21,14 @@ jobs:
         with:
           path: apb_studio
 
-      # Siblings install from ../<path> through tool.uv.sources, including those of apb-aggregate,
-      # apb-fasta and apb-proteobench; bump these revisions together with uv.lock.
+      # Siblings install from ../<path> through tool.uv.sources, including those of apb-fasta
+      # and apb-proteobench; bump these revisions together with uv.lock.
       - name: Checkout APB2
         uses: actions/checkout@v7
         with:
           repository: anndata-omics-bridge/apb2
           ref: 293b5c8e1d86f2b4cd66aaf683d2b4367ff47fe8
           path: apb2
-
-      - name: Checkout apb-aggregate
-        uses: actions/checkout@v7
-        with:
-          repository: anndata-omics-bridge/apb-aggregate
-          ref: 15f40c55c2c8ccd5398947cd16662369bc3c50f8
-          path: apb-aggregate
-          # Private repository: a read-only token for apb-aggregate's contents.
-          token: ${{ secrets.APB_AGGREGATE_TOKEN }}
 
       - name: Checkout apb-catalog
         uses: actions/checkout@v7

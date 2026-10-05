@@ -87,45 +87,6 @@ wheels = [
 ]
 
 [[package]]
-name = "apb-aggregate"
-version = "0.4.0"
-source = { editable = "../apb-aggregate" }
-dependencies = [
-    { name = "apb-catalog" },
-    { name = "apb2" },
-    { name = "cyclopts" },
-    { name = "loguru" },
-    { name = "numpy" },
-    { name = "polars" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "apb-catalog", editable = "../apb-catalog" },
-    { name = "apb2", editable = "../apb2" },
-    { name = "cyclopts", specifier = ">=3" },
-    { name = "loguru", specifier = ">=0.7" },
-    { name = "numpy", specifier = ">=2" },
-    { name = "polars", specifier = ">=1.43,<2" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "build", specifier = ">=1.3,<2" },
-    { name = "deptry", specifier = ">=0.24,<1" },
-    { name = "pre-commit", specifier = ">=4,<5" },
-    { name = "pyright", specifier = "==1.1.414" },
-    { name = "pytest", specifier = ">=9,<10" },
-    { name = "pytest-cov", specifier = ">=7,<8" },
-    { name = "ruff", specifier = "==0.16.10" },
-    { name = "twine", specifier = ">=6,<7" },
-]
-docs = [
-    { name = "pymdown-extensions", specifier = ">=11,<12" },
-    { name = "zensical", specifier = "==0.0.43" },
-]
-
-[[package]]
 name = "apb-catalog"
 version = "0.1.1"
 source = { editable = "../apb-catalog" }
@@ -270,7 +231,6 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "anndata" },
-    { name = "apb-aggregate" },
     { name = "apb-fasta" },
     { name = "apb-proteobench" },
     { name = "apb2" },
@@ -291,7 +251,6 @@ dev = [
     { name = "ruff" },
 ]
 samples = [
-    { name = "apb-aggregate" },
     { name = "apb-fasta" },
     { name = "apb-proteobench" },
     { name = "apb2" },
@@ -308,7 +267,6 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "anndata", marker = "extra == 'dev'" },
-    { name = "apb-aggregate", marker = "extra == 'samples'", editable = "../apb-aggregate" },
     { name = "apb-fasta", marker = "extra == 'samples'", editable = "../apb-fasta" },
     { name = "apb-proteobench", marker = "extra == 'samples'", editable = "../apb-proteobench" },
     { name = "apb-studio", extras = ["samples"], marker = "extra == 'dev'" },

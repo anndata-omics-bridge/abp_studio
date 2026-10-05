@@ -11,6 +11,8 @@ uv run corpus run routine
 uv run corpus view
 ```
 
+The `aggregate` workflow runs the private `apb-aggregate` command, which APB Studio does not install. Install it once with `uv tool install --editable ../apb-aggregate`, or pass `--aggregate-executable`; every other workflow runs without it.
+
 The corpus viewer is at http://127.0.0.1:8766/. `uv run corpus view` starts it or safely restarts the matching managed process; another viewer or service on the port is refused. `uv run corpus view stop` stops it. The viewer shows saved settings, the absolute server artifact directory, exact CSV inputs, workflow source, live dataset/step progress, stdout, stderr, errors, runtime, peak memory, and input/output-size charts. Input, parameter, TOML/FASTA resource, generated artifact, and frozen snapshot links retain complete filenames. Folders open as browsable listings in new tabs; text and HTML display inline. JSON opens directly as `application/json`, unchanged by the server, using the browser's native display. Binary files such as H5MU, H5AD, DuckDB and individual Parquet files download instead of opening preview tabs; APB Parquet directories remain browsable. Large files stream from disk. It reads persisted files and remains useful after the runner exits. Refresh polling happens every two seconds. `uv run fixture view` starts the fixture viewer on port 8765.
 
 The executables declared by the selected workflow must be on `PATH`. The development extra installs the workspace checkouts for local integration testing; Studio invokes them only through subprocesses.

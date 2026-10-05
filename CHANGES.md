@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-05: APB Studio no longer depends on the private apb-aggregate: the `samples` extra, `tool.uv.sources`, the lockfile and CI drop it, so public CI needs no token. The `aggregate` workflow still runs the `apb-aggregate` command when it is on `PATH` or given with `--aggregate-executable`; install it locally with `uv tool install --editable ../apb-aggregate`.
+
 - 2026-10-05: Carpet Scan is gone: the `dev` extra no longer installs `carpet-scan`, and the report-only `carpet-scan` pre-commit hook is removed. Carpet Scan moved to a personal experimental repository.
 
 - 2026-10-04: `proteobench_run` and `proteobench_entrapment` write each dataset's ProteoBench datapoint as `scores.json` through `apb-proteobench --scores`; the new `plasma_run` workflow scores the plasma corpus's table-named layers the same way, without pMultiQC. `proteobench_run` and `plasma_run` share one step builder in `workflows/proteobench_scoring.py`.

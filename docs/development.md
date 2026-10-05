@@ -6,6 +6,8 @@ Install the locked development and documentation environment:
 uv sync --frozen --extra dev --group docs
 ```
 
+The `aggregate` workflow runs the private `apb-aggregate` command, which APB Studio does not install. Install it once with `uv tool install --editable ../apb-aggregate`, or pass `--aggregate-executable`; every other workflow runs without it.
+
 The local hooks are the source of truth for GitHub Actions.
 
 ## Every commit
