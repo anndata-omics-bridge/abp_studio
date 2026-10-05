@@ -29,12 +29,58 @@ jobs:
           fetch-depth: 0
           path: apb_studio
 
-      - name: Checkout pinned APB
+      # Siblings install from ../<path> through tool.uv.sources, including those of apb-aggregate,
+      # apb-fasta and apb-proteobench; bump these revisions together with uv.lock.
+      - name: Checkout APB2
         uses: actions/checkout@v7
         with:
-          repository: anndata-omics-bridge/anndata-proteomics-bridge
-          ref: ec6668257b3229ee704b350ddf98a71f4a4d1cdf
-          path: apb
+          repository: anndata-omics-bridge/apb2
+          ref: 293b5c8e1d86f2b4cd66aaf683d2b4367ff47fe8
+          path: apb2
+
+      - name: Checkout apb-aggregate
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/apb-aggregate
+          ref: 15f40c55c2c8ccd5398947cd16662369bc3c50f8
+          path: apb-aggregate
+          # Private repository: a read-only token for apb-aggregate's contents.
+          token: ${{ secrets.APB_AGGREGATE_TOKEN }}
+
+      - name: Checkout apb-catalog
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/apb-catalog
+          ref: 1faa8f33e28dcb5eef01d5367b9ebce6e1e61d10
+          path: apb-catalog
+
+      - name: Checkout apb-fasta
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/apb-fasta
+          ref: ac40f0d80582a5a78bbc7b0f3ef00c9ec747da87
+          path: apb-fasta
+
+      - name: Checkout apb-proteobench
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/apb-proteobench
+          ref: 0f0444ab4568b7175963ac7135c17b9fe7ad1d26
+          path: apb-proteobench
+
+      - name: Checkout protein-fasta
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/protein-fasta
+          ref: 4048b16bcce895ca5d7a774d2ec0c11bb9bd34e2
+          path: protein_fasta
+
+      - name: Checkout Prozor
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/prozor
+          ref: ab7c41bdfbbe877d66236c5c33549b7747426ace
+          path: prozor
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0

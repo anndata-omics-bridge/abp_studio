@@ -141,7 +141,11 @@ def test_acquire_stores_verified_decompressed_files_once(
     zenodo_fixtures.acquire(store, record)
 
     related = store.zenodo_dataset_dir("testrecord", "related")
-    assert {path.name for path in related.iterdir()} == {"evidence.txt", "peptides.txt", "mqpar.xml"}
+    assert {path.name for path in related.iterdir()} == {
+        "evidence.txt",
+        "peptides.txt",
+        "mqpar.xml",
+    }
     assert (related / "evidence.txt").read_bytes() == TABLES["evidence.txt"]
     assert (store.zenodo_dataset_dir("testrecord", "single") / "report.tsv").read_bytes() == REPORT
 
