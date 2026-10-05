@@ -73,7 +73,7 @@ A workflow needs no runner change to become runnable. `--workflow <name>` select
 - `CORPUS` — required name from `corpuses.json`
 - `--workflow` — which workflow; default `convert`
 - `--format` — `hdf5`, `duckdb`, or `parquet`, passed through every APB step
-- `--cores` — maximum parallel Snakemake jobs
+- `--cores` — maximum parallel Snakemake jobs, default 3
 - `--dry-run` and `--force` — execution controls
 
 `corpus run <corpus>` resolves the name through the flat `corpuses.json` object and runs one selected workflow. Relative inventory paths are resolved beside that config file, so `routine`, `proteobench`, and `all` are ordinary editable mappings rather than CLI branches. The `proteobench` inventory is `all` without the three peptidoform submissions and is the full ion-level input for `proteobench_pmultiqc`. Corpus inventories and workflow resources remain configured in their CSV/text files, roots live in Studio's settings JSON, and required tools resolve from `PATH`. `corpus configure` reports each exact source file together with the values read from it, including configured corpuses and complete workflow-table rows; it never writes configuration.

@@ -79,6 +79,7 @@ def _resolve_executable(executable: Path | None, command: str, option: str) -> P
 _EXECUTABLE_OPTIONS = {
     "apb2": ("apb_executable", "apb-executable"),
     "apb-aggregate": ("aggregate_executable", "aggregate-executable"),
+    "apb-export": ("export_executable", "export-executable"),
     "apb-fasta": ("fasta_executable", "fasta-executable"),
     "apb-proteobench": ("proteobench_executable", "proteobench-executable"),
     "multiqc": ("multiqc_executable", "multiqc-executable"),
@@ -132,6 +133,10 @@ class RunOptions:
         Path | None,
         Parameter(name="--aggregate-executable", help="Override the apb-aggregate executable"),
     ] = None
+    export_executable: Annotated[
+        Path | None,
+        Parameter(name="--export-executable", help="Override the apb-export executable"),
+    ] = None
     fasta_executable: Annotated[
         Path | None,
         Parameter(name="--fasta-executable", help="Override the apb-fasta executable"),
@@ -159,7 +164,7 @@ class RunOptions:
     cores: Annotated[
         int,
         Parameter(name="--cores", help="Maximum parallel Snakemake jobs"),
-    ] = 10
+    ] = 3
     dry_run: Annotated[
         bool,
         Parameter(name="--dry-run", help="Show scheduled jobs without running them"),
@@ -185,7 +190,7 @@ class ImmediateRunOptions:
     cores: Annotated[
         int,
         Parameter(name="--cores", help="Maximum parallel Snakemake jobs"),
-    ] = 10
+    ] = 3
     dry_run: Annotated[
         bool,
         Parameter(name="--dry-run", help="Show scheduled jobs without running them"),

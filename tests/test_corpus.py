@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -713,6 +714,10 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "convert",
         "convert_ion",
         "convert_no_param",
+        "export_alphapepttools",
+        "export_msmu",
+        "export_prolfqua",
+        "export_proteopy",
         "plasma",
         "plasma_run",
         "proteobench",
@@ -1284,7 +1289,7 @@ def test_configure_reports_files_and_settings_without_writing(
     assert rendered["run_defaults"] == {
         "workflow": "convert",
         "format": "hdf5",
-        "cores": 10,
+        "cores": 3,
     }
     assert rendered["configuration_files"] == {
         "corpuses": str(workspace / "corpuses.json"),
@@ -1792,3 +1797,35 @@ def test_clean_command_does_not_create_a_missing_run_directory(tmp_path: Path) -
     with pytest.raises(FileNotFoundError, match="No corpus run manifest"):
         delete_run(missing)
     assert not missing.exists()
+
+
+@pytest.mark.parametrize(
+    ("target", "extension"),
+    [
+        ("msmu", ".h5mu"),
+        ("prolfqua", ".h5ad"),
+        ("proteopy", ".h5ad"),
+        ("alphapepttools", ".h5mu"),
+    ],
+)
+def test_export_workflows_call_apb_export_from_its_own_environment(
+    tmp_path: Path, target: str, extension: str
+) -> None:
+    context = WorkflowContext(
+        corpus=tmp_path / "corpus.csv",
+        data_root=tmp_path,
+        dataset=dataset(),
+        output_dir=tmp_path / "outputs",
+        report=tmp_path / "report.json",
+        tools={"apb-export": tmp_path / "apb-export"},
+    )
+    module = importlib.import_module(f"apb_studio.workflows.workflow_export_{target}")
+
+    (step,) = module.steps(context)
+
+    assert workflow_tools(f"export_{target}") == ("apb-export",)
+    assert step.command[:2] == [str(tmp_path / "apb-export"), target]
+    assert step.command[step.command.index("--software") + 1] == "diann"
+    output = context.output_dir / f"{target}{extension}"
+    assert step.command[3] == str(output)
+    assert step.outputs == [Artifact(role="export", path=output)]

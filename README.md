@@ -73,6 +73,8 @@ uv run corpus run routine --workflow proteobench_run
 uv run corpus run routine --workflow proteobench_pmultiqc
 uv run corpus run proteobench --workflow proteobench_pmultiqc
 uv run corpus run plasma --workflow plasma_run
+uv tool install --editable ../apb-export  # once; apb-export stays out of Studio's lock
+uv run corpus run routine --workflow export_prolfqua
 uv run corpus run entrapment --workflow proteobench_entrapment
 uv run corpus run all --workflow convert               # full corpus, one workflow
 uv run corpus run routine --dry-run                    # confirm the routine run settled

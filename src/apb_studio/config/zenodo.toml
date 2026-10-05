@@ -5,7 +5,9 @@
 # dataset lands in `zenodo/<record>/<dataset>/`, with every record file stored under the
 # name on the left of `files` (gzipped record files are decompressed). `input` names the
 # vendor table a corpus row points at; without it the row points at the dataset folder, so
-# APB reads related tables together by their own names. `parameters` names the vendor
+# APB reads related tables together by their own names. Tables whose samples differ, such as
+# fractionated MaxQuant evidence (raw files) and peptides.txt (experiments), cannot share one
+# APB result, so each is its own dataset and run. `parameters` names the vendor
 # parameter file; without it the row has none, and only workflows that read no vendor
 # parameters can run it. docs/datasets.md describes the records.
 
@@ -25,31 +27,41 @@ files = { "evidence.txt" = "evidence.txt.gz", "peptides.txt" = "peptides.txt.gz"
 
 [[records]]
 name = "directlfq"
-record_id = 22301508
+record_id = 23168773
 
 [[records.datasets]]
 name = "MaxQuant_boxcar"
 module = "directlfq"
 software_name = "MaxQuant"
-files = { "evidence.txt" = "MaxQuant_boxcar__evidence.txt.gz", "peptides.txt" = "MaxQuant_boxcar__peptides.txt.gz" }
+files = { "evidence.txt" = "MaxQuant_boxcar__evidence.txt.gz", "peptides.txt" = "MaxQuant_boxcar__peptides.txt.gz", "proteinGroups.txt" = "MaxQuant_boxcar__proteinGroups.txt.gz" }
 
 [[records.datasets]]
 name = "MaxQuant_Kuster200"
 module = "directlfq"
 software_name = "MaxQuant"
-files = { "evidence.txt" = "MaxQuant_Kuster200__evidence.txt.gz", "peptides.txt" = "MaxQuant_Kuster200__peptides.txt.gz" }
+files = { "evidence.txt" = "MaxQuant_Kuster200__evidence.txt.gz", "peptides.txt" = "MaxQuant_Kuster200__peptides.txt.gz", "proteinGroups.txt" = "MaxQuant_Kuster200__proteinGroups.txt.gz" }
 
+# Fractionated: evidence samples are 324 raw files, peptides.txt samples 9 experiments. APB
+# writes levels with different samples to separate results, so each table is its own run.
 [[records.datasets]]
-name = "kuster_tissue_data"
+name = "kuster_tissue_data_evidence"
 module = "directlfq"
 software_name = "MaxQuant"
-files = { "evidence.txt" = "kuster_tissue_data__evidence.txt.gz", "peptides.txt" = "kuster_tissue_data__peptides.txt.gz" }
+input = "evidence.txt"
+files = { "evidence.txt" = "kuster_tissue_data__evidence.txt.gz" }
+
+[[records.datasets]]
+name = "kuster_tissue_data_peptides"
+module = "directlfq"
+software_name = "MaxQuant"
+input = "peptides.txt"
+files = { "peptides.txt" = "kuster_tissue_data__peptides.txt.gz" }
 
 [[records.datasets]]
 name = "maxquant_yeast_interactome"
 module = "directlfq"
 software_name = "MaxQuant"
-files = { "evidence.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__evidence.txt.gz", "peptides.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__peptides.txt.gz" }
+files = { "evidence.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__evidence.txt.gz", "peptides.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__peptides.txt.gz", "proteinGroups.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__proteinGroups.txt.gz" }
 
 [[records.datasets]]
 name = "Spectronaut_LargeFC"

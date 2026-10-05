@@ -27,18 +27,20 @@ The only complete set of related MaxQuant tables available to Studio. ProteoBenc
 
 The raw inputs of the directLFQ paper's benchmarks (Ammar et al., Mol Cell Proteomics 22:100581, 2023), mirrored from MPI Biochemistry datashare links that carry no DOI.
 
-- DOI: [10.5281/zenodo.22301508](https://doi.org/10.5281/zenodo.22301508); concept DOI 10.5281/zenodo.22301507
-- Size: 16 tables, 6.8 GB gzipped, 37.4 GB uncompressed
+- DOI: [10.5281/zenodo.23168773](https://doi.org/10.5281/zenodo.23168773) (version 2); concept DOI 10.5281/zenodo.22301507
+- Size: 19 tables, 6.95 GB gzipped, 38.0 GB uncompressed
+- Version 2 adds `proteinGroups.txt` for BoxCar, Kuster200 and the yeast interactome
 - Layout: original archive path flattened with `__` as separator; `manifest.tsv` maps each file to its original path with checksums
 - Companion repository: [extend_directflq_benchmark](https://github.com/wolski/extend_directflq_benchmark), whose `BENCHMARKS.md` maps datasets to the paper's figures
 
 Contents:
 
-- MaxQuant `evidence.txt` and `peptides.txt`: BoxCar (PXD006109), Kuster 200 HeLa replicates (PXD015087), Kuster tissue (PXD010154), yeast interactome
+- MaxQuant `evidence.txt`, `peptides.txt` and `proteinGroups.txt`: BoxCar (PXD006109), Kuster 200 HeLa replicates (PXD015087), yeast interactome (1,622 timsTOF runs)
+- MaxQuant `evidence.txt` and `peptides.txt` only: Kuster tissue (PXD010154); its archive has no protein table
 - Spectronaut / DIA-NN reports: LargeFC (main, SN15 re-run, DIA-NN re-run), Charité DIA-NN, iq long-format example
 - `quicktests`: three shortened DIA-NN, MaxQuant and Spectronaut inputs
 
 Limits for APB:
 
 - No parameter files: conversion needs `--software`, as in the `convert_no_param` workflow
-- No `proteinGroups.txt`: MaxQuant sets cover ion and peptide levels only
+- Fractionated Kuster tissue: `evidence.txt` (324 raw files) and `peptides.txt` (9 experiments) have different samples, which APB writes to separate results; the corpus therefore runs them as two datasets, `kuster_tissue_data_evidence` and `kuster_tissue_data_peptides`
