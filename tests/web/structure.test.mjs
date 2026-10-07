@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { apbMetadataScopes, structureViews } from '../../src/apb_studio/corpus_viewer/web/representation.js'
+import { apbMetadataScopes, structureViews } from '../../viewer/src/corpus/representation.ts'
 
 const provenance = {
   fasta: { provenance: { peptide_verification: { protein_count: 100, sources: { 0: { path: 'ref.fasta' } } } } },

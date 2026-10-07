@@ -631,7 +631,7 @@ def test_corpus_commands_expose_all_selection_strategies(
     commands = {
         "all": (None, "all.csv"),
         "entrapment": (None, "entrapment.csv", "entrapment"),
-        "plasma": (None, "plasma.csv", "plasma"),
+        "proteobench-plasma": (None, "proteobench_plasma.csv", "proteobench_plasma"),
         "smallest-per-module": ("smallest_per_module", "routine.csv"),
         "smallest-per-software": ("smallest_per_software", "routine.csv"),
         "smallest-per-software-version": ("smallest_per_software_version", "routine.csv"),
@@ -693,11 +693,93 @@ def test_acquire_corpus_materializes_the_selected_strategy(
         "all": "corpuses/all.csv",
         "directlfq": "corpuses/directlfq.csv",
         "entrapment": "corpuses/entrapment.csv",
-        "maxquant_entrapment": "corpuses/maxquant_entrapment.csv",
-        "plasma": "corpuses/plasma.csv",
         "proteobench": "corpuses/proteobench.csv",
+        "proteobench_plasma": "corpuses/proteobench_plasma.csv",
         "routine": "corpuses/routine.csv",
     }
+
+
+def test_acquiring_all_downloads_every_proteobench_module_and_keeps_local_zenodo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = Store(tmp_path / "test_data_download")
+    catalog_frame = pd.concat([
+        _catalog_frame().iloc[:1].assign(module=module, repo_name=module)
+        for module in ("dda_qexactive", "dia_plasma", "entrapment_dia_astral")
+    ])
+    store.root.mkdir()
+    catalog_frame.to_csv(store.catalog_csv, index=False)
+    for row in catalog_frame.to_dict(orient="records"):
+        folder = store.submission_dir(row["repo_name"], row["intermediate_hash"])
+        folder.mkdir(parents=True)
+        (folder / "input_file.tsv").write_text("value\n1\n")
+        (folder / "param_0..txt").write_text("parameters")
+    record = zenodo_fixtures.ZenodoRecord(
+        name="directlfq",
+        record_id=42,
+        datasets=(
+            zenodo_fixtures.ZenodoDataset(
+                name="local",
+                module="directlfq",
+                software_name="DIA-NN",
+                input="report.tsv",
+                files={"report.tsv": "report.gz"},
+            ),
+            zenodo_fixtures.ZenodoDataset(
+                name="not-acquired",
+                module="directlfq",
+                software_name="DIA-NN",
+                input="report.tsv",
+                files={"report.tsv": "missing.gz"},
+            ),
+        ),
+    )
+    local = store.zenodo_dataset_dir(record.name, "local")
+    local.mkdir(parents=True)
+    (local / "report.tsv").write_text("value\n1\n")
+    selected_modules: list[str] = []
+    download = rawdb._download
+
+    def download_selected(target: Store, selected: pd.DataFrame, catalog: pd.DataFrame) -> None:
+        selected_modules.extend(selected["module"].tolist())
+        download(target, selected, catalog)
+
+    def no_zenodo_acquisition(*_args: object) -> None:
+        pytest.fail("acquiring all must not download missing Zenodo datasets")
+
+    monkeypatch.setattr(
+        rawdb,
+        "ZENODO",
+        zenodo_fixtures.ZenodoConfig(
+            schema_version=1,
+            records=(record,),
+        ),
+    )
+    monkeypatch.setattr(rawdb, "_store", lambda _root: store)
+    monkeypatch.setattr(rawdb, "catalog", lambda **_kwargs: None)
+    monkeypatch.setattr(rawdb, "_download", download_selected)
+    monkeypatch.setattr(rawdb, "resources", lambda **_kwargs: None)
+    monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
+    monkeypatch.setattr(zenodo_fixtures, "acquire", no_zenodo_acquisition)
+
+    rawdb._acquire_corpus(None, "all.csv")
+
+    assert selected_modules == ["dda_qexactive", "dia_plasma", "entrapment_dia_astral"]
+    inventories = tmp_path / "corpuses"
+    all_rows = rawdb.read_rows(inventories / "all.csv")
+    assert {row["module"] for row in all_rows} == {
+        "dda_qexactive",
+        "dia_plasma",
+        "entrapment_dia_astral",
+        "directlfq",
+    }
+    assert len(all_rows) == 4
+    assert [row["module"] for row in rawdb.read_rows(inventories / "proteobench_plasma.csv")] == [
+        "dia_plasma"
+    ]
+    assert [row["module"] for row in rawdb.read_rows(inventories / "entrapment.csv")] == [
+        "entrapment_dia_astral"
+    ]
 
 
 def test_view_and_main_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

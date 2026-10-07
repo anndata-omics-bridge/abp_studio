@@ -22,3 +22,7 @@ public/
 *.h5mu
 
 build/
+
+# viewer development; runtime bundles are packaged under src/
+/viewer/node_modules/
+/viewer/dist/

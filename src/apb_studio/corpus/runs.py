@@ -14,8 +14,8 @@ from urllib.request import url2pathname
 
 from apb_studio.corpus.discovery import (
     workflow_implementation_paths,
+    workflow_parameter_inputs,
     workflow_path,
-    workflow_uses_vendor_parameters,
 )
 from apb_studio.corpus.models import (
     CorpusIndex,
@@ -270,6 +270,7 @@ def dataset_dependencies(
         root / manifest.workflow_source,
         *workflow_implementation_paths(manifest.workflow),
         runtime / "models.py",
+        runtime / "parameters.py",
         runtime / "runner.py",
         runtime / "runs.py",
         runtime / "tables.py",
@@ -277,13 +278,7 @@ def dataset_dependencies(
         runtime.parent / "disk.py",
         *tool_dependencies(manifest.tools),
     ]
-    if workflow_uses_vendor_parameters(manifest.workflow):
-        if not row.vendor_parameter_file:
-            raise ValueError(
-                f"Workflow {manifest.workflow} reads vendor parameters, "
-                f"but {row.input_file} has no vendor parameter file"
-            )
-        dependencies.append(resolve_file(manifest.data_root, row.vendor_parameter_file))
+    dependencies.extend(workflow_parameter_inputs(manifest.workflow, manifest.data_root, row))
     if manifest.workflow_table is not None:
         dependencies.append(root / manifest.workflow_table)
     return tuple(dict.fromkeys(path.resolve() for path in dependencies))

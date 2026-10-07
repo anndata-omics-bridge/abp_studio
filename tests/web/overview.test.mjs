@@ -7,7 +7,7 @@ import {
   countsBy,
   groupFor,
   overviewViews
-} from '../../src/apb_studio/fixture_viewer/web/panels/overview.js'
+} from '../../viewer/src/fixture/panels/overview.ts'
 
 const ROWS = [
   { module: 'dda_astral', software_name: 'MaxQuant', status: 'ok', downloaded_on: '2026-09-04' },

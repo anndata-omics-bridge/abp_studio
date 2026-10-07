@@ -1,4 +1,4 @@
-"""Headless corpus execution and a static JavaScript viewer."""
+"""Headless corpus execution and a bundled TypeScript viewer."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import psutil
 from cyclopts import App, Parameter
 from loguru import logger
 
-from apb_studio.corpus.clean import archive_results, delete_run, saved_run_roots
+from apb_studio.corpus.clean import clear_results, delete_run, saved_run_roots
 from apb_studio.corpus.config import config_path, load_corpuses
 from apb_studio.corpus.discovery import (
     SNAKEFILE,
@@ -171,8 +171,8 @@ class RunOptions:
     ] = False
     force: Annotated[
         bool,
-        Parameter(name="--force", help="Archive current results and rerun every dataset"),
-    ] = False
+        Parameter(name="--force", help="Delete previous results and rerun every dataset"),
+    ] = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,8 +197,8 @@ class ImmediateRunOptions:
     ] = False
     force: Annotated[
         bool,
-        Parameter(name="--force", help="Archive current results and rerun every dataset"),
-    ] = False
+        Parameter(name="--force", help="Delete previous results and rerun every dataset"),
+    ] = True
 
 
 DEFAULT_IMMEDIATE_OPTIONS = ImmediateRunOptions()
@@ -282,6 +282,7 @@ def configure() -> None:
             "workflow": DEFAULT_IMMEDIATE_OPTIONS.workflow,
             "format": DEFAULT_IMMEDIATE_OPTIONS.storage_format,
             "cores": DEFAULT_IMMEDIATE_OPTIONS.cores,
+            "force": DEFAULT_IMMEDIATE_OPTIONS.force,
         },
         "configuration_files": {
             "corpuses": str(corpuses_source),
@@ -412,8 +413,8 @@ def _schedule(root: Path, *, cores: int, dry_run: bool, force: bool) -> None:
         command.append("--forceall")
     if not dry_run:
         if force:
-            archived = archive_results(root)
-            logger.info("Previous results preserved in {}", archived)
+            cleared = clear_results(root)
+            logger.info("Previous results deleted from {}", cleared)
         write_record(root / "operation.json", Operation(status="running"))
     try:
         log_name = "dry-run.log" if dry_run else "snakemake.log"

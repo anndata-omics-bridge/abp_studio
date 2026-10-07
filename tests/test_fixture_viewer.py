@@ -25,6 +25,8 @@ def _web_root(tmp_path: Path) -> Path:
     web.mkdir()
     (web / "index.html").write_text("<!doctype html><title>t</title>", encoding="utf-8")
     (web / "app.js").write_text("export {}", encoding="utf-8")
+    (web / "assets").mkdir()
+    (web / "assets" / "app-a123bc.js").write_text("export {}", encoding="utf-8")
     return web
 
 
@@ -53,8 +55,8 @@ def test_resolve_serves_files_and_nothing_else(tmp_path: Path) -> None:
     assert routes.resolve("/?x=1#frag", web, store).status == 200
     javascript = routes.resolve("/app.js", web, store)
     assert javascript.headers[0] == ("Content-Type", "text/javascript; charset=utf-8")
-    versioned = routes.resolve("/assets/36/app.js", web, store)
-    assert versioned.file == web / "app.js"
+    versioned = routes.resolve("/assets/app-a123bc.js", web, store)
+    assert versioned.file == web / "assets" / "app-a123bc.js"
     assert dict(versioned.headers)["Cache-Control"] == "no-store, max-age=0"
     assert routes.resolve("/assets/36", web, store).status == 404
     assert routes.resolve("/missing.js", web, store).status == 404

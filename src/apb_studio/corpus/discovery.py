@@ -2,8 +2,13 @@
 
 import importlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+from typing import cast
+
+from apb_studio.corpus.models import Dataset
+from apb_studio.corpus.parameters import required_parameter_inputs
 
 WORKFLOWS = Path(__file__).parents[1] / "workflows"
 SNAKEFILE = Path(__file__).parents[1] / "workflow" / "Snakefile"
@@ -46,12 +51,13 @@ def workflow_tools(name: str) -> tuple[str, ...]:
     return tools
 
 
-def workflow_uses_vendor_parameters(name: str) -> bool:
-    """Whether the workflow needs the corpus's vendor parameter file as a dependency."""
-    declared = getattr(_workflow_module(name), "USES_VENDOR_PARAMETERS", True)
-    if not isinstance(declared, bool):
-        raise ValueError(f"workflow_{name}.py must declare USES_VENDOR_PARAMETERS as a bool")
-    return declared
+def workflow_parameter_inputs(name: str, data_root: Path, dataset: Dataset) -> tuple[Path, ...]:
+    """Ask the workflow which vendor-parameter dependencies this dataset supplies."""
+    declared = getattr(_workflow_module(name), "PARAMETER_INPUTS", required_parameter_inputs)
+    if not callable(declared):
+        raise ValueError(f"workflow_{name}.py must declare PARAMETER_INPUTS as a callable")
+    inputs = cast(Callable[[Path, Dataset], tuple[Path, ...]], declared)
+    return inputs(data_root, dataset)
 
 
 def workflow_table_name(name: str) -> str:

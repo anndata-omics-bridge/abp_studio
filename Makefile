@@ -3,16 +3,27 @@ DOCS_PORT ?= 8103
 SERVE_ON_PORT ?= $(wildcard $(HOME)/projects/bin/serve-on-port)
 
 .DEFAULT_GOAL := help
-.PHONY: help sync test-web test lint check check-full audit package docs docs-serve
+.PHONY: help sync sync-web check-web test-web build-web check-web-assets test lint check check-full audit package docs docs-serve
 
 help:                     ## show this help
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-test-web:                 ## run the viewer's architecture tests under Node
-	@command -v node >/dev/null || { echo "node is required for the viewer tests"; exit 1; }
-	node --test "tests/web/*.test.mjs"
+sync-web:                 ## install locked viewer development dependencies
+	npm --prefix viewer ci
+
+check-web:                ## type-check both viewers in strict mode
+	npm --prefix viewer run check
+
+test-web: check-web       ## run viewer model, controller and architecture tests
+	npm --prefix viewer test
+
+build-web:                ## build and package both TypeScript viewers
+	npm --prefix viewer run sync
+
+check-web-assets:         ## verify packaged bundles match current sources
+	npm --prefix viewer run check:assets
 
 sync:                     ## install the frozen development and docs environment
 	uv sync --frozen --extra dev --group docs

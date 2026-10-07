@@ -25,7 +25,6 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from apb_studio.fixture_store import INDEX_NAME, Store
 
 DATA_PREFIX = "data"
-ASSET_PREFIX = "assets"
 VIEWER_IDENTITY_PATH = ".well-known/apb-studio-viewer.json"
 
 _NO_CACHE = ("Cache-Control", "no-store, max-age=0")
@@ -199,11 +198,6 @@ def resolve(url_path: str, web_root: Path, store: Store) -> Response:
     head, _, tail = clean.partition("/")
     if head == DATA_PREFIX:
         return _data(store, tail, view=parse_qs(parsed.query).get("view") == ["1"])
-    if head == ASSET_PREFIX:
-        _release, separator, asset = tail.partition("/")
-        if not separator or not asset:
-            return _error(404, "Missing versioned asset")
-        clean = asset
     target = _under(web_root, clean)
     if target is None:
         return _error(403, "Path outside the web root")

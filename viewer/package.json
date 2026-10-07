@@ -1,0 +1,33 @@
+{
+  "name": "apb-studio-viewers",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check": "tsc --noEmit",
+    "build": "npm run check && vite build",
+    "test": "cd .. && tsx --test tests/web/*.test.mjs",
+    "sync": "npm run build && node scripts/sync-assets.mjs",
+    "check:assets": "npm run build && node scripts/sync-assets.mjs --check"
+  },
+  "dependencies": {
+    "@alenaksu/json-viewer": "2.1.2",
+    "d3-dsv": "3.0.1",
+    "lit": "3.2.1",
+    "plotly.js-dist-min": "4.0.0",
+    "tabulator-tables": "6.5.2"
+  },
+  "devDependencies": {
+    "@types/d3-dsv": "3.0.7",
+    "@types/node": "24.13.6",
+    "@types/plotly.js": "3.0.14",
+    "@types/tabulator-tables": "6.3.6",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  }
+}

@@ -35,7 +35,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from apb_studio import fixture_index, zenodo_fixtures
 from apb_studio.corpus.config import config_path, ensure_config
 from apb_studio.corpus.tables import CORPUS_COLUMNS, read_rows, write_rows
-from apb_studio.corpus_export import export_corpus
+from apb_studio.corpus_export import export_all_corpus, export_corpus
 from apb_studio.disk import atomic_write_text
 from apb_studio.fetch import DOWNLOAD_ATTEMPTS, REQUEST_TIMEOUT, fetch_file
 from apb_studio.fixture_store import DOWNLOAD_COLUMNS, INDEX_NAME, TABLE_NAMES, Store
@@ -474,9 +474,12 @@ def _download(target: Store, selected: pd.DataFrame, catalog_df: pd.DataFrame) -
                 write_submission_summary(target, repo_name, intermediate_hash)
     _write_downloads(target, catalog_df, selected)
     for corpus in CONFIG.corpus_names:
+        if corpus == "all":
+            continue
         export_corpus(
             target, _corpus_dir(target) / f"{corpus}.csv", modules=CONFIG.modules_in(corpus)
         )
+    export_all_corpus(target, _corpus_dir(target) / "all.csv", ZENODO.records)
     fixture_index.write(target)
 
 
@@ -675,16 +678,13 @@ def _acquire_corpus(selection: str | None, destination_name: str, corpus: str = 
     target = _store(None)
     catalog(store=target.root)
     catalog_df = pd.read_csv(target.catalog_csv)
-    modules = CONFIG.modules_in(corpus)
+    modules = CONFIG.module_names if destination_name == "all.csv" else CONFIG.modules_in(corpus)
     selected = _selected_catalog(catalog_df[catalog_df["module"].isin(modules)], selection)
     _download(target, selected, catalog_df)
     resources(store=target.root)
-    corpus_path = export_corpus(
-        target,
-        _corpus_dir(target) / destination_name,
-        modules=modules,
-        selection_column=selection,
-    )
+    corpus_path = _corpus_dir(target) / destination_name
+    if selection is not None:
+        export_corpus(target, corpus_path, modules=modules, selection_column=selection)
     ensure_config(config_path(target.root))
     logger.info("written to {}", corpus_path)
     fixture_index.write(target)
@@ -692,7 +692,7 @@ def _acquire_corpus(selection: str | None, destination_name: str, corpus: str = 
 
 @corpus_app.command(name="all")
 def corpus_all() -> None:
-    """Download every quant fixture and write corpuses/all.csv."""
+    """Download every ProteoBench fixture and include all acquired sources in corpuses/all.csv."""
     _acquire_corpus(None, "all.csv")
 
 
@@ -702,10 +702,10 @@ def corpus_entrapment() -> None:
     _acquire_corpus(None, "entrapment.csv", "entrapment")
 
 
-@corpus_app.command(name="plasma")
-def corpus_plasma() -> None:
-    """Download every plasma fixture and write corpuses/plasma.csv."""
-    _acquire_corpus(None, "plasma.csv", "plasma")
+@corpus_app.command(name="proteobench-plasma")
+def corpus_proteobench_plasma() -> None:
+    """Download every plasma fixture and write corpuses/proteobench_plasma.csv."""
+    _acquire_corpus(None, "proteobench_plasma.csv", "proteobench_plasma")
 
 
 @corpus_app.command(name="smallest-per-module")
@@ -750,6 +750,7 @@ def _acquire_zenodo_corpus(name: str) -> None:
     corpus_path = _corpus_dir(target) / f"{record.name}.csv"
     write_rows(corpus_path, CORPUS_COLUMNS, zenodo_fixtures.corpus_rows(target, record))
     _write_zenodo_downloads(target)
+    export_all_corpus(target, _corpus_dir(target) / "all.csv", ZENODO.records)
     ensure_config(config_path(target.root))
     logger.info("written to {}", corpus_path)
     fixture_index.write(target)

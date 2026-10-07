@@ -133,3 +133,37 @@ def test_source_endpoint_opens_only_files_in_frozen_input_snapshots(tmp_path: Pa
     # Workflow snapshots themselves must also stay inside the run.
     (run / "run.json").write_text(json.dumps({"workflow_table": str(outside)}), encoding="utf-8")
     assert resolve(f"/api/source?{query}", web, Store(root)).status == 404
+
+
+def test_input_kinds_use_filesystem_evidence_and_frozen_selected_inputs(tmp_path: Path) -> None:
+    data_root = tmp_path / "inputs"
+    data_root.mkdir()
+    (data_root / "no_extension").write_text("vendor input", encoding="utf-8")
+    (data_root / "folder.with.dots").mkdir()
+    (data_root / "unselected.txt").write_text("not selected", encoding="utf-8")
+    root = tmp_path / "corpus"
+    run = _write_run(root, "routine", "succeeded")
+    (run / "run.json").write_text(json.dumps({"corpus": "selected.csv"}), encoding="utf-8")
+    (run / "execution_settings.json").write_text(
+        json.dumps({"data_root": str(data_root)}), encoding="utf-8"
+    )
+    (run / "selected.csv").write_text(
+        "input_file\nno_extension\nfolder.with.dots\nmissing.tsv\n", encoding="utf-8"
+    )
+    query = urlencode({"context": "routine/convert/hdf5"})
+    response = resolve(f"/api/input-kinds?{query}", tmp_path, Store(root))
+    assert response.status == 200
+    assert response.file is None
+    assert json.loads(response.body) == {
+        "schema_version": 2,
+        "input_kinds": {"no_extension": "file", "folder.with.dots": "folder"},
+    }
+    assert dict(response.headers)["Content-Type"] == "application/json"
+
+    outside = tmp_path / "outside.tsv"
+    outside.write_text("outside data root", encoding="utf-8")
+    (data_root / "linked.tsv").symlink_to(outside)
+    (run / "selected.csv").write_text("input_file\nlinked.tsv\n", encoding="utf-8")
+    assert resolve(f"/api/input-kinds?{query}", tmp_path, Store(root)).status == 403
+    query = urlencode({"context": "../../inputs"})
+    assert resolve(f"/api/input-kinds?{query}", tmp_path, Store(root)).status == 404

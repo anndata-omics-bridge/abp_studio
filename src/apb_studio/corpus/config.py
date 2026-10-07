@@ -12,9 +12,8 @@ DEFAULT_CORPUSES: dict[str, str] = {
     "all": "corpuses/all.csv",
     "directlfq": "corpuses/directlfq.csv",
     "entrapment": "corpuses/entrapment.csv",
-    "maxquant_entrapment": "corpuses/maxquant_entrapment.csv",
-    "plasma": "corpuses/plasma.csv",
     "proteobench": "corpuses/proteobench.csv",
+    "proteobench_plasma": "corpuses/proteobench_plasma.csv",
     "routine": "corpuses/routine.csv",
 }
 CORPUS_NAME_PATTERN = r"^[a-z][a-z0-9_-]*$"

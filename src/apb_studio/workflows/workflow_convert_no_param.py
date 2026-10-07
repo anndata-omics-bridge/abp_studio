@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from apb_studio.corpus.models import Artifact, StepSpec
+from apb_studio.corpus.parameters import ignored_parameter_inputs
 from apb_studio.corpus.tables import join_workflow, resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.artifacts import representation, result_path
@@ -10,7 +11,7 @@ from apb_studio.workflows.artifacts import representation, result_path
 TOOLS = ("apb2",)
 WORKFLOW_TABLE = "workflow_no_param.tsv"
 WORKFLOW_COLUMNS = ("software_name", "software")
-USES_VENDOR_PARAMETERS = False
+PARAMETER_INPUTS = ignored_parameter_inputs
 
 
 def steps(context: WorkflowContext) -> list[StepSpec]:

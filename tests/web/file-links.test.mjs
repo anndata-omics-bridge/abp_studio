@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { fileLink } from '../../src/apb_studio/corpus_viewer/web/render/links.js'
+import { fileLink } from '../../viewer/src/corpus/render/links.ts'
 
 test('readable files open tabs, JSON stays raw, and binary files download without tabs', t => {
   class Anchor extends EventTarget {}
@@ -46,7 +46,7 @@ test('readable files open tabs, JSON stays raw, and binary files download withou
 
 test('detail and settings panels link resources and snapshots using the shared tab policy', () => {
   for (const panel of ['detail', 'settings']) {
-    const source = readFileSync(`src/apb_studio/corpus_viewer/web/panels/${panel}.js`, 'utf8')
+    const source = readFileSync(`viewer/src/corpus/panels/${panel}.ts`, 'utf8')
     assert.match(source, /import \{ fileLink \}/)
     assert.match(source, /fileUrl\(/)
     assert.match(source, /sourceUrl\(/)

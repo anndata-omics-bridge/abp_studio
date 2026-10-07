@@ -67,17 +67,17 @@ fasta = "ProteoBenchFASTA_DDAQuantification_noecoli.fasta"
 
 # Plasma DIA (PYE: human plasma with yeast and E. coli spike-ins) uses the HYE FASTA, as
 # ProteoBench's current module settings do. Upstream scores it on other quantity columns than
-# the quant modules, so its fixtures form their own corpus for the `plasma` workflow.
+# the quant modules, so its scoring inventory is separate; conversion includes it in `all`.
 [[modules]]
 name = "dia_plasma"
 repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_plasma/archive/refs/heads/main.zip"
 fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
-corpus = "plasma"
+corpus = "proteobench_plasma"
 
 # Entrapment DIA (Astral) searches the peptide-level entrapment FASTA, as ProteoBench's
 # module documentation asks; the protein-level entrapment FASTA is fetched too. Entrapment
-# scoring differs from quant scoring, so its fixtures form their own corpus instead of
-# joining `all` and `routine` (`corpus` defaults to "all").
+# scoring differs from quant scoring, so it has a separate scoring inventory. Conversion
+# includes these fixtures in the complete `all` inventory (`corpus` defaults to "all").
 [[modules]]
 name = "entrapment_dia_astral"
 repo_url = "https://github.com/Proteobench/Results_entrapment_ion_DIA_Astral/archive/refs/heads/main.zip"

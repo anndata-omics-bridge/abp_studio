@@ -15,6 +15,7 @@ from apb_studio.fixture_viewer.routes import resolve as resolve_static
 
 CATALOG_PATH = "api/catalog"
 SOURCE_PATH = "api/source"
+INPUT_KINDS_PATH = "api/input-kinds"
 _SOURCE_FIELDS = ("input_file", "vendor_parameter_file", "fasta")
 
 
@@ -82,6 +83,44 @@ def _source(store: Store, query: str) -> Response:
     return inline_file(target)
 
 
+def _input_kinds(store: Store, query: str) -> Response:
+    """Describe actual input kinds for one frozen run without reading vendor content."""
+    context = parse_qs(query).get("context", [""])[0]
+    directory = _inside(store.root, context)
+    if not context or directory is None or not directory.is_dir():
+        return _error(404, "Unknown source context")
+    manifest = _read_json(directory / "run.json") or {}
+    settings_path = _inside(
+        directory, str(manifest.get("execution_settings", "execution_settings.json"))
+    )
+    settings = _read_json(settings_path) if settings_path is not None else None
+    corpus = _inside(directory, str(manifest.get("corpus", "corpus.csv")))
+    try:
+        if settings is None or corpus is None or not corpus.is_file():
+            raise FileNotFoundError
+        rows = read_rows(corpus)
+    except (OSError, ValueError):
+        return _error(404, "Source metadata unavailable")
+    data_root = settings.get("data_root")
+    if not isinstance(data_root, str):
+        return _error(403, "Invalid source data root")
+    kinds: dict[str, str] = {}
+    try:
+        for row in rows:
+            relative = row.get("input_file")
+            if not relative:
+                continue
+            target = resolve_file(Path(data_root), relative)
+            if target.is_file():
+                kinds[relative] = "file"
+            elif target.is_dir():
+                kinds[relative] = "folder"
+    except (OSError, ValueError):
+        return _error(403, "Invalid input path")
+    body = (json.dumps({"schema_version": 2, "input_kinds": kinds}) + "\n").encode()
+    return Response(200, headers_for("input-kinds.json"), body)
+
+
 def resolve(url_path: str, web_root: Path, store: Store) -> Response:
     """Serve the live corpus catalog, delegating every other read to static routes."""
     parsed = urlsplit(url_path)
@@ -92,4 +131,6 @@ def resolve(url_path: str, web_root: Path, store: Store) -> Response:
         return Response(200, headers_for("catalog.json"), body)
     if clean == SOURCE_PATH:
         return _source(store, parsed.query)
+    if clean == INPUT_KINDS_PATH:
+        return _input_kinds(store, parsed.query)
     return resolve_static(url_path, web_root, store)

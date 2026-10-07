@@ -32,6 +32,8 @@ def test_the_packaged_configuration_covers_every_module() -> None:
     assert config.fasta_for_module("dia_singlecell").endswith("noecoli.fasta")
     assert config.module("dia_aif").repo_name == "Results_quant_ion_DIA_AIF"
     assert config.module("dia_plasma").repo_name == "Results_quant_ion_DIA_plasma"
+    assert config.modules_in("proteobench_plasma") == frozenset({"dia_plasma"})
+    assert "plasma" not in config.corpus_names
     entrapment = config.module("entrapment_dia_astral")
     assert entrapment.repo_name == "Results_entrapment_ion_DIA_Astral"
     assert entrapment.fasta.endswith("_entrapment_pep.fasta")

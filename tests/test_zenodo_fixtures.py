@@ -113,10 +113,11 @@ def _serve(
     return asked
 
 
-def test_the_packaged_records_are_named_corpuses() -> None:
+def test_packaged_records_keep_the_multifile_fixture_without_a_standalone_corpus_alias() -> None:
     config = zenodo_fixtures.packaged_config()
 
-    assert {record.name for record in config.records} <= set(DEFAULT_CORPUSES)
+    assert "directlfq" in DEFAULT_CORPUSES
+    assert "maxquant_entrapment" not in DEFAULT_CORPUSES
     entrapment = config.record("maxquant_entrapment").datasets[0]
     assert entrapment.input is None, "the related tables are read together as one folder"
     assert entrapment.parameters == "mqpar.xml"
@@ -227,3 +228,40 @@ def test_downloads_keep_proteobench_rows_and_refresh_zenodo_rows(
     assert int(rows[1]["input_file_size_bytes"]) == sum(
         path.stat().st_size for path in related.iterdir()
     )
+
+
+def test_acquiring_a_zenodo_record_refreshes_all_without_losing_proteobench_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = Store(tmp_path / "test_data_download")
+    record = _record()
+    folder = store.submission_dir("Repo", "regular")
+    folder.mkdir(parents=True)
+    (folder / "input_file.tsv").write_text("value\n1\n")
+    (folder / "param_0..txt").write_text("params")
+    write_rows(
+        store.catalog_csv,
+        ["repo_name", "intermediate_hash", "module", "software_name"],
+        [
+            {
+                "repo_name": "Repo",
+                "intermediate_hash": "regular",
+                "module": "dia_astral",
+                "software_name": "DIA-NN",
+            }
+        ],
+    )
+    monkeypatch.setattr(rawdb, "ZENODO", ZenodoConfig(schema_version=1, records=(record,)))
+    monkeypatch.setattr(rawdb, "_store", lambda _root: store)
+    monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
+    _serve(monkeypatch, _remote())
+
+    rawdb._acquire_zenodo_corpus(record.name)
+
+    inventories = tmp_path / "corpuses"
+    assert len(read_rows(inventories / "testrecord.csv")) == 2
+    assert [row["input_file"] for row in read_rows(inventories / "all.csv")] == [
+        "submissions/Repo/regular/input_file.tsv",
+        "zenodo/testrecord/related",
+        "zenodo/testrecord/single/report.tsv",
+    ]

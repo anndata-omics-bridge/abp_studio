@@ -12,6 +12,14 @@ repos:
 
   - repo: local
     hooks:
+      - id: typescript
+        name: TypeScript viewers (strict)
+        entry: npm --prefix viewer run check
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-commit]
+
       - id: pyright
         name: pyright (strict)
         entry: uv run --frozen --extra dev pyright
@@ -59,6 +67,22 @@ repos:
       - id: package-smoke
         name: package smoke
         entry: uv run --frozen --extra dev python scripts/package_smoke.py
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: viewer-tests
+        name: viewer model and navigation tests
+        entry: npm --prefix viewer test
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: viewer-bundles
+        name: packaged viewers match sources
+        entry: npm --prefix viewer run check:assets
         language: system
         always_run: true
         pass_filenames: false

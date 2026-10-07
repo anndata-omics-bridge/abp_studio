@@ -1,4 +1,4 @@
-"""One ``apb-export TARGET`` call: vendor output in, the file the target's tool opens.
+"""One ``apb-export TARGET`` call: vendor output in, the target's file and its APB sidecar out.
 
 apb-export runs from its own environment. Studio declares it in a workflow's TOOLS and finds it
 on PATH or through ``--export-executable``, never through Studio's own lock.
@@ -9,6 +9,7 @@ from __future__ import annotations
 from apb_studio.corpus.models import Artifact, StepSpec
 from apb_studio.corpus.tables import resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext
+from apb_studio.workflows.artifacts import representation
 from apb_studio.workflows.software import parameter_software
 
 TOOL = "apb-export"
@@ -46,5 +47,5 @@ def export_step(context: WorkflowContext, target: str) -> StepSpec:
             *[Artifact(role="vendor_secondary", path=secondary) for secondary in secondary_inputs],
             Artifact(role="vendor_parameter_file", path=parameters),
         ],
-        outputs=[Artifact(role="export", path=output)],
+        outputs=[Artifact(role="export", path=output), representation(output)],
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import configparser
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,9 +20,7 @@ _REQUIRED_FILES = {
     "apb_studio/py.typed",
     "apb_studio/workflows/workflow_convert.py",
     "apb_studio/corpus_viewer/web/index.html",
-    "apb_studio/corpus_viewer/web/app.js",
-    "apb_studio/corpus_viewer/web/model.js",
-    "apb_studio/corpus_viewer/web/vendor/plotly.js",
+    "apb_studio/fixture_viewer/web/index.html",
     "apb_studio/workflow/Snakefile",
 }
 _INSTALLED_CHECK = """
@@ -53,6 +52,16 @@ def _verify_wheel(wheel: Path) -> None:
         names = set(archive.namelist())
         if missing := _REQUIRED_FILES - names:
             raise RuntimeError(f"Wheel is missing package files: {sorted(missing)}")
+
+        for viewer in ("corpus", "fixture"):
+            prefix = f"apb_studio/{viewer}_viewer/web/"
+            document = archive.read(prefix + "index.html").decode()
+            assets = re.findall(r'(?:href|src)=["\']\./(assets/[^"\']+)["\']', document)
+            if not assets or not any(asset.endswith(".js") for asset in assets):
+                raise RuntimeError(f"{viewer} viewer has no bundled entry script")
+            for asset in assets:
+                if prefix + asset not in names:
+                    raise RuntimeError(f"{viewer} viewer is missing referenced asset: {asset}")
 
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         if len(entry_point_files) != 1:

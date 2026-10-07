@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { tracesForScale } from '../../src/apb_studio/corpus_viewer/web/render/scale.js'
+import { tracesForScale } from '../../viewer/src/corpus/render/scale.ts'
 
 test('linear box traces preserve their complete five-number summaries', () => {
   const traces = [{

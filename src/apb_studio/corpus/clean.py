@@ -1,9 +1,8 @@
-"""Cleanup and forced-rerun preservation for corpus runs."""
+"""Deletion of saved runs and previous results before forced reruns."""
 
 import json
 import shutil
 from pathlib import Path
-from uuid import uuid4
 
 from apb_studio.corpus.models import Operation, write_record
 from apb_studio.disk import interprocess_file_lock
@@ -50,8 +49,8 @@ def _validated_root(root: Path) -> Path:
     return resolved
 
 
-def archive_results(root: Path) -> Path:
-    """Move generated results before a forced rerun; called under its execution lock."""
+def clear_results(root: Path) -> Path:
+    """Delete generated results and old histories under the run's execution lock."""
     root = _validated_root(root)
     paths = [
         root / name
@@ -61,17 +60,19 @@ def archive_results(root: Path) -> Path:
             "corpus_index.json",
             "operation.json",
             "snakemake.log",
+            "dry-run.log",
+            "history",
         )
     ]
     if any(path.is_symlink() for path in paths):
         raise ValueError("Refusing symlinks in managed run paths")
-    history = root / "history" / uuid4().hex
     for path in paths:
-        if path.exists():
-            history.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(path), history / path.name)
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
     write_record(root / "operation.json", Operation(status="cleaned"))
-    return history
+    return root
 
 
 def delete_run(root: Path) -> Path:

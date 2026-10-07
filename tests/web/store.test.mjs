@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { joinSubmissions, parseSubmissionJson, storageRows, summaryPath } from '../../src/apb_studio/fixture_viewer/web/lib/store.js'
+import { joinSubmissions, parseStoreIndex, parseSubmissionJson, parseSummary, storageRows, summaryPath } from '../../viewer/src/fixture/lib/store.ts'
 
 const CATALOG = [
   {
@@ -104,4 +104,33 @@ test('storage rows report sizes in gigabytes and name what is absent', () => {
   assert.equal(byKey.get('FASTA files'), 'none')
   assert.equal(byKey.get('catalog.csv'), '27.3 kB')
   assert.equal(new Map(storageRows(index).map((r) => [r.key, r.value])).get('Vendor tables size'), '0.00 GB')
+})
+
+
+test('persisted store JSON is checked at the viewer boundary', () => {
+  const index = parseStoreIndex({
+    root: '/store', submissionSummary: 'submissions/{repo_name}/{intermediate_hash}/summary.json',
+    fasta: ['database.fasta'], bytes: { metadata: 10, fasta: 20 },
+    tables: [{ name: 'catalog.csv', sizeBytes: 200, modifiedNs: 123 }], storeVersion: 1
+  })
+  assert.equal(index.root, '/store')
+  assert.deepEqual(index.tables, [{ name: 'catalog.csv', sizeBytes: 200 }])
+  assert.equal(parseStoreIndex(null), null)
+  assert.throws(() => parseStoreIndex([]), /expected an object/)
+  assert.throws(() => parseStoreIndex({ bytes: { metadata: '10' } }), /bytes.metadata: expected a finite number/)
+  assert.throws(() => parseStoreIndex({ fasta: [1] }), /array of file names/)
+  assert.throws(() => parseStoreIndex({ tables: [{ name: 'catalog.csv' }] }), /name and sizeBytes are required/)
+})
+
+test('submission summaries reject malformed facts while permitting absent optional fields', () => {
+  assert.equal(parseSummary(null), null)
+  const summary = parseSummary({ size_bytes: 120, rows: null, columns: 5, downloaded_at: '2026-10-06' })
+  assert.equal(summary.rows, null)
+  assert.equal(summary.columns, 5)
+  assert.throws(() => parseSummary({ size_bytes: '120' }), /size_bytes: expected a finite number/)
+  assert.throws(() => parseSummary({ rows: Infinity }), /rows: expected a finite number/)
+  assert.throws(() => parseSummary({ column_names: ['a', 'b'] }), /column_names: expected a string/)
+  const [row] = joinSubmissions(CATALOG, [], new Map([['a', parseSummary({})]]))
+  assert.equal(row.status, 'ok')
+  assert.equal(row.size_mb, null, 'absent size remains absent instead of becoming NaN')
 })

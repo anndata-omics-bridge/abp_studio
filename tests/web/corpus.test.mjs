@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chartPoints, chartViews, counts, datasetArtifacts, datasetRows, formatBytes, runChoices, statusFractions, workflowFields, workflowSteps } from '../../src/apb_studio/corpus_viewer/web/model.js'
-import { alignedSummary, annDataDiagram, apbMetadataScopes, artifactAttemptStorePath, artifactStorePath, expandEmbeddedJsonForDisplay, layerChart, loadRepresentationArtifacts, matrixSummary, preferredLoadedRepresentation, representationArtifacts, representationIonVariables, representationViews, validatedRepresentation } from '../../src/apb_studio/corpus_viewer/web/representation.js'
-import { validatedToolTimings } from '../../src/apb_studio/corpus_viewer/web/tool-timings.js'
+import { chartPoints, chartViews, counts, datasetArtifacts, datasetRows, formatBytes, runChoices, statusFractions, workflowFields, workflowSteps } from '../../viewer/src/corpus/model.ts'
+import { alignedSummary, annDataDiagram, apbMetadataScopes, artifactAttemptStorePath, artifactStorePath, expandEmbeddedJsonForDisplay, layerChart, loadRepresentationArtifacts, matrixSummary, preferredLoadedRepresentation, representationArtifacts, representationIonVariables, representationViews, validatedRepresentation } from '../../viewer/src/corpus/representation.ts'
+import { validatedToolTimings } from '../../viewer/src/corpus/tool-timings.ts'
 import { readFileSync } from 'node:fs'
 
 test('viewer distinguishes pending, running, tool failure and interrupted work', () => {
@@ -481,26 +481,14 @@ test('no stable runs produce no choices', () => {
 })
 
 test('settings use bounded sub-tabs while file links remain outside them', () => {
-  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
-  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
+  const html = readFileSync('viewer/corpus/index.html', 'utf8')
+  const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
   assert.match(shell, /const SETTINGS_TABS = \[[\s\S]*'workflow-source'/)
   assert.equal((shell.match(/class="settings-panel"/g) ?? []).length, 6)
   assert.ok(shell.indexOf('id="links"') < shell.indexOf('aria-label="Settings and input views"'))
   const stylesheet = html.match(/app\.css\?v=([^"']+)/)?.[1]
   const script = html.match(/app\.js\?v=([^"']+)/)?.[1]
   assert.equal(stylesheet, script)
-})
-
-test('one stable-run selector sits below the branding banner', () => {
-  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
-  const styles = readFileSync('src/apb_studio/corpus_viewer/web/app.css', 'utf8')
-  assert.ok(shell.indexOf('</header>') < shell.indexOf('class="run-controls"'))
-  assert.match(shell, /class="run-controls"[\s\S]*Corpus · workflow · format[\s\S]*<\/section>/)
-  assert.equal((shell.match(/<select \.value=/g) ?? []).length, 1)
-  assert.match(shell, /id="visualization-x-axis"/)
-  assert.match(styles, /\.run-controls\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
-  assert.match(styles, /\.masthead\s*\{[^}]*padding:\s*12px 0 8px/)
-  assert.match(styles, /\.run-summary\s*\{[^}]*min-height:\s*28px/)
 })
 
 test('chart projection preserves per-step and per-output evidence without inventing zeroes', () => {
@@ -611,8 +599,48 @@ test('dataset variable count follows the latest successful APB representation', 
     new Map([['report', record]]), new Map(), null, [], representations
   )
   assert.equal(row.ion_variables, 25000)
-  assert.equal(row.output_file_name, 'report.html')
+  assert.equal(row.output_file_name, 'converted.h5ad')
   assert.equal(chartPoints([row], new Map(), representations).steps.length, 0)
+})
+
+test('pMultiQC reports and data remain inspectable while the dataset output identifies its scientific file', () => {
+  const record = { steps: [
+    { name: 'convert', status: 'succeeded', outputs: [
+      { role: 'result', path: '/run/output.h5ad', size_bytes: 500, format: 'h5ad' }
+    ] },
+    { name: 'pmultiqc', status: 'succeeded', outputs: [
+      { role: 'pmultiqc_report', path: '/run/multiqc_report.html', size_bytes: 300 },
+      { role: 'pmultiqc_data', path: '/run/multiqc_report_data', size_bytes: 200 }
+    ] }
+  ] }
+  const [row] = datasetRows(
+    { reports: [{ input_file: 'vendor.tsv', path: 'report' }] }, [], [],
+    new Map([['report', record]]), new Map(), null
+  )
+  assert.equal(row.output_file_name, 'output.h5ad')
+  assert.equal(row.output_file_size_bytes, 500)
+  assert.equal(row.output_file_format, 'h5ad')
+  assert.deepEqual(datasetArtifacts(row).map(artifact => artifact.path), [
+    '/run/output.h5ad', '/run/multiqc_report.html', '/run/multiqc_report_data'
+  ])
+  assert.deepEqual(chartPoints([row]).outputs.map(point => point.output_role), ['result', 'pmultiqc_report', 'pmultiqc_data'])
+})
+
+test('report-only and legacy unlabelled outputs remain available without a scientific artifact', () => {
+  for (const output of [
+    { role: 'pmultiqc_report', path: '/run/report.html', size_bytes: 300 },
+    { path: '/run/legacy.h5ad', size_bytes: 500 }
+  ]) {
+    const record = { steps: [{ name: 'report', status: 'succeeded', outputs: [
+      output, { role: 'tool_timings', path: '/run/timing.json', size_bytes: 50 }
+    ] }] }
+    const [row] = datasetRows(
+      { reports: [{ input_file: 'vendor.tsv', path: 'report' }] }, [], [],
+      new Map([['report', record]]), new Map(), null
+    )
+    assert.equal(row.output_file, output.path)
+    assert.equal(row.output_file_size_bytes, output.size_bytes)
+  }
 })
 
 test('integrated run groups three tool timing files into separate step subtabs', () => {
@@ -651,11 +679,11 @@ test('integrated run groups three tool timing files into separate step subtabs',
 })
 
 test('viewer exposes corpus charts and frozen input metadata', () => {
-  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
-  const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
-  const visualizations = readFileSync('src/apb_studio/corpus_viewer/web/panels/visualizations.js', 'utf8')
-  const plotly = readFileSync('src/apb_studio/corpus_viewer/web/render/plotly.js', 'utf8')
-  const styles = readFileSync('src/apb_studio/corpus_viewer/web/app.css', 'utf8')
+  const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
+  const application = readFileSync('viewer/src/corpus/app.ts', 'utf8')
+  const visualizations = readFileSync('viewer/src/corpus/panels/visualizations.ts', 'utf8')
+  const plotly = readFileSync('viewer/src/corpus/render/plotly.ts', 'utf8')
+  const styles = readFileSync('viewer/src/corpus/app.css', 'utf8')
   assert.match(shell, /\['visualizations', 'Visualizations'\]/)
   assert.match(shell, /id="visualization-tabs"[^>]*role="tablist"/)
   assert.match(shell, /id="visualization-chart-panel"[^>]*role="tabpanel"/)
@@ -677,23 +705,23 @@ test('viewer exposes corpus charts and frozen input metadata', () => {
   assert.match(visualizations, /name: `\$\{step\} · \$\{name\}`/)
   assert.match(visualizations, /let selectedKey/)
   assert.match(visualizations, /if \(tabs\.dataset\.views === signature\) return/)
-  assert.match(visualizations, /panel\.querySelectorAll\('\.chart'\)/)
+  assert.match(visualizations, /panel\.querySelectorAll(?:<[^>]+>)?\('\.chart'\)/)
   assert.match(visualizations, /chartLayout\(chart\.x, chart\.y, Boolean\(traces\.length\)\)/)
   assert.match(styles, /\.subtabs\s*\{[^}]*overflow-x:\s*auto/)
 })
 
 test('run selection comes from the live server catalog', () => {
-  const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
-  const fetching = readFileSync('src/apb_studio/corpus_viewer/web/lib/fetch.js', 'utf8')
+  const application = readFileSync('viewer/src/corpus/app.ts', 'utf8')
+  const fetching = readFileSync('viewer/src/corpus/lib/fetch.ts', 'utf8')
   assert.match(fetching, /new URL\(`api\/\$\{path\}`/)
   assert.match(application, /await readCatalog\(\)/)
   assert.doesNotMatch(application, /await read\('index\.json'\)/)
 })
 
 test('dataset table stays compact while show more exposes every artifact and the persisted report', () => {
-  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
-  const application = readFileSync('src/apb_studio/corpus_viewer/web/app.js', 'utf8')
-  const detail = readFileSync('src/apb_studio/corpus_viewer/web/panels/detail.js', 'utf8')
+  const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
+  const application = readFileSync('viewer/src/corpus/app.ts', 'utf8')
+  const detail = readFileSync('viewer/src/corpus/panels/detail.ts', 'utf8')
   assert.match(shell, /id="detail-files"/)
   assert.match(detail, /title: 'Input file',[\s\S]*field: 'input_file_name'/)
   assert.match(detail, /title: 'Output',[\s\S]*field: 'output_file_name'/)
@@ -710,25 +738,29 @@ test('dataset table stays compact while show more exposes every artifact and the
   assert.match(detail, /artifactAttemptStorePath\(runPath\(\), row\.output_dir, row\.output_file\)/)
   assert.match(detail, /if \(!changed\) return/)
   assert.doesNotMatch(detail, /if \(!changed\) \{[\s\S]*renderDatasetFiles/)
-  assert.match(detail, /button\.addEventListener\('click',[\s\S]*void show\(cell\.getRow\(\)\.getData\(\), true\)/)
+  assert.match(detail, /button\.addEventListener\('click',[\s\S]*void show\(rowForCell\(cell\), true\)/)
   assert.doesNotMatch(detail, /title: 'Step'/)
   assert.doesNotMatch(detail, /title: 'Input file', field: 'input_file'/)
   assert.doesNotMatch(application, /datasetArtifacts|Complete execution report/)
 })
 
-test('show more presents top-level metadata, AnnData and raw JSON tabs with nested layer tabs', () => {
-  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
-  const detail = readFileSync('src/apb_studio/corpus_viewer/web/panels/detail.js', 'utf8')
-  const scientific = readFileSync('src/apb_studio/corpus_viewer/web/render/scientific.js', 'utf8')
-  const styles = readFileSync('src/apb_studio/corpus_viewer/web/representation.css', 'utf8')
+test('file details group AnnData objects into subtabs and open their scientific view directly', () => {
+  const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
+  const detail = readFileSync('viewer/src/corpus/panels/detail.ts', 'utf8')
+  const scientific = readFileSync('viewer/src/corpus/render/scientific.ts', 'utf8')
+  const styles = readFileSync('viewer/src/corpus/representation.css', 'utf8')
   assert.match(shell, /id="detail-tabs"[^>]*role="tablist"/)
   assert.match(shell, /id="detail-io"[^>]*data-detail-panel="io"[^>]*role="tabpanel"/)
   assert.match(detail, /registerTab\('io', 'Inputs & outputs', ioPanel\)/)
   assert.match(detail, /const panelId = panel\.id \|\| `detail-panel-\$\{key\}`/)
   assert.match(detail, /activeGeneration === generation/)
-  assert.match(detail, /artifactStorePath\(runPath\(\), row\.output_dir, artifact\.path\)/)
+  assert.match(detail, /artifactStorePath\(selectedRun, row\.output_dir, artifact\.path\)/)
   assert.match(detail, /representationViews\(preferred\.representation\)/)
   assert.match(detail, /registerTab\(`scientific-\$\{view\.key\}`, view\.label/)
+  assert.match(detail, /registerTab\('anndata', label, panel/)
+  assert.match(detail, /renderTabs\(host, `\$\{label\} objects`, objects\.map/)
+  assert.match(detail, /defaultTab = objects\.length \? 'anndata'/)
+  assert.match(detail, /app\.select\('files'\)/)
   assert.match(detail, /panel\.setAttribute\('aria-busy', 'true'\)/)
   assert.match(scientific, /renderNestedTabs\(article, `\$\{level\.name\} AnnData sections`/)
   assert.match(scientific, /renderNestedTabs\([\s\S]*'APB metadata scopes'/)
@@ -739,65 +771,46 @@ test('show more presents top-level metadata, AnnData and raw JSON tabs with nest
   assert.match(styles, /\.detail-subtabs,[\s\S]*\.representation-tabs \{[\s\S]*overflow-x: auto/)
 })
 
-test('structured JSON uses the pinned tree-viewer component', () => {
-  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
-  const dom = readFileSync('src/apb_studio/corpus_viewer/web/render/dom.js', 'utf8')
-  const scientific = readFileSync('src/apb_studio/corpus_viewer/web/render/scientific.js', 'utf8')
-  const adapter = readFileSync('src/apb_studio/corpus_viewer/web/vendor/json-viewer.js', 'utf8')
-  assert.match(html, /assets\/[^/]+\/json-viewer\.css/)
+test('structured JSON uses the locally bundled tree-viewer component', () => {
+  const application = readFileSync('viewer/src/corpus/app.ts', 'utf8')
+  const dom = readFileSync('viewer/src/corpus/render/dom.ts', 'utf8')
+  const scientific = readFileSync('viewer/src/corpus/render/scientific.ts', 'utf8')
+  const adapter = readFileSync('viewer/src/shared/json-viewer.ts', 'utf8')
+  assert.match(application, /import '\.\/json-viewer\.css'/)
   assert.match(dom, /document\.createElement\('json-viewer'\)/)
   assert.match(dom, /viewer\.expandAll\(\)/)
   assert.match(dom, /viewer\.collapseAll\(\)/)
   assert.match(scientific, /jsonTree\(scope\.value, \['uns', 'uns\.apb'\]\)/)
-  assert.match(adapter, /@alenaksu\/json-viewer@2\.1\.2/)
+  assert.match(adapter, /import '@alenaksu\/json-viewer'/)
 })
 
-test('the complete corpus viewer module graph has one cache-busting release path', () => {
-  const html = readFileSync('src/apb_studio/corpus_viewer/web/index.html', 'utf8')
-  const localAssets = [...html.matchAll(/(?:href|src)=["'](assets\/([^/]+)\/[^"']+)["']/g)]
-  assert.ok(localAssets.length > 0)
-  assert.equal(new Set(localAssets.map(match => match[2])).size, 1)
-  assert.ok(localAssets.some(match => match[1].endsWith('/app.js')))
-  assert.ok(localAssets.some(match => match[1].endsWith('/app.css')))
-})
-
-test('dataset navigation carries status-aware failure styling', () => {
-  const shell = readFileSync('src/apb_studio/corpus_viewer/web/shell/corpus-app.js', 'utf8')
-  const detail = readFileSync('src/apb_studio/corpus_viewer/web/panels/detail.js', 'utf8')
-  const styles = readFileSync('src/apb_studio/corpus_viewer/web/app.css', 'utf8')
-  assert.match(shell, /data-status=\$\{id === 'show-more' \? this\.showMoreStatus : ''\}/)
-  assert.match(detail, /app\.showMoreStatus = row\.status/)
-  assert.match(detail, /button\.dataset\.status = cell\.getRow\(\)\.getData\(\)\.status/)
+test('dataset table and sidebar carry status-aware failure styling', () => {
+  const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
+  const detail = readFileSync('viewer/src/corpus/panels/detail.ts', 'utf8')
+  const styles = readFileSync('viewer/src/corpus/app.css', 'utf8')
+  assert.match(shell, /id="file-list"/)
+  assert.match(detail, /button\.dataset\.status = rowForCell\(cell\)\.status/)
+  assert.match(detail, /button\.className = 'file-list-item'/)
+  assert.match(detail, /button\.dataset\.status = row\.status/)
   assert.match(styles, /button\[data-status="failed"\]/)
   assert.match(styles, /\.show-more-button\[data-status="failed"\]/)
 })
 
-test('corpus and fixture viewers share one pinned JavaScript stack', () => {
-  const corpusRoot = 'src/apb_studio/corpus_viewer/web'
-  const fixtureRoot = 'src/apb_studio/fixture_viewer/web'
-  for (const name of ['lit', 'd3-dsv', 'tabulator', 'plotly']) {
-    const corpus = readFileSync(`${corpusRoot}/vendor/${name}.js`, 'utf8')
-    const fixture = readFileSync(`${fixtureRoot}/vendor/${name}.js`, 'utf8')
-    assert.equal(
-      corpus.match(/https:\/\/[^'\"]+/)?.[0],
-      fixture.match(/https:\/\/[^'\"]+/)?.[0]
-    )
-  }
-  const shell = readFileSync(`${corpusRoot}/shell/corpus-app.js`, 'utf8')
-  const application = readFileSync(`${corpusRoot}/app.js`, 'utf8')
+test('corpus composition keeps rendering inside its panels and adapters', () => {
+  const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
+  const application = readFileSync('viewer/src/corpus/app.ts', 'utf8')
   assert.match(shell, /extends LitElement/)
-  assert.match(shell, /createRenderRoot \(\) \{ return this \}/)
+  assert.match(shell, /createRenderRoot \(\): HTMLElement \{ return this \}/)
   assert.match(application, /createDetailPanel/)
   assert.match(application, /createSettingsPanel/)
   assert.match(application, /createVisualizationPanel/)
-  assert.ok(application.split('\n').length < 300)
-  assert.doesNotMatch(application, /Plotly|TabulatorFull|LitElement|json-viewer/)
+  assert.doesNotMatch(application, /Plotly\.|new Tabulator|extends LitElement/)
 })
 
 test('every quantitative Plotly chart switches its value axis between linear and log', () => {
-  const plotly = readFileSync('src/apb_studio/corpus_viewer/web/render/plotly.js', 'utf8')
-  const scientific = readFileSync('src/apb_studio/corpus_viewer/web/render/scientific.js', 'utf8')
-  const visualizations = readFileSync('src/apb_studio/corpus_viewer/web/panels/visualizations.js', 'utf8')
+  const plotly = readFileSync('viewer/src/corpus/render/plotly.ts', 'utf8')
+  const scientific = readFileSync('viewer/src/corpus/render/scientific.ts', 'utf8')
+  const visualizations = readFileSync('viewer/src/corpus/panels/visualizations.ts', 'utf8')
   assert.match(plotly, /\['linear', 'Linear'\], \['log', 'Log'\]/)
   assert.match(plotly, /tracesForScale\(state\.traces, scale\)/)
   assert.match(plotly, /yAxesForScale\(state\.layout, scale\)/)

@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from apb_studio.corpus import cli, discovery, runner, runs
-from apb_studio.corpus.clean import archive_results, delete_run
+from apb_studio.corpus.clean import clear_results, delete_run
 from apb_studio.corpus.config import ensure_config, load_corpuses
 from apb_studio.corpus.discovery import (
     available_workflows,
@@ -57,12 +57,10 @@ from apb_studio.fixture_store import Store
 from apb_studio.proteobench_config import packaged_config
 from apb_studio.settings import StudioSettings
 from apb_studio.workflows.workflow_aggregate import steps as aggregate_steps
+from apb_studio.workflows.workflow_aggregate_medpolish import steps as aggregate_medpolish_steps
 from apb_studio.workflows.workflow_convert import steps as convert_steps
 from apb_studio.workflows.workflow_convert_ion import steps as convert_ion_steps
 from apb_studio.workflows.workflow_convert_no_param import steps as convert_no_param_steps
-from apb_studio.workflows.workflow_plasma import WORKFLOW_COLUMNS as PLASMA_COLUMNS
-from apb_studio.workflows.workflow_plasma import steps as plasma_steps
-from apb_studio.workflows.workflow_plasma_run import steps as plasma_run_steps
 from apb_studio.workflows.workflow_proteobench import WORKFLOW_COLUMNS as PROTEOBENCH_COLUMNS
 from apb_studio.workflows.workflow_proteobench import steps as proteobench_steps
 from apb_studio.workflows.workflow_proteobench_entrapment import (
@@ -70,6 +68,13 @@ from apb_studio.workflows.workflow_proteobench_entrapment import (
 )
 from apb_studio.workflows.workflow_proteobench_entrapment import (
     steps as proteobench_entrapment_steps,
+)
+from apb_studio.workflows.workflow_proteobench_plasma import (
+    WORKFLOW_COLUMNS as PROTEOBENCH_PLASMA_COLUMNS,
+)
+from apb_studio.workflows.workflow_proteobench_plasma import steps as proteobench_plasma_steps
+from apb_studio.workflows.workflow_proteobench_plasma_run import (
+    steps as proteobench_plasma_run_steps,
 )
 from apb_studio.workflows.workflow_proteobench_pmultiqc import (
     WORKFLOW_COLUMNS as PROTEOBENCH_PMULTIQC_COLUMNS,
@@ -149,14 +154,14 @@ def test_a_dataset_without_parameters_refuses_parameter_workflows(
     workflows = tmp_path / "workflows"
     workflows.mkdir()
     (workflows / "__init__.py").write_text("")
-    (workflows / "workflow_convert.py").write_text("TOOLS = ('apb2',)\n")
+    (workflows / "workflow_convert_ion.py").write_text("TOOLS = ('apb2',)\n")
     monkeypatch.setattr(discovery, "WORKFLOWS", workflows)
     monkeypatch.setattr(runs, "_tool_version", lambda _executable: "apb2 1.0")
     settings = ExecutionSettings(
         corpus_name="routine",
         corpus=corpus,
         data_root=tmp_path,
-        workflow="convert",
+        workflow="convert_ion",
         format="hdf5",
         workflow_table=None,
         tools={"apb2": Path(sys.executable)},
@@ -550,7 +555,7 @@ def test_run_snapshots_and_index_validation(tmp_path: Path) -> None:
         "routine/convert/hdf5/run.json"
     ]
     with pytest.raises(ValueError, match="overlaps"):
-        archive_results(root)
+        clear_results(root)
     for invalid in ({"schema_version": 1}, {"unknown": True}, {"runtime_seconds": float("nan")}):
         with pytest.raises(ValidationError):
             DatasetReport.model_validate({**report.model_dump(), **invalid})
@@ -644,6 +649,7 @@ def test_every_workflow_declares_the_executables_it_needs() -> None:
     """The workflow owns which tools it needs; generic code must not name them."""
     assert workflow_tools("convert") == ("apb2",)
     assert workflow_tools("aggregate") == ("apb2", "apb-aggregate")
+    assert workflow_tools("aggregate_medpolish") == ("apb2", "apb-aggregate")
     assert workflow_tools("proteobench") == ("apb2", "apb-fasta", "apb-proteobench")
     assert workflow_tools("proteobench_pmultiqc") == ("apb-proteobench", "multiqc")
     assert workflow_tools("proteobench_run") == ("apb-proteobench",)
@@ -711,6 +717,7 @@ def test_a_declared_tool_needs_a_matching_override_option(
 def test_discovery_and_named_selection(tmp_path: Path) -> None:
     assert available_workflows() == [
         "aggregate",
+        "aggregate_medpolish",
         "convert",
         "convert_ion",
         "convert_no_param",
@@ -718,10 +725,10 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "export_msmu",
         "export_prolfqua",
         "export_proteopy",
-        "plasma",
-        "plasma_run",
         "proteobench",
         "proteobench_entrapment",
+        "proteobench_plasma",
+        "proteobench_plasma_run",
         "proteobench_pmultiqc",
         "proteobench_run",
     ]
@@ -777,9 +784,8 @@ def test_corpus_config_bootstrap_preserves_existing_config(tmp_path: Path) -> No
         "all": tmp_path / "corpuses" / "all.csv",
         "directlfq": tmp_path / "corpuses" / "directlfq.csv",
         "entrapment": tmp_path / "corpuses" / "entrapment.csv",
-        "maxquant_entrapment": tmp_path / "corpuses" / "maxquant_entrapment.csv",
-        "plasma": tmp_path / "corpuses" / "plasma.csv",
         "proteobench": tmp_path / "corpuses" / "proteobench.csv",
+        "proteobench_plasma": tmp_path / "corpuses" / "proteobench_plasma.csv",
         "routine": tmp_path / "corpuses" / "routine.csv",
     }
     source.write_text('{"small": "small.csv"}\n', encoding="utf-8")
@@ -843,6 +849,8 @@ def test_aggregate_workflow_is_two_steps_configured_by_software(
         str(planned[0].outputs[0].path),
         str(planned[1].outputs[0].path),
         "mean",
+        "--layers",
+        "all",
     ]
     assert planned[0].outputs[1].path.name.endswith(f"{planned[0].outputs[0].path.suffix}.apb.json")
     assert planned[0].outputs[1].role == "representation"
@@ -908,6 +916,8 @@ def test_listed_aggregate_methods_chain_onto_one_final_result(tmp_path: Path) ->
         str(first.outputs[0].path),
         str(second.outputs[0].path),
         "rlm_confidence_case",
+        "--layers",
+        "all",
     ]
     assert second.outputs[0].role == "result"
     assert second.outputs[0].path.name == "aggregated.h5mu"
@@ -922,6 +932,37 @@ def test_aggregate_workflow_rejects_a_repeated_method(tmp_path: Path) -> None:
 def test_aggregate_workflow_rejects_an_empty_method(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="nonempty method"):
         aggregate_steps(_aggregate_context(tmp_path, "all;"))
+
+
+@pytest.mark.parametrize(
+    ("storage_format", "suffix"),
+    [("hdf5", ".h5mu"), ("duckdb", ".duckdb"), ("parquet", ".parquet")],
+)
+def test_medpolish_workflow_aggregates_only_primary_without_a_resource_table(
+    tmp_path: Path, storage_format: StorageFormat, suffix: str
+) -> None:
+    context = _aggregate_context(tmp_path, "all;rlm_confidence_case").model_copy(
+        update={"workflow_table": None, "format": storage_format}
+    )
+
+    convert, aggregate = aggregate_medpolish_steps(context)
+
+    assert aggregate.name == "aggregate-medpolish"
+    assert aggregate.command[1:] == [
+        str(convert.outputs[0].path),
+        str(aggregate.outputs[0].path),
+        "medpolish",
+        "--layers",
+        "primary",
+    ]
+    assert aggregate.inputs == [convert.outputs[0]]
+    assert aggregate.outputs[0].role == "result"
+    assert aggregate.outputs[0].path.name == f"aggregated{suffix}"
+    assert convert.command[convert.command.index("--format") + 1] == storage_format
+    assert aggregate.outputs[1].role == "representation"
+    assert aggregate.outputs[1].path.name == f"aggregated{suffix}.apb.json"
+    implementations = discovery.workflow_implementation_paths("aggregate_medpolish")
+    assert discovery.WORKFLOWS / "aggregate.py" in implementations
 
 
 def test_compound_software_uses_the_base_parameter_parser(tmp_path: Path) -> None:
@@ -990,8 +1031,8 @@ def test_no_param_workflow_does_not_depend_on_a_parameter_file(tmp_path: Path) -
     assert (tmp_path / "params.txt").resolve() not in dependencies
 
 
-def test_plasma_workflow_exports_the_layer_its_table_names(tmp_path: Path) -> None:
-    table = tmp_path / "workflow_plasma.tsv"
+def test_proteobench_plasma_workflow_exports_the_layer_its_table_names(tmp_path: Path) -> None:
+    table = tmp_path / "workflow_proteobench_plasma.tsv"
     table.write_text(
         "module\tsoftware_name\tfasta\tlevel\tlayer\n"
         "dia_aif\tDIA-NN\tfasta/HYE.fasta\tion\tPrecursor_Quantity\n"
@@ -1003,25 +1044,26 @@ def test_plasma_workflow_exports_the_layer_its_table_names(tmp_path: Path) -> No
         }
     )
 
-    export, report = plasma_steps(context)
+    export, report = proteobench_plasma_steps(context)
 
-    assert workflow_table_name("plasma") == "workflow_plasma.tsv"
+    assert workflow_table_name("proteobench_plasma") == "workflow_proteobench_plasma.tsv"
     assert export.command[export.command.index("--layer") + 1] == "Precursor_Quantity"
     assert export.command[export.command.index("--module") + 1] == "dia_aif"
     assert report.name == "pmultiqc"
 
 
-def test_plasma_table_covers_the_plasma_corpus() -> None:
+def test_proteobench_plasma_table_covers_the_proteobench_plasma_corpus() -> None:
     root = Path(__file__).parents[1]
-    table = root / "workflow_tables" / "workflow_plasma.tsv"
-    rows = load_corpus(root / "corpuses" / "plasma.csv")
+    table = root / "workflow_tables" / "workflow_proteobench_plasma.tsv"
+    rows = load_corpus(root / "corpuses" / "proteobench_plasma.csv")
 
     assert rows
     assert {row.module for row in rows} == {"dia_plasma"}
-    assert all(row.module != "dia_plasma" for row in load_corpus(root / "corpuses" / "all.csv"))
+    all_rows = {row.input_file: row for row in load_corpus(root / "corpuses" / "all.csv")}
+    assert all(all_rows[row.input_file] == row for row in rows)
     for row in rows:
         workflow = join_workflow(row.model_dump(), table, on=("module", "software_name"))
-        assert tuple(workflow) == PLASMA_COLUMNS
+        assert tuple(workflow) == PROTEOBENCH_PLASMA_COLUMNS
         assert workflow["layer"]
 
 
@@ -1097,7 +1139,7 @@ def test_convert_ion_workflow_selects_only_ion_and_keeps_timing_artifacts(
     assert step.outputs[2].path == context.output_dir / "converted.timings.json"
 
 
-def test_snakemake_mixed_outcomes_settles_and_force_preserves_history(tmp_path: Path) -> None:
+def test_snakemake_settles_and_force_replaces_results(tmp_path: Path) -> None:
     """A tool failure is a completed result, including through the actual scheduler."""
     from apb_studio.corpus import cli
     from apb_studio.corpus.cli import RunOptions
@@ -1187,12 +1229,17 @@ def test_snakemake_mixed_outcomes_settles_and_force_preserves_history(tmp_path: 
     assert after[0] != before[0]
     assert after[1] == before[1]
 
-    previous = after[0]
+    old_artifacts = list((root / "artifacts").glob("*/*"))
+    history = root / "history" / "old-attempt"
+    history.mkdir(parents=True)
+    (history / "old-output.bin").write_bytes(b"obsolete")
+    invoke(dry_run=True, force=True)
+    assert [(root / link.path).read_text() for link in manifest.reports] == after
+    assert (history / "old-output.bin").is_file()
     invoke(force=True)
-    history = list((root / "history").iterdir())
-    assert len(history) == 1
-    assert (history[0] / manifest.reports[0].path).read_text() == previous
-    assert (root / manifest.reports[0].path).read_text() != previous
+    assert not (root / "history").exists()
+    assert all(not path.exists() for path in old_artifacts)
+    assert (root / manifest.reports[0].path).read_text() != after[0]
     assert (data_root / "good.txt").read_text() == "good changed"
 
 
@@ -1290,6 +1337,7 @@ def test_configure_reports_files_and_settings_without_writing(
         "workflow": "convert",
         "format": "hdf5",
         "cores": 3,
+        "force": True,
     }
     assert rendered["configuration_files"] == {
         "corpuses": str(workspace / "corpuses.json"),
@@ -1408,18 +1456,20 @@ def test_one_call_proteobench_declares_every_input_of_the_single_command(tmp_pat
     assert Artifact(role="proteobench_scores", path=scores) in planned[0].outputs
 
 
-def test_plasma_run_scores_the_layer_its_table_names_without_a_report(tmp_path: Path) -> None:
-    table = tmp_path / "workflow_plasma.tsv"
+def test_proteobench_plasma_run_scores_the_layer_its_table_names_without_a_report(
+    tmp_path: Path,
+) -> None:
+    table = tmp_path / "workflow_proteobench_plasma.tsv"
     table.write_text(
         "module\tsoftware_name\tfasta\tlevel\tlayer\n"
         "dia_aif\tDIA-NN\tfasta/HYE.fasta\tion\tPrecursor_Quantity\n"
     )
     context = proteobench_context(tmp_path).model_copy(update={"workflow_table": table})
 
-    (run,) = plasma_run_steps(context)
+    (run,) = proteobench_plasma_run_steps(context)
 
-    assert workflow_tools("plasma_run") == ("apb-proteobench",)
-    assert workflow_table_name("plasma_run") == "workflow_plasma.tsv"
+    assert workflow_tools("proteobench_plasma_run") == ("apb-proteobench",)
+    assert workflow_table_name("proteobench_plasma_run") == "workflow_proteobench_plasma.tsv"
     assert run.command[1:3] == ["run", "quant"]
     assert run.command[run.command.index("--layer") + 1] == "Precursor_Quantity"
     assert run.command[run.command.index("--level") + 1] == "ion"
@@ -1544,12 +1594,12 @@ def test_proteobench_workflows_require_their_resource_table(tmp_path: Path) -> N
             build(context)
 
 
-def test_proteobench_table_covers_every_corpus_module() -> None:
-    """The packaged table must resolve a FASTA and level for every corpus row."""
+def test_proteobench_table_covers_every_scoring_corpus_module() -> None:
+    """The packaged scoring table resolves a FASTA and level for its explicit corpus."""
     root = Path(__file__).parents[1]
     table = root / "workflow_tables" / "workflow_proteobench.csv"
 
-    for row in load_corpus(root / "corpuses" / "all.csv"):
+    for row in load_corpus(root / "corpuses" / "proteobench.csv"):
         workflow = join_workflow(row.model_dump(), table, on=("module",))
         assert workflow["module"] == row.module
         assert workflow["fasta"].startswith("fasta/")
@@ -1625,11 +1675,18 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
     all_rows = load_corpus(root / "corpuses" / "all.csv")
     proteobench_rows = load_corpus(root / "corpuses" / "proteobench.csv")
 
-    assert len(all_rows) == 203
     assert len(proteobench_rows) == 198
-    assert proteobench_rows == [
-        row for row in all_rows if row.module != "dda_peptidoform" and row.software_name != "Sage"
-    ]
+    quant_modules = packaged_config().modules_in("all")
+    expected = {
+        row.input_file: row
+        for row in all_rows
+        if row.module in quant_modules
+        and row.module != "dda_peptidoform"
+        and row.software_name != "Sage"
+        and row.vendor_parameter_file
+    }
+    assert {row.input_file: row for row in proteobench_rows} == expected
+    assert {row.module for row in all_rows} >= {"dia_plasma", "entrapment_dia_astral", "directlfq"}
 
 
 def test_a_workflow_table_declaration_must_name_a_workflow_csv(
@@ -1778,6 +1835,23 @@ def test_cleaning_refuses_a_symlinked_run_directory(tmp_path: Path) -> None:
         delete_run(symlink)
 
 
+def test_forced_cleanup_refuses_a_symlinked_history_before_deleting_results(tmp_path: Path) -> None:
+    data_root = tmp_path / "fixtures"
+    data_root.mkdir()
+    root = tmp_path / "run"
+    (root / "artifacts").mkdir(parents=True)
+    artifact = root / "artifacts" / "output.h5mu"
+    artifact.write_bytes(b"current result")
+    (root / "run.json").write_text(json.dumps({"data_root": str(data_root)}))
+    (root / "history").symlink_to(data_root, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlinks in managed run paths"):
+        clear_results(root)
+
+    assert artifact.read_bytes() == b"current result"
+    assert data_root.is_dir()
+
+
 def test_cleaning_refuses_a_manifest_without_a_usable_data_root(tmp_path: Path) -> None:
     """The fixture-overlap guard needs data_root, so an unusable one stops deletion."""
     for payload, expected in (
@@ -1828,4 +1902,5 @@ def test_export_workflows_call_apb_export_from_its_own_environment(
     assert step.command[step.command.index("--software") + 1] == "diann"
     output = context.output_dir / f"{target}{extension}"
     assert step.command[3] == str(output)
-    assert step.outputs == [Artifact(role="export", path=output)]
+    sidecar = Artifact(role="representation", path=output.with_name(f"{output.name}.apb.json"))
+    assert step.outputs == [Artifact(role="export", path=output), sidecar]

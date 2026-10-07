@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { timingFacetFigure } from '../../src/apb_studio/corpus_viewer/web/render/timing-facets.js'
-import { yAxesForScale } from '../../src/apb_studio/corpus_viewer/web/render/scale.js'
-import { xAxisChoices } from '../../src/apb_studio/corpus_viewer/web/render/x-axis.js'
+import { timingFacetFigure } from '../../viewer/src/corpus/render/timing-facets.ts'
+import { yAxesForScale } from '../../viewer/src/corpus/render/scale.ts'
+import { xAxisChoices } from '../../viewer/src/corpus/render/x-axis.ts'
 
 function point (phase, software, seconds) {
   return {
