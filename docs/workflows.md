@@ -63,7 +63,7 @@ A workflow needs no runner change to become runnable. `--workflow <name>` select
 | See what is runnable | `uv run corpus workflows` |
 | Inspect configuration | `uv run corpus configure` |
 | Run one workflow, routine fixtures | `uv run corpus run routine --workflow <name>` |
-| Run one workflow, whole corpus | `uv run corpus run all --workflow <name>` |
+| Run full regular benchmark corpus | `uv run corpus run proteobench --workflow proteobench_pmultiqc` |
 | Confirm a run settled | `uv run corpus run routine --workflow <name> --no-force --dry-run` |
 | Inspect results | `uv run corpus view` |
 | Stop the viewer | `uv run corpus view stop` |
@@ -77,23 +77,23 @@ A workflow needs no runner change to become runnable. `--workflow <name>` select
 - `--force`/`--no-force` — force is enabled by default and replaces the selected combination’s previous generated results without archiving
 - `--dry-run` — nondestructive preview; combine with `--no-force` to confirm existing results are current
 
-`corpus run <corpus>` resolves the name through the flat `corpuses.json` object and runs one selected workflow. Relative inventory paths are resolved beside that config file, so `routine`, `proteobench`, and `all` are ordinary editable mappings rather than CLI branches. The `proteobench` inventory contains regular ProteoBench quantification inputs eligible for `proteobench_pmultiqc`; `all` additionally includes peptidoform, plasma, entrapment and acquired Zenodo inputs. Corpus inventories and workflow resources remain configured in their CSV/text files, roots live in Studio's settings JSON, and required tools resolve from `PATH`. `corpus configure` reports each exact source file together with the values read from it, including configured corpuses and complete workflow-table rows; it never writes configuration.
+`corpus run <corpus>` resolves the name through the flat `corpuses.json` object and runs one selected workflow. Relative inventory paths are resolved beside that config file, so `routine`, `routine_pb`, and `proteobench` are ordinary editable mappings rather than CLI branches. The `proteobench` inventory contains regular ProteoBench quantification inputs eligible for `proteobench_pmultiqc`; The acquisition inventory `all.csv` additionally includes peptidoform, plasma, entrapment and acquired Zenodo inputs, but has no default execution alias or selected stress run. Corpus inventories and workflow resources remain configured in their CSV/text files, roots live in Studio's settings JSON, and required tools resolve from `PATH`. `corpus configure` reports each exact source file together with the values read from it, including configured corpuses and complete workflow-table rows; it never writes configuration.
 
 ## Selected combinations
 
-Three Fish scripts select 13 corpus/workflow/format combinations. The routine inventory contains 16 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+Three Fish scripts select 13 corpus/workflow/format combinations. The routine inventory contains 16 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains the 15 catalogued ProteoBench datasets from that small selection, excluding the Zenodo MaxQuant entrapment folder. It runs the three separate calls: conversion, FASTA peptide verification and ProteoBench quantification scoring. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
 
 | Script | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
 | routine | routine | convert | hdf5 | `.h5mu` |
 | routine | routine | convert | duckdb | `.duckdb` |
 | routine | routine | convert | parquet | `.parquet` |
+| routine | routine_pb | proteobench | hdf5 | `.h5mu` |
 | routine | routine | aggregate_medpolish | hdf5 | `.h5mu` |
 | overview | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
 | overview | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
 | overview | entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
 | overview | directlfq | convert_no_param | hdf5 | `.h5mu` |
-| overview | all | convert | hdf5 | `.h5mu` |
 | export | routine | export_msmu | hdf5 | `.h5mu` |
 | export | routine | export_prolfqua | hdf5 | `.h5ad` |
 | export | routine | export_proteopy | hdf5 | `.h5ad` |
@@ -116,7 +116,7 @@ All three scripts work from any directory, run combinations sequentially and alw
 
 `export_corpuses.fish` resolves `apb-export` from PATH first, then the sibling `apb-export/.venv/bin/apb-export`, exposing that environment to its subprocesses.
 
-`aggregate_medpolish` needs no workflow table. It converts every compatible vendor level, then runs only `medpolish --layers primary` on the source level’s X, rolling up to the coarsest reachable identity. A new target uses the median-polish abundance as X; an existing target keeps its vendor X and gains the derived abundance as an additional layer. The general `aggregate` implementation remains available and reads its per-software method table to aggregate every quantitative layer with `--layers all`; it is deferred from the selected scripts. The full all corpus is selected for conversion stress coverage.
+`aggregate_medpolish` needs no workflow table. It converts every compatible vendor level, then runs only `medpolish --layers primary` on the source level’s X, rolling up to the coarsest reachable identity. A new target uses the median-polish abundance as X; an existing target keeps its vendor X and gains the derived abundance as an additional layer. The general `aggregate` implementation remains available and reads its per-software method table to aggregate every quantitative layer with `--layers all`; it is deferred from the selected scripts. The all conversion stress run is retired; the remaining inventories cover 247 of its 250 input paths, excluding three WOMBAT peptidoform fixtures. Input overlap does not reproduce its full-level conversion coverage because the larger ProteoBench workflows persist ion-only results.
 
 ## Clearing results
 

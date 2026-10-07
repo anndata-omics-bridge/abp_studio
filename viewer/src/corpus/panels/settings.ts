@@ -42,8 +42,11 @@ function columnsFor (rows: CsvRows, sourceDirectory = ''): ColumnDefinition[] {
 }
 
 function renderLinks (target: HTMLElement, directory: string, names: (string | null | undefined)[]) {
-  const links = [...new Set(names.filter((name): name is string => typeof name === 'string' && Boolean(name)))].map(name =>
-    fileLink(fileUrl(`${directory}/${name}`), name))
+  const links = [...new Set(names.filter((name): name is string => typeof name === 'string' && Boolean(name)))].map(name => {
+    const link = fileLink(fileUrl(`${directory}/${name}`), name)
+    link.title = `${directory}/${name}`
+    return link
+  })
   target.replaceChildren(...links)
 }
 
@@ -51,6 +54,7 @@ function renderLinks (target: HTMLElement, directory: string, names: (string | n
 export function createSettingsPanel (app: CorpusApp) {
   let tables: Tabulator[] = []
   const host = (id: string) => app.hostFor(id)
+  const linkHosts = ['execution-settings', 'saved-run', 'corpus-input', 'input-metadata', 'workflow-input', 'workflow-source']
 
   function destroy () {
     for (const table of tables) table.destroy()
@@ -59,7 +63,7 @@ export function createSettingsPanel (app: CorpusApp) {
 
   function clear () {
     destroy()
-    for (const id of ['links', 'manifest', 'run-manifest', 'corpus', 'input-metadata-table', 'workflow-table', 'source']) {
+    for (const id of ['manifest', 'run-manifest', 'corpus', 'input-metadata-table', 'workflow-table', 'source', ...linkHosts.map(id => `${id}-links`)]) {
       host(id).replaceChildren()
     }
     host('corpus-description').textContent = ''
@@ -88,15 +92,12 @@ export function createSettingsPanel (app: CorpusApp) {
         ? `${directory}/${manifest.input_metadata}`
         : null
     })
-    renderLinks(host('links'), directory, [
-      'run.json',
-      manifest.execution_settings,
-      manifest.source_corpus,
-      manifest.corpus,
-      manifest.input_metadata,
-      manifest.workflow_table,
-      manifest.workflow_source
-    ])
+    renderLinks(host('execution-settings-links'), directory, [manifest.execution_settings])
+    renderLinks(host('saved-run-links'), directory, ['run.json'])
+    renderLinks(host('corpus-input-links'), directory, [manifest.source_corpus, manifest.corpus])
+    renderLinks(host('input-metadata-links'), directory, [manifest.input_metadata])
+    renderLinks(host('workflow-input-links'), directory, [manifest.workflow_table])
+    renderLinks(host('workflow-source-links'), directory, [manifest.workflow_source])
     const inventory = await readStore(`${directory}/${manifest.source_corpus}`, 'csv') ?? emptyCsv()
     host('corpus-title').textContent = `Corpus: ${config.corpus.split('/').at(-1)}`
     host('corpus-description').textContent =

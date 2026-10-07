@@ -781,7 +781,6 @@ def test_corpus_config_bootstrap_preserves_existing_config(tmp_path: Path) -> No
     source = tmp_path / "corpuses.json"
     ensure_config(source)
     assert load_corpuses(source) == {
-        "all": tmp_path / "corpuses" / "all.csv",
         "directlfq": tmp_path / "corpuses" / "directlfq.csv",
         "entrapment": tmp_path / "corpuses" / "entrapment.csv",
         "proteobench": tmp_path / "corpuses" / "proteobench.csv",

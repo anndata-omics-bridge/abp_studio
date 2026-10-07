@@ -480,12 +480,13 @@ test('no stable runs produce no choices', () => {
   assert.deepEqual(runChoices([]), [])
 })
 
-test('settings use bounded sub-tabs while file links remain outside them', () => {
+test('settings use bounded sub-tabs with snapshot links inside their matching panels', () => {
   const html = readFileSync('viewer/corpus/index.html', 'utf8')
   const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
   assert.match(shell, /const SETTINGS_TABS = \[[\s\S]*'workflow-source'/)
   assert.equal((shell.match(/class="settings-panel"/g) ?? []).length, 6)
-  assert.ok(shell.indexOf('id="links"') < shell.indexOf('aria-label="Settings and input views"'))
+  assert.doesNotMatch(shell, /id="links"|class="file-strip"/)
+  assert.match(shell, /id="workflow-source"[^>]*>[\s\S]*?id="workflow-source-links"[\s\S]*?id="source"/)
   const stylesheet = html.match(/app\.css\?v=([^"']+)/)?.[1]
   const script = html.match(/app\.js\?v=([^"']+)/)?.[1]
   assert.equal(stylesheet, script)
@@ -726,7 +727,7 @@ test('dataset table stays compact while show more exposes every artifact and the
   assert.match(detail, /title: 'Input file',[\s\S]*field: 'input_file_name'/)
   assert.match(detail, /title: 'Output',[\s\S]*field: 'output_file_name'/)
   assert.match(detail, /row\.input_file_parent/)
-  assert.match(detail, /datasetArtifacts\(row\)/)
+  assert.match(detail, /renderWorkflowFiles\(element\('detail-files'\), row, runPath\(\)\)/)
   assert.match(detail, /Complete execution report/)
   assert.match(detail, /renderApbMetadata/)
   assert.match(detail, /renderRepresentationJson/)

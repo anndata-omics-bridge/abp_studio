@@ -2,7 +2,7 @@ import type { CellComponent, ColumnDefinition } from '../../shared/tabulator.js'
 import type { CsvRows, DatasetReport, DatasetRow, Representation, RepresentationView } from '../types.js'
 import type { CorpusApp } from '../shell/corpus-app.js'
 
-import { datasetArtifacts, formatBytes, workflowFields } from '../model.js'
+import { formatBytes, workflowFields } from '../model.js'
 import { fileUrl, sourceUrl } from '../lib/fetch.js'
 import {
   artifactAttemptStorePath,
@@ -16,6 +16,7 @@ import { columnTitle, jsonTree, node } from '../render/dom.js'
 import { fileLink } from '../render/links.js'
 import { renderAnnDataStructure } from '../render/anndata-structure.js'
 import { renderTabs } from '../render/tabs.js'
+import { renderWorkflowFiles } from '../render/workflow-files.js'
 import {
   renderAnnData,
   renderAnnotationAnnData,
@@ -25,10 +26,6 @@ import {
 } from '../render/scientific.js'
 
 // Dataset table presentation and one selected dataset's lazy detail navigation.
-const SOURCE_FIELDS: Record<string, string> = {
-  vendor_table: 'input_file', vendor_parameter_file: 'vendor_parameter_file', fasta: 'fasta'
-}
-
 function fileCell (path: string, basename: string, parent: string, size: string | number | null | undefined, href = '', options: { directory?: boolean } = {}) {
   if (!path) return '—'
   const host = document.createElement('div')
@@ -45,52 +42,6 @@ function fileCell (path: string, basename: string, parent: string, size: string 
   context.append(metadata)
   host.append(name, context)
   return host
-}
-
-function renderDatasetFiles (host: HTMLElement, row: DatasetRow, run: string) {
-  host.replaceChildren()
-  const artifacts = datasetArtifacts(row)
-  for (const artifact of artifacts) {
-    const group = document.createElement('div')
-    const term = document.createElement('dt')
-    const value = document.createElement('dd')
-    const name = document.createElement('strong')
-    const code = document.createElement('code')
-    const metadata = document.createElement('small')
-    const size = artifact.size_bytes ?? (
-      artifact.role === 'vendor_table' ? row.input_file_size_bytes : null
-    )
-    term.textContent = `${artifact.step} · ${artifact.direction}`
-    const basename = artifact.path?.split('/').at(-1) ?? '—'
-    const sourceValue = row[SOURCE_FIELDS[artifact.role]]
-    const source = typeof sourceValue === 'string' ? sourceValue : ''
-    const href = artifact.direction === 'Input' && source
-      ? sourceUrl(run, source)
-      : artifact.size_bytes != null && artifacts.some(candidate =>
-        candidate.direction === 'Output' && candidate.path === artifact.path)
-        ? fileUrl(artifactStorePath(run, row.output_dir, artifact.path))
-        : ''
-    if (href) {
-      name.append(fileLink(href, basename, { directory: artifact.format === 'parquet' }))
-    } else {
-      name.textContent = basename
-    }
-    code.textContent = artifact.path ?? '—'
-    const formattedSize = formatBytes(size)
-    const exactSize = size == null || size === ''
-      ? ''
-      : `${Number(size).toLocaleString()} bytes`
-    metadata.textContent = [
-      artifact.role,
-      artifact.format,
-      formattedSize || 'size unavailable',
-      exactSize
-    ].filter(Boolean).join(' · ')
-    value.append(name, document.createElement('br'), code, document.createElement('br'), metadata)
-    group.append(term, value)
-    host.append(group)
-  }
-  host.hidden = artifacts.length === 0
 }
 
 /** Own selection, lazy scientific views and the dataset-column adapter. */
@@ -244,7 +195,7 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
     if (!changed) return
     const activeGeneration = clearDetail()
     const selectedRun = runPath()
-    renderDatasetFiles(element('detail-files'), row, runPath())
+    renderWorkflowFiles(element('detail-files'), row, runPath())
     const tabs = element('detail-tabs')
     const ioPanel = element('detail-io')
     const notices = element('detail-notices')
@@ -423,8 +374,11 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
     /** Refresh reports without changing the opened file when its chooser entry is filtered out. */
     async refresh (rows: DatasetRow[], sidebarRows: DatasetRow[] = rows) {
       currentRows = new Map(rows.map(row => [row.input_file, row]))
+      const softwareCounts = new Map<string, number>()
+      for (const row of rows) softwareCounts.set(row.software_name, (softwareCounts.get(row.software_name) ?? 0) + 1)
       const stamp = JSON.stringify({
         emptyRun: rows.length === 0,
+        repeatedSoftware: [...softwareCounts].filter(([, count]) => count > 1).map(([software]) => software),
         files: sidebarRows.map(row => [
           row.input_file, row.input_file_kind, row.input_file_size_bytes,
           row.software_name, row.module, row.status
@@ -446,11 +400,13 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
           const icon = node('span', kind === 'folder' ? '📁' : kind === 'file' ? '📄' : '', 'file-list-icon')
           icon.setAttribute('aria-hidden', 'true')
           heading.append(icon, node('strong', row.software_name, 'file-list-name'))
+          const module = (softwareCounts.get(row.software_name) ?? 0) > 1 ? row.module : ''
+          if (module) heading.append(node('span', `· ${module}`, 'file-list-module'))
           button.append(
             heading,
             node('span', `${type} · ${size}`, 'file-list-context')
           )
-          button.setAttribute('aria-label', `${row.software_name}, ${type.toLowerCase()}, ${size}, ${row.status}`)
+          button.setAttribute('aria-label', [row.software_name, module, type.toLowerCase(), size, row.status].filter(Boolean).join(', '))
           button.addEventListener('click', () => {
             const current = currentRows.get(row.input_file)
             if (current) void show(current)

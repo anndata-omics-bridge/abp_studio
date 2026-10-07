@@ -1,12 +1,11 @@
 #!/usr/bin/env fish
 # Edit these corpus:workflow:format entries to choose the saved runs Studio should produce.
-# Focused overview workflows plus conversion of the full stress corpus.
+# Focused benchmark and directLFQ conversion workflows.
 set -l combinations \
     proteobench:proteobench_pmultiqc:hdf5 \
     proteobench_plasma:proteobench_plasma:hdf5 \
     entrapment:proteobench_entrapment:hdf5 \
-    directlfq:convert_no_param:hdf5 \
-    all:convert:hdf5
+    directlfq:convert_no_param:hdf5
 
 argparse --name overview_corpuses h/help p/plan c/clean d/dry-run f/force j/cores= -- $argv
 or exit 2

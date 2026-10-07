@@ -1,4 +1,4 @@
-import { emptyCsv, readCatalog, readInputKinds, readStore, readStoreJson } from './lib/fetch.js'
+import { emptyCsv, readCatalog, readInputKinds, readProteobenchReference, readStore, readStoreJson } from './lib/fetch.js'
 import { emptyDatasetFilters, filterDatasets } from './filters.js'
 import {
   chartViews,
@@ -10,6 +10,9 @@ import {
   workflowSteps
 } from './model.js'
 import { createDetailPanel } from './panels/detail.js'
+import { createScoresPanel } from './panels/scores.js'
+import { representationScores } from './scores.js'
+import type { RepresentationSummary } from './scores.js'
 import { createSettingsPanel } from './panels/settings.js'
 import { createVisualizationPanel } from './panels/visualizations.js'
 import { artifactStorePath, representationIonVariables, validatedRepresentation } from './representation.js'
@@ -27,6 +30,7 @@ import type { ExecutionSettings } from './panels/settings.js'
 type DetailPanel = ReturnType<typeof createDetailPanel>
 type SettingsPanel = ReturnType<typeof createSettingsPanel>
 type VisualizationPanel = ReturnType<typeof createVisualizationPanel>
+type ScoresPanel = ReturnType<typeof createScoresPanel>
 interface ViewerState {
   run: string
   requested: string
@@ -41,7 +45,7 @@ interface ViewerState {
   rows: DatasetRow[]
   reports: Map<string, DatasetReport>
   timingFiles: Map<string, ToolTimings | null>
-  representationFiles: Map<string, number | null>
+  representationFiles: Map<string, RepresentationSummary | null>
   table: Tabulator | null
 }
 interface ArtifactEntry { row: DatasetRow; artifact: Artifact }
@@ -74,6 +78,10 @@ let refreshTimer: number | undefined
 
 function host (app: CorpusApp, id: string) { return app.hostFor(id) }
 
+function ionDimensions (): Map<string, number | null> {
+  return new Map([...state.representationFiles].map(([path, summary]) => [path, summary?.ionVariables ?? null]))
+}
+
 async function readRepresentation (path: string) {
   const document = await readStoreJson(path)
   return document ? validatedRepresentation(document) : null
@@ -103,7 +111,7 @@ function updateSummary (app: CorpusApp, status: string, rows: number, summary: R
   app.fractions = statusFractions(summary, rows)
 }
 
-async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsPanel, visualizations: VisualizationPanel, choice: RunChoice) {
+async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsPanel, visualizations: VisualizationPanel, scores: ScoresPanel, choice: RunChoice) {
   const directory = choice.path.slice(0, -'/run.json'.length)
   const runChanged = directory !== state.run
   state.manifest = null
@@ -124,10 +132,13 @@ async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsP
   state.representationFiles.clear()
   state.operationStamp = ''
   const manifest = choice.manifest
-  updateSummary(app, `${choice.label} · loading`, 0, {}, [])
+  app.hasProteobench = Boolean(manifest.tools?.['apb-proteobench'])
+  if (!app.hasProteobench && app.insightTab === 'scores') app.selectInsight('results')
+  updateSummary(app, 'Loading run…', 0, {}, [])
   settings.clear()
   host(app, 'scheduler-log').textContent = ''
   await visualizations.render(chartViews([]))
+  await scores.render(directory, [], new Map(), [])
   state.corpus = await readStore(`${state.run}/${manifest.corpus}`, 'csv') ?? emptyCsv()
   state.inputMetadata = manifest.input_metadata
     ? await readStore(`${state.run}/${manifest.input_metadata}`, 'csv') ?? emptyCsv()
@@ -152,18 +163,19 @@ async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsP
   })
   state.manifest = manifest
   state.manifestStamp = JSON.stringify(manifest)
-  await refreshRun(app, detail, visualizations)
+  await refreshRun(app, detail, visualizations, scores)
 }
 
 /** Serialize panel updates; each update projects the latest records and filters. */
-function renderSelection (app: CorpusApp, detail: DetailPanel, visualizations: VisualizationPanel): Promise<void> {
+function renderSelection (app: CorpusApp, detail: DetailPanel, visualizations: VisualizationPanel, scores: ScoresPanel): Promise<void> {
   selectionRender = selectionRender.catch(() => {}).then(async () => {
     if (!state.manifest) return
     const rows = filterDatasets(state.rows, app.datasetFilters)
     if (state.table) await state.table.replaceData(rows)
     else state.table = await table(host(app, 'datasets'), rows, detail.columns(state.workflowRows))
     await detail.refresh(state.rows, rows)
-    await visualizations.render(chartViews(rows, state.timingFiles, state.representationFiles))
+    await visualizations.render(chartViews(rows, state.timingFiles, ionDimensions()))
+    await scores.render(state.run, rows, state.representationFiles, [...new Set(state.rows.map(row => row.software_name))].sort())
   })
   return selectionRender
 }
@@ -206,7 +218,7 @@ async function readArtifactCache<T> (
   })
 }
 
-async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: VisualizationPanel) {
+async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: VisualizationPanel, scores: ScoresPanel) {
   if (!state.manifest) return
   const operation = await readStore<Operation>(`${state.run}/operation.json`)
   if (state.operationStamp !== (operation?.updated_at ?? '')) {
@@ -237,11 +249,14 @@ async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: 
   )
   await readArtifactCache(
     outputsWithRole(rows, 'representation'), state.representationFiles,
-    representationIonVariables, 'representation dimensions'
+    document => ({
+      ionVariables: representationIonVariables(document),
+      scores: representationScores(validatedRepresentation(document))
+    }), 'representation scores and dimensions'
   )
   rows = datasetRows(
     state.manifest, state.corpus, state.inputMetadata, state.reports, progress,
-    operation, state.workflowRows, state.representationFiles
+    operation, state.workflowRows, ionDimensions()
   ).map(row => ({ ...row, input_file_kind: state.inputKinds[row.input_file] ?? null }))
   state.rows = rows
   app.datasets = rows
@@ -249,18 +264,18 @@ async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: 
   const summary = counts(rows)
   updateSummary(
     app,
-    `${state.manifest.workflow} / ${state.manifest.format} · ${operation?.status ?? 'prepared'}`,
+    operation?.status ?? 'prepared',
     rows.length,
     summary,
     workflowSteps(rows)
   )
-  await renderSelection(app, detail, visualizations)
+  await renderSelection(app, detail, visualizations, scores)
   if (app.tab === 'insights' && app.insightTab === 'log') {
     await renderSchedulerLog(app)
   }
 }
 
-async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsPanel, visualizations: VisualizationPanel) {
+async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsPanel, visualizations: VisualizationPanel, scores: ScoresPanel) {
   if (refreshing) {
     refreshPending = true
     return
@@ -284,9 +299,9 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
     app.runDisabled = !choice
     const manifestChanged = choice && state.manifestStamp !== JSON.stringify(choice.manifest)
     if (choice && (`${state.run}/run.json` !== choice.path || manifestChanged)) {
-      await loadRun(app, detail, settings, visualizations, choice)
+      await loadRun(app, detail, settings, visualizations, scores, choice)
     } else if (choice) {
-      await refreshRun(app, detail, visualizations)
+      await refreshRun(app, detail, visualizations, scores)
     } else if (state.run) {
       state.run = ''
       state.manifest = null
@@ -294,6 +309,7 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
       state.rows = []
       app.datasets = []
       app.outputExtensions = null
+      app.hasProteobench = false
       state.manifestStamp = ''
       state.reports.clear()
       state.timingFiles.clear()
@@ -305,6 +321,7 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
       host(app, 'scheduler-log').textContent = ''
       updateSummary(app, 'Waiting for a run', 0, {}, [])
       await visualizations.render(chartViews([]))
+      await scores.render('', [], new Map(), [])
     }
     app.error = ''
   } catch (error) {
@@ -313,9 +330,9 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
     refreshing = false
     if (refreshPending) {
       refreshPending = false
-      void refresh(app, detail, settings, visualizations)
+      void refresh(app, detail, settings, visualizations, scores)
     } else {
-      refreshTimer = window.setTimeout(() => { void refresh(app, detail, settings, visualizations) }, 2000)
+      refreshTimer = window.setTimeout(() => { void refresh(app, detail, settings, visualizations, scores) }, 2000)
     }
   }
 }
@@ -328,16 +345,17 @@ async function main () {
     host(app, 'visualization-tabs'),
     host(app, 'visualization-chart-panel')
   )
+  const scores = createScoresPanel(host(app, 'scores'), readProteobenchReference)
   const detail = createDetailPanel(app, readRepresentation, () => state.run)
   const settings = createSettingsPanel(app)
   app.addEventListener('run-change', event => {
     if (event instanceof CustomEvent && typeof event.detail?.value === 'string') {
       state.requested = event.detail.value
-      void refresh(app, detail, settings, visualizations)
+      void refresh(app, detail, settings, visualizations, scores)
     }
   })
   app.addEventListener('dataset-filter-change', () => {
-    void renderSelection(app, detail, visualizations).catch(error => { app.error = String(error) })
+    void renderSelection(app, detail, visualizations, scores).catch(error => { app.error = String(error) })
   })
   app.addEventListener('tab-change', async () => {
     await app.updateComplete
@@ -346,6 +364,7 @@ async function main () {
       if (state.table) state.table.redraw(true)
       settings.redraw()
       if (app.tab === 'insights' && app.insightTab === 'visualizations') visualizations.resize()
+      if (app.tab === 'insights' && app.insightTab === 'scores') void scores.activate()
     })
   })
   app.addEventListener('insight-tab-change', () => {
@@ -354,6 +373,7 @@ async function main () {
       if (state.table) state.table.redraw(true)
       settings.redraw()
       if (app.insightTab === 'visualizations') visualizations.resize()
+      if (app.insightTab === 'scores') void scores.activate()
     })
   })
   app.addEventListener('settings-tab-change', () => {
@@ -361,7 +381,7 @@ async function main () {
       settings.redraw()
     })
   })
-  await refresh(app, detail, settings, visualizations)
+  await refresh(app, detail, settings, visualizations, scores)
 }
 
 void main()

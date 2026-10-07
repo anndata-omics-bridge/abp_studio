@@ -16,6 +16,7 @@ from apb_studio.fixture_viewer.routes import resolve as resolve_static
 CATALOG_PATH = "api/catalog"
 SOURCE_PATH = "api/source"
 INPUT_KINDS_PATH = "api/input-kinds"
+PROTEOBENCH_REFERENCE_PATH = "api/proteobench-reference"
 _SOURCE_FIELDS = ("input_file", "vendor_parameter_file", "fasta")
 
 
@@ -121,6 +122,58 @@ def _input_kinds(store: Store, query: str) -> Response:
     return Response(200, headers_for("input-kinds.json"), body)
 
 
+def _proteobench_reference(store: Store, query: str) -> Response:
+    """Read a downloaded submission JSON for an exact selected input, without scoring."""
+    parameters = parse_qs(query)
+    context = parameters.get("context", [""])[0]
+    relative = parameters.get("input", [""])[0]
+    directory = _inside(store.root, context)
+    if not context or not relative or directory is None or not directory.is_dir():
+        return _error(404, "Unknown source context")
+    manifest = _read_json(directory / "run.json") or {}
+    settings_path = _inside(
+        directory, str(manifest.get("execution_settings", "execution_settings.json"))
+    )
+    settings = _read_json(settings_path) if settings_path is not None else None
+    corpus = _inside(directory, str(manifest.get("corpus", "corpus.csv")))
+    try:
+        if settings is None or corpus is None or not corpus.is_file():
+            raise FileNotFoundError
+        selected = {row.get("input_file") for row in read_rows(corpus)}
+    except (OSError, ValueError):
+        return _error(404, "Source metadata unavailable")
+    if relative not in selected:
+        return _error(403, "Input is not in the run's selected corpus")
+    data_root = settings.get("data_root")
+    if not isinstance(data_root, str):
+        return _error(403, "Invalid source data root")
+    return _submission_reference(Path(data_root).resolve(), relative)
+
+
+def _submission_reference(root: Path, relative: str) -> Response:
+    """Serve strict JSON only from the selected input's matching fixture metadata."""
+    try:
+        parts = resolve_file(root, relative).relative_to(root).parts
+        if len(parts) < 3 or parts[0] != "submissions":
+            return _error(404, "Input has no ProteoBench submission metadata")
+        metadata = Store(root).metadata_json(parts[1], parts[2])
+        target = resolve_file(root, str(metadata))
+    except ValueError:
+        return _error(403, "Invalid reference path")
+    try:
+        # Downloaded Python JSONs can contain NaN/Infinity. JSON null preserves missing
+        # observations for browser reads; score values are otherwise left unchanged.
+        document: object = json.loads(
+            target.read_text(encoding="utf-8"), parse_constant=lambda _value: None
+        )
+    except (OSError, json.JSONDecodeError):
+        return _error(404, "Downloaded ProteoBench JSON unavailable")
+    if not isinstance(document, dict) or document.get("intermediate_hash") != parts[2]:
+        return _error(422, "ProteoBench submission identity does not match the input")
+    body = (json.dumps(document, allow_nan=False) + "\n").encode()
+    return Response(200, headers_for(target.name), body)
+
+
 def resolve(url_path: str, web_root: Path, store: Store) -> Response:
     """Serve the live corpus catalog, delegating every other read to static routes."""
     parsed = urlsplit(url_path)
@@ -133,4 +186,6 @@ def resolve(url_path: str, web_root: Path, store: Store) -> Response:
         return _source(store, parsed.query)
     if clean == INPUT_KINDS_PATH:
         return _input_kinds(store, parsed.query)
+    if clean == PROTEOBENCH_REFERENCE_PATH:
+        return _proteobench_reference(store, parsed.query)
     return resolve_static(url_path, web_root, store)

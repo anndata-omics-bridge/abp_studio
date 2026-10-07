@@ -9,7 +9,6 @@ from pathlib import Path
 from apb_studio.disk import atomic_write_text
 
 DEFAULT_CORPUSES: dict[str, str] = {
-    "all": "corpuses/all.csv",
     "directlfq": "corpuses/directlfq.csv",
     "entrapment": "corpuses/entrapment.csv",
     "proteobench": "corpuses/proteobench.csv",

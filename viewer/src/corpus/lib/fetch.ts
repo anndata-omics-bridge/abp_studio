@@ -39,6 +39,13 @@ export function sourceUrl (context: string, path: string): string {
   return url.href
 }
 
+export function proteobenchReferenceUrl (context: string, input: string): string {
+  const url = new URL('api/proteobench-reference', navigationBase())
+  url.searchParams.set('context', context)
+  url.searchParams.set('input', input)
+  return url.href
+}
+
 function apiUrl (path: string): string {
   return new URL(`api/${path}`, document.baseURI).href
 }
@@ -84,6 +91,17 @@ export async function readInputKinds (context: string): Promise<Record<string, I
     throw new Error('Invalid input kinds')
   }
   return kinds as Record<string, InputKind>
+}
+
+/** Read downloaded scores for the exact input in the selected run's snapshot. */
+export async function readProteobenchReference (context: string, input: string): Promise<unknown> {
+  const url = new URL(apiUrl('proteobench-reference'))
+  url.searchParams.set('context', context)
+  url.searchParams.set('input', input)
+  const response = await fetch(url.href, { cache: 'no-store' })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`ProteoBench reference: HTTP ${response.status}`)
+  return response.json()
 }
 
 /** Empty snapshots retain their CSV headers for the table adapter. */

@@ -10,6 +10,7 @@ from urllib.request import urlopen
 
 from apb_studio.corpus_viewer.routes import resolve
 from apb_studio.fixture_store import Store
+from apb_studio.fixture_viewer.routes import Response
 from apb_studio.fixture_viewer.server import build_server
 
 
@@ -167,3 +168,59 @@ def test_input_kinds_use_filesystem_evidence_and_frozen_selected_inputs(tmp_path
     assert resolve(f"/api/input-kinds?{query}", tmp_path, Store(root)).status == 403
     query = urlencode({"context": "../../inputs"})
     assert resolve(f"/api/input-kinds?{query}", tmp_path, Store(root)).status == 404
+
+
+def test_proteobench_reference_reads_exact_selected_submission_and_strict_json(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "inputs"
+    root = tmp_path / "corpus"
+    run = _write_run(root, "routine_pb", "succeeded")
+    (run / "execution_settings.json").write_text(json.dumps({"data_root": str(data_root)}))
+    (run / "run.json").write_text(json.dumps({"corpus": "selected.csv"}))
+    first = "submissions/repo-a/hash/input.tsv"
+    second = "submissions/repo-b/hash/input.tsv"
+    (run / "selected.csv").write_text(f"input_file\n{first}\n{second}\nzenodo/local/input.tsv\n")
+    store = Store(data_root)
+    for repo, score in (("repo-a", 0.1), ("repo-b", 0.2)):
+        path = store.metadata_json(repo, "hash")
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            json.dumps({
+                "intermediate_hash": "hash",
+                "results": {"1": {"error": score, "missing": float("nan")}},
+                "note": "NaN stays text",
+            })
+        )
+
+    def reference(input_file: str, context: str = "routine_pb/convert/hdf5") -> Response:
+        query = urlencode({"context": context, "input": input_file})
+        return resolve(f"/api/proteobench-reference?{query}", tmp_path, Store(root))
+
+    first_response = reference(first)
+    assert first_response.status == 200
+    assert dict(first_response.headers)["Content-Type"] == "application/json"
+    document = json.loads(first_response.body)
+    assert document["results"]["1"] == {"error": 0.1, "missing": None}
+    assert document["note"] == "NaN stays text"
+    assert json.loads(reference(second).body)["results"]["1"]["error"] == 0.2
+    assert reference("submissions/repo-a/unselected/input.tsv").status == 403
+    assert reference(first, "../../inputs").status == 404
+    assert reference("zenodo/local/input.tsv").status == 404
+
+    settings_path = run / "execution_settings.json"
+    settings_path.write_text(json.dumps({"data_root": None}))
+    assert reference(first).status == 403
+    settings_path.unlink()
+    assert reference(first).status == 404
+    settings_path.write_text(json.dumps({"data_root": str(data_root)}))
+
+    path = store.metadata_json("repo-a", "hash")
+    path.write_text('{"intermediate_hash":"wrong","results":{}}')
+    assert reference(first).status == 422
+    path.unlink()
+    assert reference(first).status == 404
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"intermediate_hash":"hash","results":{}}')
+    path.symlink_to(outside)
+    assert reference(first).status == 403

@@ -113,6 +113,22 @@ test('choosing another run opens its dataset insights and emits the selected com
   assert.equal(event.bubbles, true)
 })
 
+test('score comparison is available only for runs using ProteoBench, with keyboard navigation', () => {
+  const app = createShell()
+  assert.ok(!ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab').includes('scores'))
+  app.hasProteobench = true
+  assert.deepEqual(ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab'), [
+    'results', 'visualizations', 'scores', 'settings', 'log'
+  ])
+  app.selectInsight('visualizations')
+  const press = keyboard(app, 'data-insight-tab')
+  press('ArrowRight')
+  assert.equal(app.insightTab, 'scores')
+  assert.match(markup(app.render()), /id="scores"[^>]*\?hidden=false/)
+  app.hasProteobench = false
+  assert.match(markup(app.render()), /id="scores"[^>]*\?hidden=true/)
+})
+
 test('insight subtabs stay separate from workspace navigation and retain their selection', () => {
   const app = createShell()
   assert.deepEqual(ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab'), [
@@ -188,18 +204,39 @@ function facetHandler (app, value) {
   return checkbox.values[checkbox.strings.findIndex(string => string.endsWith('@change='))]
 }
 
-test('the global selector stays above every workspace and run search narrows table and choices together', () => {
+test('the catalog header is separate from selected-run context while sidebar search narrows choices', () => {
   const app = createShell()
   app.runs = [run('routine', 'convert', 'hdf5'), run('routine', 'convert', 'duckdb'), run('entrapment', 'proteobench_entrapment', 'hdf5')]
   app.runValue = app.runs[0].path
   app.runDisabled = false
-  for (const tab of ['runs', 'insights', 'files']) {
+  app.runs[0].outputExtensions = ['.h5mu']
+  app.counts = '16 datasets · 16 succeeded'
+  app.status = 'succeeded'
+  const header = () => markup(app.render()).split('</header>')[0]
+  assert.match(header(), /Saved runs/)
+  assert.doesNotMatch(header(), /Selected run|run-selector|Change run|16 datasets|role="status"/)
+  app.error = 'Cannot read catalog'
+  assert.match(header(), /role="status">Cannot read catalog/)
+  app.error = ''
+  for (const tab of ['insights', 'files']) {
     app.select(tab)
     const rendered = markup(app.render())
     assert.ok(rendered.indexOf('id="run-selector"') < rendered.indexOf('id="runs"'))
-    assert.match(rendered, /aria-label="Find run"/)
+    const header = rendered.slice(rendered.indexOf('<header'), rendered.indexOf('</header>'))
+    assert.doesNotMatch(header, /type="search"|Find run/)
+    assert.match(header, /aria-label="Selected run"/)
+    assert.match(header, /<dt>Corpus<\/dt><dd>routine<\/dd>/)
+    assert.match(header, /<dt>Workflow<\/dt><dd>convert<\/dd>/)
+    assert.match(header, /<dt>Format<\/dt><dd>hdf5<\/dd>/)
+    assert.match(header, /<dt>Output<\/dt><dd>\.h5mu<\/dd>/)
+    assert.match(header, /16 datasets · 16 succeeded/)
+    assert.match(header, /<details class="run-switcher">\s*<summary>Change run<\/summary>/)
   }
-  inputHandler(app, 'Find run')({ currentTarget: new HTMLInputElement({ value: 'entrapment' }) })
+  app.select('runs')
+  assert.doesNotMatch(header(), /Selected run|run-selector|Change run|16 datasets|role="status"/)
+  assert.equal(app.runValue, app.runs[0].path)
+  app.select('files')
+  inputHandler(app, 'Search runs')({ currentTarget: new HTMLInputElement({ value: 'entrapment' }) })
   assert.equal(app.runFilters.search, 'entrapment')
   assert.deepEqual([...app.filteredRunChoices].map(item => item.label), ['entrapment · proteobench_entrapment · hdf5'])
   assert.equal(app.runValue, app.runs[0].path)
@@ -209,9 +246,27 @@ test('the global selector stays above every workspace and run search narrows tab
   assert.ok(!app.runOptions.some(([value]) => value === app.runs[1].path))
   assert.ok(!app.events.some(event => event.type === 'run-change'))
   assert.match(markup(app.render()), /1 of 3 runs/)
+  assert.match(markup(app.render()), /<dt>Corpus<\/dt><dd>routine<\/dd>/, 'filtered choices cannot change the banner identity')
   inputHandler(app, 'Search runs')({ currentTarget: new HTMLInputElement({ value: 'routine duckdb' }) })
   assert.equal(app.runFilters.search, 'routine duckdb')
   assert.deepEqual([...app.filteredRunChoices].map(item => item.path), [app.runs[1].path])
+})
+
+test('the run banner follows switching and does not show stale counts without a selected run', () => {
+  const app = createShell()
+  app.select('files')
+  const header = () => markup(app.render()).split('</header>')[0]
+  assert.match(header(), /Choose a run from Runs/)
+  assert.doesNotMatch(header(), /run-banner-identity|run-banner-counts/)
+  app.runs = [run('routine', 'convert', 'hdf5'), run('proteobench_plasma', 'proteobench_plasma', 'hdf5')]
+  app.runValue = app.runs[1].path
+  app.outputExtensions = ['.h5ad']
+  assert.match(header(), /<dt>Corpus<\/dt><dd>proteobench_plasma<\/dd>/)
+  assert.match(header(), /<dt>Workflow<\/dt><dd>proteobench_plasma<\/dd>/)
+  assert.match(header(), /<dt>Output<\/dt><dd>\.h5ad<\/dd>/)
+  app.runValue = 'removed/run.json'
+  assert.match(header(), /Choose a run from Runs/)
+  assert.doesNotMatch(header(), /run-banner-identity|run-banner-counts/)
 })
 
 test('run facets toggle immutably, keep the active run pinned and clear without opening another run', () => {
@@ -352,6 +407,7 @@ test('dataset facets are closed dropdowns that retain multiple selected values a
 
 test('option selection follows active run after catalogs or filters replace the choice list', () => {
   const app = createShell()
+  app.select('insights')
   app.runs = [run('routine', 'convert', 'hdf5'), run('routine', 'export_prolfqua', 'hdf5')]
   app.runValue = app.runs[1].path
   const selectedOptions = () => [...markup(app.render()).matchAll(/<option\b[^>]*\.selected=true[^>]*>[\s\S]*?<\/option>/g)]

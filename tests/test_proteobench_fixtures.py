@@ -690,7 +690,6 @@ def test_acquire_corpus_materializes_the_selected_strategy(
     written = pd.read_csv(tmp_path / "corpuses" / "routine.csv")
     assert written["software_name"].tolist() == ["A", "C"]
     assert json.loads((tmp_path / "corpuses.json").read_text(encoding="utf-8")) == {
-        "all": "corpuses/all.csv",
         "directlfq": "corpuses/directlfq.csv",
         "entrapment": "corpuses/entrapment.csv",
         "proteobench": "corpuses/proteobench.csv",

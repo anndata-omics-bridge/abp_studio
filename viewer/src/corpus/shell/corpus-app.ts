@@ -7,7 +7,7 @@ import {
 import type { RunFilters, DatasetFilters } from '../filters.js'
 
 export type MainTab = 'runs' | 'insights' | 'files'
-export type InsightTab = 'results' | 'visualizations' | 'settings' | 'log'
+export type InsightTab = 'results' | 'visualizations' | 'scores' | 'settings' | 'log'
 export type SettingsTab = 'execution-settings' | 'saved-run' | 'corpus-input' | 'input-metadata' | 'workflow-input' | 'workflow-source'
 
 // Global selectors, faceted sidebars, tabs and one light-DOM host per panel.
@@ -28,6 +28,7 @@ type RunSort = typeof RUN_COLUMNS[number][0]
 const INSIGHT_TABS = [
   ['results', 'Datasets'],
   ['visualizations', 'Visualizations'],
+  ['scores', 'Score comparison'],
   ['settings', 'Settings & inputs'],
   ['log', 'Scheduler log']
 ] as const
@@ -58,7 +59,8 @@ export class CorpusApp extends LitElement {
     steps: { type: String },
     fractions: { type: Object },
     runValue: { type: String },
-    runDisabled: { type: Boolean }
+    runDisabled: { type: Boolean },
+    hasProteobench: { type: Boolean }
   }
 
   tab: MainTab = 'runs'
@@ -77,9 +79,37 @@ export class CorpusApp extends LitElement {
   fractions: Record<string, number> = {}
   runValue = ''
   runDisabled = true
+  hasProteobench = false
+  private headerObserver: ResizeObserver | null = null
 
   /** Use light DOM so the shared table styles apply to each panel. */
   createRenderRoot (): HTMLElement { return this }
+
+  connectedCallback () {
+    super.connectedCallback()
+    const header = this.querySelector<HTMLElement>('.bar')
+    if (header) this.headerObserver?.observe(header)
+  }
+
+  firstUpdated () {
+    const header = this.querySelector<HTMLElement>('.bar')
+    if (!header) return
+    this.headerObserver = new ResizeObserver(() => {
+      this.style.setProperty('--corpus-bar-height', `${header.offsetHeight}px`)
+    })
+    this.headerObserver.observe(header)
+  }
+
+  disconnectedCallback () {
+    this.headerObserver?.disconnect()
+    super.disconnectedCallback()
+  }
+
+  /** Restore the active choice after Lit replaces the filtered native options. */
+  updated () {
+    const selector = this.querySelector<HTMLSelectElement>('#run-selector')
+    if (selector && selector.value !== this.runValue) selector.value = this.runValue
+  }
 
   /** Shell hosts exist after updateComplete; a missing host is a wiring error. */
   hostFor (id: string): HTMLElement {
@@ -146,6 +176,14 @@ export class CorpusApp extends LitElement {
 
   get selectedOutputExtensions (): string[] {
     return this.outputExtensions ?? this.runs.find(run => run.path === this.runValue)?.outputExtensions ?? []
+  }
+
+  get selectedRun (): RunChoice | undefined {
+    return this.runs.find(run => run.path === this.runValue)
+  }
+
+  get insightTabs () {
+    return INSIGHT_TABS.filter(([id]) => id !== 'scores' || this.hasProteobench)
   }
 
   sortRuns (key: RunSort) {
@@ -251,25 +289,42 @@ export class CorpusApp extends LitElement {
     `
   }
 
-  /** Render selector and search above every workspace. */
+  /** Keep the selected run explicit; changing it is a separate compact control. */
+  private renderRunBanner (): TemplateResult {
+    const selected = this.selectedRun
+    return html`
+      <section class="run-banner" aria-label="Selected run">
+        <span class="run-banner-title">Selected run</span>
+        ${selected ? html`
+          <dl class="run-banner-identity">
+            <div><dt>Corpus</dt><dd>${selected.manifest.corpus_name}</dd></div>
+            <div><dt>Workflow</dt><dd>${selected.manifest.workflow}</dd></div>
+            <div><dt>Format</dt><dd>${selected.manifest.format}</dd></div>
+            <div><dt>Output</dt><dd>${this.selectedOutputExtensions.join(', ') || '—'}</dd></div>
+          </dl>
+          <span class="run-banner-counts">${this.counts}</span>
+        ` : html`<strong>Choose a run from Runs</strong>`}
+      </section>
+    `
+  }
+
   private renderRunSelector (): TemplateResult {
     return html`
-      <label class="run-search">Find run
-        <input type="search" aria-label="Find run" aria-controls="run-selector" placeholder="corpus, workflow, format…"
-          .value=${this.runFilters.search} @input=${(event: Event) => {
-            const input = event.currentTarget
-            if (input instanceof HTMLInputElement) this.setRunSearch(input.value)
-          }}>
-      </label>
-      <label class="run-select">Run
+      <details class="run-switcher">
+        <summary>Change run</summary>
+        <label class="run-select">Run
         <select id="run-selector" aria-label="Corpus workflow and format" .value=${this.runValue}
           ?disabled=${this.runDisabled} @change=${(event: Event) => {
             const select = event.currentTarget
-            if (select instanceof HTMLSelectElement) this.selectRun(select.value)
+            if (select instanceof HTMLSelectElement && select.value) {
+              this.selectRun(select.value)
+              select.closest('details')?.removeAttribute('open')
+            }
           }}>
           ${this.runOptions.map(([value, label]) => html`<option value=${value} .selected=${value === this.runValue}>${label}</option>`)}
         </select>
-      </label>
+        </label>
+      </details>
     `
   }
 
@@ -280,8 +335,13 @@ export class CorpusApp extends LitElement {
     return html`
       <header class="bar">
         <h1 class="brand">APB Studio</h1>
-        ${this.renderRunSelector()}
-        <span class="status ${this.error ? 'error' : ''}" role="status">${this.error || this.status}</span>
+        ${this.tab === 'runs' ? html`<strong class="catalog-title">Saved runs</strong>` : html`
+          ${this.renderRunBanner()}
+          ${this.renderRunSelector()}
+        `}
+        ${this.error || this.tab !== 'runs' ? html`
+          <span class="status ${this.error ? 'error' : ''}" role="status">${this.error || this.status}</span>
+        ` : ''}
       </header>
       <nav class="tabs main-tabs" role="tablist" aria-label="Workspace views">
         ${MAIN_TABS.map(([id, label]) => html`
@@ -342,14 +402,13 @@ export class CorpusApp extends LitElement {
         </aside>
         <section class="workspace-content">
         <nav class="tabs subtabs insight-tabs" role="tablist" aria-label="Run insight views">
-          ${INSIGHT_TABS.map(([id, label]) => html`
+          ${this.insightTabs.map(([id, label]) => html`
             <button type="button" role="tab" id=${`insight-tab-${id}`} data-insight-tab=${id}
               aria-controls=${id} aria-selected=${String(this.insightTab === id)} tabindex=${this.insightTab === id ? 0 : -1}
-              @keydown=${(event: KeyboardEvent) => this.tabKeydown(event, INSIGHT_TABS, this.insightTab, tab => this.selectInsight(tab))}
+              @keydown=${(event: KeyboardEvent) => this.tabKeydown(event, this.insightTabs, this.insightTab, tab => this.selectInsight(tab))}
               @click=${() => this.selectInsight(id)}>${label}</button>
           `)}
         </nav>
-        <div class="run-context">${this.runs.find(run => run.path === this.runValue)?.label ?? 'No saved run selected'}</div>
         <section class="run-summary" aria-label="Run summary">
           <span>${this.counts}</span><span>${this.steps}</span>
           <span class="run-output">Output: ${this.selectedOutputExtensions.join(' · ') || '—'}</span>
@@ -368,19 +427,19 @@ export class CorpusApp extends LitElement {
         <nav id="visualization-tabs" class="tabs subtabs visualization-tabs" aria-label="Workflow visualization views" role="tablist"></nav>
         <section id="visualization-chart-panel" class="visualization-chart-panel" role="tabpanel"></section>
       </section>
+      <section id="scores" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-scores" ?hidden=${this.insightTab !== 'scores' || !this.hasProteobench}></section>
       <section id="settings" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-settings" ?hidden=${this.insightTab !== 'settings'}>
-        <div class="file-strip"><span>Files</span><div id="links"></div></div>
         <nav class="tabs subtabs" aria-label="Settings and input views">
           ${SETTINGS_TABS.map(([id, label]) => html`
             <button role="tab" data-settings-tab=${id} aria-selected=${String(this.settingsTab === id)} @click=${() => this.selectSettings(id)}>${label}</button>
           `)}
         </nav>
-        <section id="execution-settings" class="settings-panel" ?hidden=${this.settingsTab !== 'execution-settings'}><h2>Execution settings</h2><div id="manifest"></div></section>
-        <section id="saved-run" class="settings-panel" ?hidden=${this.settingsTab !== 'saved-run'}><h2>Run manifest</h2><div id="run-manifest"></div></section>
-        <section id="corpus-input" class="settings-panel" ?hidden=${this.settingsTab !== 'corpus-input'}><h2 id="corpus-title">Corpus inventory</h2><p id="corpus-description"></p><div id="corpus"></div></section>
-        <section id="input-metadata" class="settings-panel" ?hidden=${this.settingsTab !== 'input-metadata'}><h2 id="input-metadata-title">Input-size metadata</h2><div id="input-metadata-table"></div></section>
-        <section id="workflow-input" class="settings-panel" ?hidden=${this.settingsTab !== 'workflow-input'}><h2 id="workflow-table-title">Workflow table</h2><div id="workflow-table"></div></section>
-        <section id="workflow-source" class="settings-panel" ?hidden=${this.settingsTab !== 'workflow-source'}><h2>Workflow script</h2><pre id="source"></pre></section>
+        <section id="execution-settings" class="settings-panel" ?hidden=${this.settingsTab !== 'execution-settings'}><h2>Execution settings</h2><div id="execution-settings-links" class="settings-links"></div><div id="manifest"></div></section>
+        <section id="saved-run" class="settings-panel" ?hidden=${this.settingsTab !== 'saved-run'}><h2>Run manifest</h2><div id="saved-run-links" class="settings-links"></div><div id="run-manifest"></div></section>
+        <section id="corpus-input" class="settings-panel" ?hidden=${this.settingsTab !== 'corpus-input'}><h2 id="corpus-title">Corpus inventory</h2><div id="corpus-input-links" class="settings-links"></div><p id="corpus-description"></p><div id="corpus"></div></section>
+        <section id="input-metadata" class="settings-panel" ?hidden=${this.settingsTab !== 'input-metadata'}><h2 id="input-metadata-title">Input-size metadata</h2><div id="input-metadata-links" class="settings-links"></div><div id="input-metadata-table"></div></section>
+        <section id="workflow-input" class="settings-panel" ?hidden=${this.settingsTab !== 'workflow-input'}><h2 id="workflow-table-title">Workflow table</h2><div id="workflow-input-links" class="settings-links"></div><div id="workflow-table"></div></section>
+        <section id="workflow-source" class="settings-panel" ?hidden=${this.settingsTab !== 'workflow-source'}><h2>Workflow script</h2><div id="workflow-source-links" class="settings-links"></div><pre id="source"></pre></section>
       </section>
       <section id="log" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-log" ?hidden=${this.insightTab !== 'log'}><h2>Snakemake</h2><pre id="scheduler-log"></pre></section>
         </section>
@@ -395,8 +454,8 @@ export class CorpusApp extends LitElement {
         <h2 id="detail-title">Choose a file from the sidebar</h2>
         <nav id="detail-tabs" class="tabs subtabs detail-subtabs" aria-label="Dataset detail views" role="tablist" hidden></nav>
         <section id="detail-io" class="detail-panel" data-detail-panel="io" role="tabpanel" hidden>
-          <h3>Inputs, outputs & intermediates</h3>
-          <dl id="detail-files" class="dataset-files" hidden></dl>
+          <h3>Workflow file flow</h3>
+          <div id="detail-files" hidden></div>
           <div id="detail-notices"></div>
           <div id="detail-diagnostics"></div>
         </section>

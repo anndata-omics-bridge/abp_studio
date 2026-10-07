@@ -24,9 +24,34 @@ body {
 }
 
 corpus-app {
+  --corpus-bar-height: 100px;
   display: block;
   min-width: 0;
 }
+
+.score-controls, .score-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 14px 0;
+}
+
+.score-control { display: flex; align-items: center; gap: 8px; }
+.score-control select { width: auto; min-width: 180px; }
+.score-counts { font-weight: 600; }
+.score-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.score-legend i { width: 10px; height: 10px; border-radius: 50%; }
+.score-facet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.score-facet { min-width: 0; border: 1px solid var(--line); padding: 12px 10px 0; }
+.score-facet h3 { margin: 0; font: 600 13px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.score-delta { color: var(--muted); font-size: 12px; margin: 3px 0 8px; }
+.score-plot { min-width: 0; height: 300px; }
+.score-sources { margin-top: 24px; }
+.score-sources li { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.score-sources li > span { overflow-wrap: anywhere; }
+.score-sources li > span:first-of-type { width: 100%; color: var(--muted); font-size: 12px; }
+#scores[aria-busy="true"]::before { content: 'Loading downloaded ProteoBench scores…'; display: block; padding: 12px 0; color: var(--muted); }
 
 /* Compact global chrome, shared by all three workspaces. */
 .bar {
@@ -49,6 +74,13 @@ corpus-app {
   font-weight: 650;
 }
 
+.catalog-title {
+  flex: 1;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .bar label {
   display: flex;
   align-items: center;
@@ -69,17 +101,63 @@ corpus-app {
   font: inherit;
 }
 
-.run-search {
-  flex: 0 1 320px;
+.run-banner {
+  flex: 1;
   min-width: 0;
 }
 
-.run-search input {
-  width: 100%;
+.run-banner-title {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.run-banner-identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  margin: 3px 0;
+}
+
+.run-banner-identity > div { min-width: 0; }
+.run-banner-identity dt { color: var(--muted); font-size: 11px; }
+.run-banner-identity dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+.run-banner-counts { color: var(--muted); font-size: 12px; }
+
+.run-switcher {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.run-switcher > summary {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--paper);
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.run-switcher > .run-select {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(440px, 90vw);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  box-shadow: 0 4px 12px #0002;
 }
 
 .run-select {
-  flex: 1 1 260px;
   min-width: 0;
 }
 
@@ -177,6 +255,11 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
+.run-switcher > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .tabs button {
   flex: 0 0 auto;
   padding: 7px 14px;
@@ -255,55 +338,54 @@ pre {
   flex: 0 0 auto;
 }
 
-.file-strip {
-  display: flex;
-  align-items: baseline;
-  gap: 20px;
-  margin: 8px 0;
-}
-
-.file-strip > span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-#links {
+.settings-links {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
 }
 
 a {
   color: var(--accent);
 }
 
-.dataset-files {
+.workflow-flow-description { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+.workflow-flow {
   display: grid;
-  gap: 6px;
+  gap: 28px;
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
-
-.dataset-files div {
+.workflow-step { position: relative; min-width: 0; }
+.workflow-step + .workflow-step::before { content: '↓'; position: absolute; top: -27px; left: 20px; color: var(--accent); font-size: 20px; }
+.workflow-step-card { border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.workflow-step-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.workflow-step-header h4 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.workflow-step-status { padding: 2px 8px; border-radius: 3px; background: #e5edf5; color: var(--accent); font-size: 11px; text-transform: capitalize; }
+.workflow-step-status[data-status="failed"] { color: var(--error); background: #fbe9e7; }
+.workflow-step-status[data-status="running"] { color: var(--warning); background: #fff3cd; }
+.workflow-step-status[data-status="skipped"], .workflow-step-status[data-status="interrupted"] { color: var(--muted); background: #e9eef4; }
+.workflow-step-files {
   display: grid;
-  grid-template-columns: 170px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  padding: 14px;
 }
-
-.dataset-files dt {
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.dataset-files dd {
-  margin: 0;
-  min-width: 0;
-}
-
-.dataset-files code {
-  overflow-wrap: anywhere;
-}
+.workflow-step-files > section { min-width: 0; }
+.workflow-step-files h5 { margin: 0 0 8px; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+.workflow-outputs { border-left: 1px solid var(--line); padding-left: 18px; }
+.workflow-file-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.workflow-file { min-width: 0; display: grid; gap: 2px; }
+.workflow-file-name { overflow-wrap: anywhere; font-size: 12px; }
+.workflow-file-meta { color: var(--muted); font-size: 11px; }
+.workflow-handoff { color: var(--accent); font-size: 11px; font-weight: 500; }
+.workflow-file-details { margin: 2px 0 0; border: 0; padding: 0; }
+.workflow-file-details summary { color: var(--muted); font-size: 11px; font-weight: 400; }
+.workflow-file-details code, .workflow-file-details small { display: block; overflow-wrap: anywhere; font-size: 11px; }
+.workflow-supporting { margin-top: 12px; padding-top: 8px; }
+.workflow-supporting summary { color: var(--muted); font-size: 11px; }
+.workflow-supporting .workflow-file-list { margin-top: 8px; }
 
 details {
   margin-top: 12px;
@@ -447,11 +529,11 @@ footer {
 
 .workspace-sidebar {
   position: sticky;
-  top: 54px;
+  top: var(--corpus-bar-height);
   align-self: start;
   min-width: 0;
-  min-height: calc(100dvh - 100px);
-  max-height: calc(100dvh - 54px);
+  min-height: calc(100dvh - var(--corpus-bar-height));
+  max-height: calc(100dvh - var(--corpus-bar-height));
   overflow: auto;
   padding: 16px;
   border-right: 1px solid var(--line);
@@ -587,13 +669,6 @@ section.view .workspace-sidebar h2 {
   color: var(--muted);
 }
 
-.run-context {
-  margin: 14px 18px 4px;
-  font-size: 14px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
 .run-catalog-wrap {
   min-width: 0;
   overflow-x: auto;
@@ -678,8 +753,9 @@ section.view .workspace-sidebar h2 {
   overflow-wrap: anywhere;
 }
 
-.file-list-heading { display: flex; align-items: center; gap: 7px; }
-.file-list-icon { font-size: 16px; line-height: 1; }
+.file-list-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 0 7px; }
+.file-list-icon { flex: 0 0 auto; font-size: 16px; line-height: 1; }
+.file-list-module { min-width: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 
 .file-list-context {
   font-size: 11px;
@@ -703,18 +779,11 @@ section.view .workspace-sidebar h2 {
 
 @media (max-width: 850px) {
   .bar {
-    position: static;
     flex-wrap: wrap;
     gap: 8px 14px;
   }
 
-  .run-search {
-    flex: 1 1 240px;
-  }
-
-  .run-select {
-    flex-basis: 100%;
-  }
+  .run-banner { flex: 1 1 260px; }
 
   .bar .status {
     flex-basis: 100%;
@@ -740,8 +809,10 @@ section.view .workspace-sidebar h2 {
     overflow-y: hidden;
   }
 
-  .dataset-files div {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
+  .workflow-step-files { gap: 18px; }
+}
+
+@media (max-width: 520px) {
+  .workflow-step-files { grid-template-columns: 1fr; }
+  .workflow-outputs { border-left: 0; border-top: 1px solid var(--line); padding: 12px 0 0; }
 }

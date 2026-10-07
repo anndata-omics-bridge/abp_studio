@@ -4,6 +4,7 @@ import { runInNewContext } from 'node:vm'
 import { isolatedSource } from './source.mjs'
 import * as model from '../../viewer/src/corpus/model.ts'
 import * as representation from '../../viewer/src/corpus/representation.ts'
+import { workflowFlow } from '../../viewer/src/corpus/workflow-flow.ts'
 
 class Element extends EventTarget {
   constructor (tag) {
@@ -93,11 +94,11 @@ function controller (read = async () => scientific()) {
     return element
   }
   const context = {
-    document, ...model, ...representation, node,
+    document, ...model, ...representation, workflowFlow, node,
     columnTitle: field => field,
     fileUrl: path => path,
     sourceUrl: (run, path) => `${run}/${path}`,
-    fileLink: (_, name) => node('a', name),
+    fileLink: (href, name) => { const link = node('a', name); link.setAttribute('href', href); return link },
     jsonTree: data => node('pre', JSON.stringify(data)),
     renderAnnData: async (host, level) => host.replaceChildren(node('p', `AnnData ${level.name}`)),
     renderAnnotationAnnData: async (host, _, table) => host.replaceChildren(node('p', table.name)),
@@ -108,8 +109,9 @@ function controller (read = async () => scientific()) {
     read, app, run: 'corpus/routine/convert/hdf5'
   }
   const tabs = isolatedSource('viewer/src/corpus/render/tabs.ts')
+  const files = isolatedSource('viewer/src/corpus/render/workflow-files.ts')
   const detail = isolatedSource('viewer/src/corpus/panels/detail.ts')
-  const panel = runInNewContext(`${tabs}\n${detail}\ncreateDetailPanel(app, read, () => run)`, context)
+  const panel = runInNewContext(`${tabs}\n${files}\n${detail}\ncreateDetailPanel(app, read, () => run)`, context)
   return { panel, hosts, calls, context }
 }
 
@@ -185,6 +187,56 @@ test('chooser shows software, actual file or folder type and size without repeat
 
   await panel.refresh([{ ...file, input_file_size_bytes: 2048 }, folder])
   assert.match(hosts['file-list'].children[0].textContent, /2.0 KiB/)
+})
+
+test('repeated software shows modules based on the whole run and keeps them when filtering to one entry', async () => {
+  const { panel, hosts } = controller()
+  const astral = { ...row('DIA-NN'), input_file: 'inputs/astral.tsv', module: 'dia_astral' }
+  const dda = { ...row('DIA-NN'), input_file: 'inputs/dda.tsv', module: 'dda_astral' }
+  const sage = { ...row('Sage'), module: 'dda_qexactive' }
+  await panel.refresh([astral, dda, sage])
+  assert.match(hosts['file-list'].children[0].textContent, /DIA-NN· dia_astral/)
+  assert.match(hosts['file-list'].children[1].textContent, /DIA-NN· dda_astral/)
+  assert.match(hosts['file-list'].children[0].getAttribute('aria-label'), /DIA-NN, dia_astral,/)
+  assert.doesNotMatch(hosts['file-list'].children[2].textContent, /dda_qexactive/)
+
+  await panel.refresh([astral, dda, sage], [astral])
+  assert.match(hosts['file-list'].children[0].textContent, /DIA-NN· dia_astral/)
+  await panel.refresh([astral, sage], [astral])
+  assert.doesNotMatch(hosts['file-list'].children[0].textContent, /dia_astral/, 'a changed run must refresh labels even if its visible rows stay the same')
+})
+
+test('inputs and outputs render step handoffs, folded supporting files and unavailable outputs without phantom links', async () => {
+  const { panel, hosts } = controller(async () => null)
+  const input = '/fixtures/inputs/MaxQuant.tsv'
+  const converted = '/store/artifacts/MaxQuant/attempt/converted.h5mu'
+  const result = '/store/artifacts/MaxQuant/attempt/aggregated.h5mu'
+  const record = {
+    status: 'failed', steps: [
+      { name: 'convert', status: 'succeeded', inputs: [
+        { path: input, role: 'vendor_table', size_bytes: 0 },
+        { path: '/fixtures/other/MaxQuant.tsv', role: 'vendor_table', size_bytes: 1024 }
+      ], outputs: [
+        { path: converted, role: 'converted', format: 'hdf5', size_bytes: 2048 },
+        { path: '/store/artifacts/MaxQuant/attempt/timings.json', role: 'tool_timings', size_bytes: 100 }
+      ] },
+      { name: 'aggregate', status: 'failed', inputs: [{ path: converted, role: 'converted' }], outputs: [{ path: result, role: 'result', format: 'hdf5', size_bytes: null }] }
+    ]
+  }
+  await panel.refresh([{ ...row('MaxQuant'), input_file_size_bytes: 4096, record, status: 'failed' }])
+  const flow = hosts['detail-files']
+  assert.equal(flow.querySelectorAll('.workflow-step-card').length, 2)
+  assert.match(flow.textContent, /Used by step 2 · aggregate/)
+  assert.match(flow.textContent, /From step 1 · convert/)
+  assert.match(flow.textContent, /Vendor data · 0 B/)
+  assert.match(flow.textContent, /Result · Not observed/)
+  assert.equal(flow.querySelector('.workflow-supporting').getAttribute('open'), null)
+  assert.match(flow.querySelector('.workflow-supporting').textContent, /timings.json/)
+  const links = flow.querySelectorAll('*').filter(element => element.tag === 'a')
+  assert.equal(links.filter(link => link.textContent === 'MaxQuant.tsv').length, 1, 'a companion path must not link to the primary input')
+  assert.equal(links.filter(link => link.textContent === 'converted.h5mu').length, 2, 'generated input and output share a download')
+  assert.ok(!links.some(link => link.textContent === 'aggregated.h5mu'), 'missing output remains inspectable without a download')
+  assert.ok(flow.querySelectorAll('.workflow-file-details').some(details => details.textContent.includes(result)))
 })
 
 test('polling retains file, detail tab and object selection; sidebar uses the newest report', async () => {

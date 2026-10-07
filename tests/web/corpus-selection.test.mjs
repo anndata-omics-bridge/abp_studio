@@ -5,6 +5,7 @@ import { isolatedSource } from './source.mjs'
 import * as model from '../../viewer/src/corpus/model.ts'
 import * as filters from '../../viewer/src/corpus/filters.ts'
 import * as representation from '../../viewer/src/corpus/representation.ts'
+import { representationScores } from '../../viewer/src/corpus/scores.ts'
 
 function deferred () {
   let resolve
@@ -43,6 +44,7 @@ function controller (options = {}) {
   const replacements = []
   const details = []
   const charts = []
+  const comparisons = []
   const settingsRuns = []
   let settingsDirectory = ''
   let detailResets = 0
@@ -64,12 +66,13 @@ function controller (options = {}) {
     async refresh (all, visible = all) { details.push({ all, visible }) }
   }
   const visualizations = { async render (views) { charts.push(views) }, resize () {} }
+  const scores = { async render (run, rows, summaries, names) { comparisons.push({ run, rows, summaries, names }) } }
   const settings = {
     async renderRun (run) { settingsRuns.push(run.directory); settingsDirectory = run.directory },
     clear () { settingsDirectory = '' }, redraw () {}
   }
   const context = {
-    ...model, ...filters, ...representation,
+    ...model, ...filters, ...representation, representationScores,
     emptyCsv: () => [],
     readCatalog: options.readCatalog ?? (async () => ({ runs: [] })),
     readInputKinds: options.readInputKinds ?? (async () => ({})),
@@ -93,13 +96,13 @@ function controller (options = {}) {
       requestAnimationFrame (callback) { callback() }, scrollTo () {}
     },
     console,
-    app, detail, settings, visualizations
+    app, detail, settings, visualizations, scores
   }
   const source = isolatedSource('viewer/src/corpus/app.ts').replace(/void main\(\);?\s*$/, '')
   const api = runInNewContext(`${source}\n({ state, renderSelection, refresh, refreshRun, loadRun })`, context)
   api.state.manifest = manifest()
   return {
-    ...api, app, detail, visualizations, settings, mounts, replacements, details, charts, timers, settingsRuns,
+    ...api, app, detail, visualizations, settings, mounts, replacements, details, charts, timers, settingsRuns, scores, comparisons,
     maxActiveMounts: () => maxActiveMounts,
     detailResets: () => detailResets,
     settingsDirectory: () => settingsDirectory
@@ -125,15 +128,17 @@ test('dataset filters project tables and charts while details retain the complet
   const rows = [dataset('MaxQuant'), dataset('Sage'), dataset('FragPipe', 'failed')]
   savedRows(viewer, rows)
   viewer.app.datasetFilters = { ...filters.emptyDatasetFilters(), software_name: ['MaxQuant'] }
-  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations)
+  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
   assert.deepEqual(inputFiles(viewer.app.datasets), inputFiles(rows), 'facets retain the full inventory')
   assert.deepEqual(inputFiles(viewer.mounts[0]), [rows[0].input_file])
   assert.deepEqual(inputFiles(viewer.details.at(-1).all), inputFiles(rows))
   assert.deepEqual(inputFiles(viewer.details.at(-1).visible), [rows[0].input_file])
+  assert.deepEqual(inputFiles(viewer.comparisons.at(-1).rows), [rows[0].input_file])
+  assert.deepEqual(Array.from(viewer.comparisons.at(-1).names), ['FragPipe', 'MaxQuant', 'Sage'])
   assert.deepEqual(viewer.charts.at(-1), model.chartViews([rows[0]], new Map(), new Map()))
 
   viewer.app.datasetFilters = { ...filters.emptyDatasetFilters(), search: 'absent' }
-  await viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations)
+  await viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
   assert.deepEqual(inputFiles(viewer.replacements.at(-1)), [])
   assert.deepEqual(inputFiles(viewer.details.at(-1).all), inputFiles(rows))
   assert.deepEqual(inputFiles(viewer.details.at(-1).visible), [])
@@ -146,13 +151,13 @@ test('rapid filter changes share one table mount and settle on the newest select
   const rows = [dataset('MaxQuant'), dataset('Sage'), dataset('FragPipe', 'failed')]
   viewer.state.rows = rows
   viewer.app.datasetFilters = { ...filters.emptyDatasetFilters(), software_name: ['MaxQuant'] }
-  const first = viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations)
+  const first = viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
   await settle()
   assert.equal(viewer.mounts.length, 1)
   viewer.app.datasetFilters = { ...filters.emptyDatasetFilters(), software_name: ['Sage'] }
-  const second = viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations)
+  const second = viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
   viewer.app.datasetFilters = { ...filters.emptyDatasetFilters(), status: ['failed'] }
-  const third = viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations)
+  const third = viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
   await settle()
   assert.equal(viewer.mounts.length, 1, 'filter events cannot mount a second table while the first is pending')
   mounting.resolve()
@@ -191,12 +196,12 @@ test('refresh requests wait for the current load and settle on the latest reques
   })
   viewer.state.manifest = null
   viewer.state.requested = paths[0]
-  const first = viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations)
+  const first = viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores)
   await loadingFirst.promise
   viewer.state.requested = paths[1]
-  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations)
+  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores)
   viewer.state.requested = paths[2]
-  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations)
+  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores)
   assert.equal(catalogReads, 1, 'selection requests cannot overlap the current catalogue/run load')
 
   releaseFirst.resolve()
@@ -221,12 +226,12 @@ test('run overview output extensions follow all current reports independently of
   ]
   savedRows(viewer, rows)
   viewer.app.datasetFilters = { ...filters.emptyDatasetFilters(), software_name: ['MaxQuant'] }
-  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations)
+  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
   assert.deepEqual(Array.from(viewer.app.outputExtensions), ['.h5ad', '.h5mu'])
   assert.deepEqual(inputFiles(viewer.mounts[0]), [rows[0].input_file])
 
   viewer.state.reports.set(rows[1].path, { status: 'running', steps: [] })
-  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations)
+  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
   assert.deepEqual(Array.from(viewer.app.outputExtensions), ['.h5mu'], 'polling removes obsolete observed outputs')
 })
 
@@ -241,13 +246,13 @@ test('updated manifests preserve filters and file selection until the run path c
   viewer.state.run = path.replace('/run.json', '')
   const selectedFilters = { ...filters.emptyDatasetFilters(), software_name: ['Sage'] }
   viewer.app.datasetFilters = selectedFilters
-  await viewer.loadRun(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, {
+  await viewer.loadRun(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores, {
     path, label: 'routine · convert · hdf5', manifest: manifest()
   })
   assert.equal(viewer.app.datasetFilters, selectedFilters)
   assert.equal(viewer.detailResets(), 0, 'a new snapshot of the same run preserves its opened detail')
 
-  await viewer.loadRun(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, {
+  await viewer.loadRun(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores, {
     path: 'corpus/other/convert/hdf5/run.json', label: 'other · convert · hdf5', manifest: manifest('other')
   })
   assert.deepEqual(viewer.app.datasetFilters, filters.emptyDatasetFilters())
@@ -288,13 +293,13 @@ test('a failed run load clears previous evidence and retries the new combination
   })
   viewer.state.manifest = null
   viewer.state.requested = oldPath
-  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations)
+  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores)
   assert.equal(viewer.settingsDirectory(), oldDirectory)
   assert.deepEqual(viewer.charts.at(-1), model.chartViews([oldRow], new Map(), new Map()))
   viewer.app.hostFor('scheduler-log').textContent = 'Old run scheduler output'
 
   viewer.state.requested = newPath
-  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations)
+  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores)
   assert.match(viewer.app.error, /Run execution settings are missing/)
   assert.equal(viewer.app.runValue, newPath)
   assert.equal(viewer.state.run, newDirectory)
@@ -303,10 +308,12 @@ test('a failed run load clears previous evidence and retries the new combination
   assert.deepEqual(inputFiles(viewer.app.datasets), [])
   assert.equal(viewer.settingsDirectory(), '')
   assert.deepEqual(chartSnapshot(viewer.charts.at(-1)), model.chartViews([]))
+  assert.equal(viewer.comparisons.at(-1).run, newDirectory)
+  assert.deepEqual(inputFiles(viewer.comparisons.at(-1).rows), [], 'failed loads cannot retain the previous run’s score comparison')
   assert.equal(viewer.app.hostFor('scheduler-log').textContent, '')
 
   settingsAvailable = true
-  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations)
+  await viewer.refresh(viewer.app, viewer.detail, viewer.settings, viewer.visualizations, viewer.scores)
   assert.equal(viewer.app.error, '')
   assert.equal(viewer.app.runValue, newPath)
   assert.equal(viewer.state.manifest, newManifest)
