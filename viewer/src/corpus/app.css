@@ -39,6 +39,7 @@ corpus-app {
 
 .score-control { display: flex; align-items: center; gap: 8px; }
 .score-control select { width: auto; min-width: 180px; }
+.score-plot-toggle input { width: auto; margin: 0; }
 .score-counts { font-weight: 600; }
 .score-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .score-legend i { width: 10px; height: 10px; border-radius: 50%; }

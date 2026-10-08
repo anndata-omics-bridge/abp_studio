@@ -108,6 +108,12 @@ function controller (read = async () => scientific()) {
     resizeDetailCharts: () => {},
     read, app, run: 'corpus/routine/convert/hdf5'
   }
+  // Exercise the FASTA renderer with the real table adapter in the same small DOM.
+  const fastaRenderer = runInNewContext(
+    `${isolatedSource('viewer/src/corpus/render/dom.ts')}\n${isolatedSource('viewer/src/corpus/render/scientific.ts')}\nrenderFastaChecks`,
+    { document, ...model, ...representation }
+  )
+  context.renderFastaChecks = fastaRenderer
   const tabs = isolatedSource('viewer/src/corpus/render/tabs.ts')
   const files = isolatedSource('viewer/src/corpus/render/workflow-files.ts')
   const detail = isolatedSource('viewer/src/corpus/panels/detail.ts')
@@ -163,6 +169,41 @@ test('sidebar starts with a scientific file and Show more opens AnnData directly
   await settle()
   assert.deepEqual(calls, ['files'])
   assert.equal(activeTab(hosts), 'anndata', 'Show more reopens the scientific tab even after IO was selected')
+})
+
+test('FASTA check tab shows the recorded reference beside counts and keeps unknown matching settings unknown', async () => {
+  const result = scientific(['ion', 'protein'])
+  result.root.apb.fasta = { provenance: { peptide_verification: {
+    sources: { 0: { path: 'ProteoBenchFASTA_MixedSpecies_HYE.fasta' } }, il_equivalent: false
+  } } }
+  result.levels[0].apb = { fasta: { peptide_verification: {
+    matched_feature_count: 17469, unmatched_feature_count: 12
+  } } }
+  const { panel, hosts } = controller(async () => result)
+  await panel.refresh([row('FragPipe')])
+  assert.equal(activeTab(hosts), 'anndata')
+  const tab = hosts['detail-tabs'].children.find(button => button.textContent === 'FASTA check')
+  assert.ok(tab)
+  tab.click()
+  await settle()
+  const table = hosts.detail.querySelector('.fasta-checks').querySelector('.scientific-table')
+  assert.deepEqual(table.children[1].children[0].children.map(cell => cell.textContent), [
+    'ion', 'ProteoBenchFASTA_MixedSpecies_HYE.fasta', '17,469', '12', 'No'
+  ])
+  assert.equal(table.children[1].children.length, 1, 'unchecked protein level is not reported as verified')
+
+  const unknown = scientific(['ion'])
+  unknown.levels[0].apb = { fasta: { peptide_verification: {
+    matched_feature_count: 0, unmatched_feature_count: 2
+  } } }
+  const next = controller(async () => unknown)
+  await next.panel.refresh([row('Other')])
+  next.hosts['detail-tabs'].children.find(button => button.textContent === 'FASTA check').click()
+  await settle()
+  const unknownTable = next.hosts.detail.querySelector('.scientific-table')
+  assert.deepEqual(unknownTable.children[1].children[0].children.map(cell => cell.textContent), [
+    'ion', 'Not recorded', '0', '2', 'Not recorded'
+  ])
 })
 
 test('chooser shows software, actual file or folder type and size without repeated paths or status lines', async () => {

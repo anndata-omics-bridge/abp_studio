@@ -6,6 +6,7 @@ import { compareScores, referenceScores, scoreQuantities } from '../scores.js'
 import { node } from '../render/dom.js'
 import { PLOT_CONFIG } from '../render/plotly.js'
 import { SCORE_COLORS, scoreFacetFigure } from '../render/score-facets.js'
+import type { ScorePlotMode } from '../render/score-facets.js'
 import { artifactStorePath } from '../representation.js'
 import { fileUrl, proteobenchReferenceUrl } from '../lib/fetch.js'
 
@@ -22,6 +23,7 @@ export function createScoresPanel (host: HTMLElement, readReference: ReadReferen
   let loading: Promise<void> | null = null
   let confidence = 'q_value'
   let slice = ''
+  let mode: ScorePlotMode = 'scatter'
   let signature = ''
   const observer = new IntersectionObserver(entries => {
     for (const entry of entries) {
@@ -108,13 +110,30 @@ export function createScoresPanel (host: HTMLElement, readReference: ReadReferen
       slice = slices.find(item => item.key === '1' || item.key === 'summary')?.key ?? slices[0]?.key ?? 'all'
     }
     const comparison = compareScores(rows, summaries, references, confidence, slice || 'all')
-    const next = JSON.stringify([comparison, slices, confidenceKinds, confidence, slice, software, [...errors]])
+    const next = JSON.stringify([comparison, slices, confidenceKinds, confidence, slice, mode, software, [...errors]])
     if (signature === next) return
     clearPlots()
     signature = next
     host.append(node('h2', 'ProteoBench score comparison'))
-    host.append(node('p', 'Downloaded ProteoBench scores on X; APB scores on Y. Dashed line: y = x. Hover for values and Δ (APB − ProteoBench). Only matching score names and completeness cutoffs with finite values are plotted.', 'view-description'))
+    const axes = mode === 'ma'
+      ? 'Mean of APB and ProteoBench scores on X; Δ (APB − ProteoBench) on Y. Dashed line: Δ = 0.'
+      : 'Downloaded ProteoBench scores on X; APB scores on Y. Dashed line: y = x.'
+    host.append(node('p', `${axes} Hover for values and Δ (APB − ProteoBench). Only matching score names and completeness cutoffs with finite values are plotted.`, 'view-description'))
     const controls = node('div', '', 'score-controls')
+    const toggleLabel = 'MA plot (difference vs mean)'
+    const toggle = node('label', toggleLabel, 'score-control score-plot-toggle')
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.checked = mode === 'ma'
+    checkbox.setAttribute('aria-label', toggleLabel)
+    checkbox.addEventListener('change', () => {
+      const focused = document.activeElement === checkbox
+      mode = checkbox.checked ? 'ma' : 'scatter'
+      renderComparison()
+      if (focused) host.querySelector<HTMLInputElement>('input')?.focus()
+    })
+    toggle.prepend(checkbox)
+    controls.append(toggle)
     if (slices.some(item => item.key !== 'summary')) controls.append(selectControl('Completeness cutoff', [
       { key: 'all', label: 'All matching cutoffs' }, ...slices
     ], slice, value => { slice = value }))
@@ -143,8 +162,8 @@ export function createScoresPanel (host: HTMLElement, readReference: ReadReferen
       const maxDelta = Math.max(...points.map(point => Math.abs(point.delta)))
       card.append(title, node('p', `${points.length} pairs · max |Δ| ${maxDelta.toPrecision(4)}`, 'score-delta'))
       const plot = node('div', '', 'score-plot')
-      plot.setAttribute('aria-label', `${metric}: APB versus ProteoBench`)
-      figures.set(plot, scoreFacetFigure(points, software))
+      plot.setAttribute('aria-label', mode === 'ma' ? `${metric}: APB − ProteoBench versus mean score` : `${metric}: APB versus ProteoBench`)
+      figures.set(plot, scoreFacetFigure(points, software, mode))
       card.append(plot)
       grid.append(card)
       observer.observe(plot)

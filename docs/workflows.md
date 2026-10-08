@@ -101,6 +101,8 @@ Three Fish scripts select 13 corpus/workflow/format combinations. The routine in
 
 APB Parquet outputs are directories. Export workflows write their target’s native H5AD/H5MU artifact independently of the backend label, so running each native export once covers its output contract.
 
+ProteoBench FASTA checks use the reference prescribed by the module, rather than a submitter-specific search database. Both [plasma](https://proteobench.readthedocs.io/en/latest/modules/dia/dia-ion-plasma/) and [ZenoTOF](https://proteobench.readthedocs.io/en/latest/modules/dia/dia-ion-zenotof/) prescribe `ProteoBenchFASTA_MixedSpecies_HYE.fasta` (verified 8 October 2026). File details displays the persisted FASTA source beside matched/unmatched counts and the I/L-equivalence setting. A mismatch can indicate a searched sequence variant, an absent reference accession, or strict I/L matching; it is not automatically a parser failure.
+
 Plasma acquisition is `fixture corpus proteobench-plasma`; its corpus and report workflow are both named `proteobench_plasma`. `proteobench_plasma_run` exposes the corresponding scores-only workflow. They use the same ProteoBench scoring engine as regular pMultiQC, but their workflow table selects unnormalised `Precursor_Quantity` for DIA-NN and FragPipe rather than primary X. The generic pMultiQC table has no `dia_plasma` row and always selects X, so those workflows are not interchangeable. DirectLFQ conversion uses producer hints because its fixtures have no vendor parameter files.
 
 ```fish

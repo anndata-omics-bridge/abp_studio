@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { apbMetadataScopes, structureViews } from '../../viewer/src/corpus/representation.ts'
+import { apbMetadataScopes, fastaChecks, structureViews } from '../../viewer/src/corpus/representation.ts'
 
 const provenance = {
   fasta: { provenance: { peptide_verification: { protein_count: 100, sources: { 0: { path: 'ref.fasta' } } } } },
@@ -94,4 +94,42 @@ test('custom hierarchy determines embedded AnnData order', () => {
   }
   const [root] = structureViews(representation)
   assert.deepEqual(root.modalities.map(item => item.name), ['peptidoform', 'multisite', 'site'])
+})
+
+test('FASTA check counts and source stay paired in standalone AnnData', () => {
+  const representation = { root: null, levels: [{ ...ion, apb: {
+    fasta: { ...provenance.fasta, ...ion.apb.fasta }
+  } }] }
+  assert.deepEqual(fastaChecks(representation), [{
+    level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1,
+    protein_count: 100, sources: { 0: { path: 'ref.fasta' } }
+  }])
+})
+
+test('FASTA checks use MuData source provenance without assigning checks to unchecked levels', () => {
+  const representation = {
+    root: { apb: { fasta: { provenance: { peptide_verification: {
+      sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }, il_equivalent: false
+    } } } } },
+    levels: [ion, protein, { ...ion, name: 'peptide', apb: { fasta: {
+      peptide_verification: { matched_feature_count: 0, unmatched_feature_count: 2 },
+      provenance: { peptide_verification: { sources: { 0: { path: 'other.fasta' } }, il_equivalent: true } }
+    } } }]
+  }
+  const snapshot = structuredClone(representation)
+  assert.deepEqual(fastaChecks(representation), [
+    { level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1,
+      sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }, il_equivalent: false },
+    { level: 'peptide', matched_feature_count: 0, unmatched_feature_count: 2,
+      sources: { 0: { path: 'other.fasta' } }, il_equivalent: true }
+  ])
+  assert.deepEqual(representation, snapshot)
+})
+
+test('missing FASTA provenance stays unknown and conversion alone has no FASTA checks', () => {
+  assert.deepEqual(fastaChecks({ levels: [ion] }), [
+    { level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1 }
+  ])
+  assert.deepEqual(fastaChecks({ levels: [protein] }), [])
+  assert.deepEqual(fastaChecks({ root: { apb: provenance }, levels: [protein] }), [])
 })

@@ -89,6 +89,30 @@ test('each facet has an identity line covering both series, common X/Y limits an
   assert.ok(unchanged.layout.xaxis.range[1] > unchanged.layout.xaxis.range[0])
 })
 
+test('MA facets plot signed differences against arithmetic means and keep original values on hover', () => {
+  const points = [
+    { reference: 10, apb: 12, delta: 2, software: 'DIA-NN' },
+    { reference: 8, apb: 6, delta: -2, software: 'DIA-NN' },
+    { reference: -4, apb: -4, delta: 0, software: 'DIA-NN' }
+  ]
+  const figure = scoreFacetFigure(points, ['DIA-NN'], 'ma')
+  const [line, scatter] = figure.traces
+  assert.deepEqual(line.y, [0, 0])
+  assert.deepEqual(line.x, figure.layout.xaxis.range)
+  assert.deepEqual(scatter.x, [11, 7, -4])
+  assert.deepEqual(scatter.y, [2, -2, 0])
+  assert.equal(figure.layout.yaxis.range[0], -figure.layout.yaxis.range[1])
+  assert.ok(figure.layout.yaxis.range[1] > 2)
+  assert.equal(figure.layout.xaxis.title.text, 'Mean score')
+  assert.equal(figure.layout.yaxis.title.text, 'APB − ProteoBench')
+  assert.deepEqual(scatter.customdata[0].slice(6), [10, 12, 11])
+  assert.match(scatter.hovertemplate, /ProteoBench=%\{customdata\[6\]/)
+  assert.match(scatter.hovertemplate, /APB=%\{customdata\[7\]/)
+  const unchanged = scoreFacetFigure([points[2]], ['DIA-NN'], 'ma')
+  assert.ok(unchanged.layout.xaxis.range[0] < -4 && unchanged.layout.xaxis.range[1] > -4)
+  assert.ok(unchanged.layout.yaxis.range[0] < 0 && unchanged.layout.yaxis.range[1] > 0)
+})
+
 test('score panel reads references lazily, defaults to cutoff 1 after an empty load and caches per run', async () => {
   class Element extends EventTarget {
     children = []
@@ -103,6 +127,8 @@ test('score panel reads references lazily, defaults to cutoff 1 after an empty l
     prepend (...children) { this.children.unshift(...children) }
     replaceChildren (...children) { this.children = children }
     closest () { return null }
+    focus () { context.document.activeElement = this }
+    querySelector (selector) { return this.querySelectorAll(selector)[0] ?? null }
     setAttribute (name, value) { this.attributes.set(name, value) }
     removeAttribute (name) { this.attributes.delete(name) }
     querySelectorAll (selector) {
@@ -138,8 +164,26 @@ test('score panel reads references lazily, defaults to cutoff 1 after an empty l
   const cutoff = host.querySelectorAll('select')[0]
   assert.equal(cutoff.value, '1', 'the loading projection must not choose all cutoffs')
   assert.match(host.querySelectorAll('.score-counts')[0].textContent, /1 score pairs/)
-  cutoff.value = 'all'
-  cutoff.dispatchEvent(new Event('change'))
+  const toggle = host.querySelectorAll('input')[0]
+  assert.equal(toggle.checked, false)
+  toggle.focus()
+  toggle.checked = true
+  toggle.dispatchEvent(new Event('change'))
+  assert.equal(context.document.activeElement, host.querySelectorAll('input')[0], 'keyboard focus follows the replacement checkbox')
+  assert.match(host.querySelectorAll('.view-description')[0].textContent, /Mean of APB and ProteoBench/)
+  assert.match(host.querySelectorAll('.score-plot')[0].attributes.get('aria-label'), /versus mean score/)
+  assert.match(host.querySelectorAll('.score-counts')[0].textContent, /1 score pairs/)
+  await panel.render('first', [a], cache, ['DIA-NN'])
+  assert.equal(host.querySelectorAll('input')[0].checked, true, 'polling preserves MA mode')
+  assert.equal(reads.length, 1, 'switching plots must not reload score evidence')
+  const scatterToggle = host.querySelectorAll('input')[0]
+  scatterToggle.checked = false
+  scatterToggle.dispatchEvent(new Event('change'))
+  assert.match(host.querySelectorAll('.view-description')[0].textContent, /Dashed line: y = x/)
+  assert.match(host.querySelectorAll('.score-plot')[0].attributes.get('aria-label'), /APB versus ProteoBench/)
+  const allCutoffs = host.querySelectorAll('select')[0]
+  allCutoffs.value = 'all'
+  allCutoffs.dispatchEvent(new Event('change'))
   assert.match(host.querySelectorAll('.score-counts')[0].textContent, /2 score pairs/)
   await panel.render('first', [a], cache, ['DIA-NN'])
   assert.equal(host.querySelectorAll('select')[0].value, 'all', 'polling preserves the chosen cutoff')

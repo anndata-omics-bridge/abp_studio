@@ -21,7 +21,8 @@ fasta_urls = [
 #
 # `name` is also the apb-proteobench packaged module name. `fasta` names which extracted
 # FASTA the module uses: each module ships a single species mix, see ProteoBench's per-module docs
-# under docs/available-modules/.
+# under docs/modules/. This is the benchmark's reference, not a reconstruction of each
+# submitter's search database. Different submitted databases can leave peptides unmatched.
 
 [[modules]]
 name = "dda_qexactive"
@@ -56,6 +57,7 @@ fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
 [[modules]]
 name = "dia_zenotof"
 repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_ZenoTOF/archive/refs/heads/main.zip"
+# Confirmed 2026-10-08: https://proteobench.readthedocs.io/en/latest/modules/dia/dia-ion-zenotof/
 fasta = "ProteoBenchFASTA_MixedSpecies_HYE.fasta"
 
 # Single-cell DIA uses the HY (no E. coli) FASTA. The file inside the zip is misleadingly
@@ -66,7 +68,9 @@ repo_url = "https://github.com/Proteobench/Results_quant_ion_DIA_singlecell/arch
 fasta = "ProteoBenchFASTA_DDAQuantification_noecoli.fasta"
 
 # Plasma DIA (PYE: human plasma with yeast and E. coli spike-ins) uses the HYE FASTA, as
-# ProteoBench's current module settings do. Upstream scores it on other quantity columns than
+# its module documentation specifies (confirmed 2026-10-08):
+# https://proteobench.readthedocs.io/en/latest/modules/dia/dia-ion-plasma/
+# Upstream scores it on other quantity columns than
 # the quant modules, so its scoring inventory is separate; conversion includes it in `all`.
 [[modules]]
 name = "dia_plasma"

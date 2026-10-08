@@ -7,6 +7,7 @@ import { fileUrl, sourceUrl } from '../lib/fetch.js'
 import {
   artifactAttemptStorePath,
   artifactStorePath,
+  fastaChecks,
   loadRepresentationArtifacts,
   preferredLoadedRepresentation,
   representationArtifacts,
@@ -21,6 +22,7 @@ import {
   renderAnnData,
   renderAnnotationAnnData,
   renderApbMetadata,
+  renderFastaChecks,
   renderRepresentationJson,
   resizeDetailCharts
 } from '../render/scientific.js'
@@ -227,6 +229,17 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
       notices.append(node('p', message, 'empty-note'))
       defaultTab = 'io'
     } else {
+      if (fastaChecks(preferred.representation).length) {
+        const panel = document.createElement('section')
+        panel.className = 'detail-panel'
+        panel.hidden = true
+        element('detail').append(panel)
+        registerTab('fasta', 'FASTA check', panel,
+          host => {
+            host.replaceChildren()
+            renderFastaChecks(host, preferred.representation)
+          })
+      }
       const views = representationViews(preferred.representation)
       const objects = views.filter(view => ['level', 'annotation'].includes(view.kind))
       if (objects.length) {

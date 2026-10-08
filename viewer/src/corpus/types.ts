@@ -170,8 +170,25 @@ export interface Layer {
 }
 export type AlignedSlot = 'obsm' | 'varm' | 'obsp' | 'varp'
 export type AlignedTables = Partial<Record<AlignedSlot, NamedTable[]>>
+export interface FastaSource { path?: string; checksum?: string }
+export interface PeptideVerification {
+  feature_count?: number
+  matched_feature_count?: number
+  unmatched_feature_count?: number
+}
+export interface FastaVerificationProvenance {
+  sources?: Record<string, FastaSource>
+  il_equivalent?: boolean
+}
+export interface FastaCheck extends PeptideVerification, FastaVerificationProvenance {
+  level: string
+}
 export interface ApbMetadata extends Record<string, unknown> {
   hierarchy?: { identities?: [string, string][] }
+  fasta?: {
+    provenance?: { peptide_verification?: FastaVerificationProvenance }
+    peptide_verification?: PeptideVerification
+  }
 }
 export interface Level {
   name: string

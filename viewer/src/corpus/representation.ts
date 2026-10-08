@@ -1,4 +1,4 @@
-import type { AnnDataDiagram, AnnDataStructure, ApbMetadata, DatasetReport, DatasetRow, Layer, Level, LoadedRepresentation, NamedTable, Representation, RepresentationView, StepArtifact, StructureView } from './types.js'
+import type { AnnDataDiagram, AnnDataStructure, ApbMetadata, DatasetReport, DatasetRow, FastaCheck, Layer, Level, LoadedRepresentation, NamedTable, Representation, RepresentationView, StepArtifact, StructureView } from './types.js'
 
 // Pure projections of the versioned APB scientific representation.
 export const REPRESENTATION_FORMAT = 'apb2-result-representation'
@@ -6,6 +6,18 @@ export const REPRESENTATION_VERSION = '4'
 const EMBEDDED_JSON_FIELDS = new Set([
   'rule_json', 'plan_json', 'search_parameters'
 ])
+
+/** Pair each recorded level check with the source provenance on its owning result. */
+export function fastaChecks (representation: Representation): FastaCheck[] {
+  return representation.levels.flatMap(level => {
+    const fasta = level.apb?.fasta
+    if (!fasta?.peptide_verification) return []
+    const provenance = fasta.provenance?.peptide_verification ??
+      representation.root?.apb?.fasta?.provenance?.peptide_verification
+    return [{ level: level.name, ...fasta.peptide_verification, ...provenance }]
+  })
+}
+
 function hierarchyOrder (representation: Representation | null | undefined): string[] {
   const hierarchy = representation?.root?.apb?.hierarchy ?? representation?.levels?.[0]?.apb?.hierarchy
   return (hierarchy?.identities ?? []).map(([name]) => name)
