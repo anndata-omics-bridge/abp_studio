@@ -630,7 +630,11 @@ def test_corpus_commands_expose_all_selection_strategies(
 
     commands = {
         "all": (None, "all.csv"),
-        "entrapment": (None, "entrapment.csv", "entrapment"),
+        "proteobench-entrapment": (
+            None,
+            "proteobench_entrapment.csv",
+            "proteobench_entrapment",
+        ),
         "proteobench-plasma": (None, "proteobench_plasma.csv", "proteobench_plasma"),
         "smallest-per-module": ("smallest_per_module", "routine.csv"),
         "smallest-per-software": ("smallest_per_software", "routine.csv"),
@@ -691,8 +695,8 @@ def test_acquire_corpus_materializes_the_selected_strategy(
     assert written["software_name"].tolist() == ["A", "C"]
     assert json.loads((tmp_path / "corpuses.json").read_text(encoding="utf-8")) == {
         "directlfq": "corpuses/directlfq.csv",
-        "entrapment": "corpuses/entrapment.csv",
         "proteobench": "corpuses/proteobench.csv",
+        "proteobench_entrapment": "corpuses/proteobench_entrapment.csv",
         "proteobench_plasma": "corpuses/proteobench_plasma.csv",
         "routine": "corpuses/routine.csv",
     }
@@ -776,9 +780,9 @@ def test_acquiring_all_downloads_every_proteobench_module_and_keeps_local_zenodo
     assert [row["module"] for row in rawdb.read_rows(inventories / "proteobench_plasma.csv")] == [
         "dia_plasma"
     ]
-    assert [row["module"] for row in rawdb.read_rows(inventories / "entrapment.csv")] == [
-        "entrapment_dia_astral"
-    ]
+    assert [
+        row["module"] for row in rawdb.read_rows(inventories / "proteobench_entrapment.csv")
+    ] == ["entrapment_dia_astral"]
 
 
 def test_view_and_main_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -696,10 +696,10 @@ def corpus_all() -> None:
     _acquire_corpus(None, "all.csv")
 
 
-@corpus_app.command(name="entrapment")
-def corpus_entrapment() -> None:
-    """Download every entrapment fixture and write corpuses/entrapment.csv."""
-    _acquire_corpus(None, "entrapment.csv", "entrapment")
+@corpus_app.command(name="proteobench-entrapment")
+def corpus_proteobench_entrapment() -> None:
+    """Download every entrapment fixture and write corpuses/proteobench_entrapment.csv."""
+    _acquire_corpus(None, "proteobench_entrapment.csv", "proteobench_entrapment")
 
 
 @corpus_app.command(name="proteobench-plasma")

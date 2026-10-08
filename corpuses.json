@@ -1,9 +1,9 @@
 {
   "directlfq": "corpuses/directlfq.csv",
   "directlfq_large_per_vendor": "corpuses/directlfq_large_per_vendor.csv",
-  "entrapment": "corpuses/entrapment.csv",
   "problems": "corpuses/problems.csv",
   "proteobench": "corpuses/proteobench.csv",
+  "proteobench_entrapment": "corpuses/proteobench_entrapment.csv",
   "proteobench_f3": "corpuses/proteobench_f3.csv",
   "proteobench_plasma": "corpuses/proteobench_plasma.csv",
   "routine": "corpuses/routine.csv",

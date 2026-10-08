@@ -783,8 +783,8 @@ def test_corpus_config_bootstrap_preserves_existing_config(tmp_path: Path) -> No
     ensure_config(source)
     assert load_corpuses(source) == {
         "directlfq": tmp_path / "corpuses" / "directlfq.csv",
-        "entrapment": tmp_path / "corpuses" / "entrapment.csv",
         "proteobench": tmp_path / "corpuses" / "proteobench.csv",
+        "proteobench_entrapment": tmp_path / "corpuses" / "proteobench_entrapment.csv",
         "proteobench_plasma": tmp_path / "corpuses" / "proteobench_plasma.csv",
         "routine": tmp_path / "corpuses" / "routine.csv",
     }
@@ -1690,7 +1690,9 @@ def test_entrapment_table_names_what_acquisition_fetches() -> None:
     config = packaged_config()
 
     assert all(tuple(row) == PROTEOBENCH_ENTRAPMENT_COLUMNS for row in rows)
-    assert sorted(row["module"] for row in rows) == sorted(config.modules_in("entrapment"))
+    assert sorted(row["module"] for row in rows) == sorted(
+        config.modules_in("proteobench_entrapment")
+    )
     for row in rows:
         database = Path(config.fasta_for_module(row["module"])).with_suffix(".parquet")
         assert row["fasta"] == f"fasta/{database}", "the protein database acquisition writes"

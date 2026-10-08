@@ -4,7 +4,7 @@
 set -l combinations \
     proteobench:proteobench_pmultiqc:hdf5 \
     proteobench_plasma:proteobench_plasma:hdf5 \
-    entrapment:proteobench_entrapment:hdf5 \
+    proteobench_entrapment:proteobench_entrapment:hdf5 \
     directlfq:convert_no_param:hdf5
 
 argparse --name overview_corpuses h/help p/plan c/clean d/dry-run f/force j/cores= -- $argv

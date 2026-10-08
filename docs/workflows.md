@@ -95,7 +95,7 @@ Three Fish scripts select 20 corpus/workflow/format combinations. The routine in
 | routine | problems | aggregate_medpolish | hdf5 | `.h5mu` |
 | overview | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
 | overview | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
-| overview | entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
+| overview | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
 | overview | directlfq | convert_no_param | hdf5 | `.h5mu` |
 | export | routine | export_msmu | hdf5 | `.h5mu` |
 | export | routine | export_prolfqua | hdf5 | `.h5ad` |
