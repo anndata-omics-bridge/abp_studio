@@ -81,7 +81,7 @@ A workflow needs no runner change to become runnable. `--workflow <name>` select
 
 ## Selected combinations
 
-Three Fish scripts select 13 corpus/workflow/format combinations. The routine inventory contains 16 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains the 15 catalogued ProteoBench datasets from that small selection, excluding the Zenodo MaxQuant entrapment folder. It runs the three separate calls: conversion, FASTA peptide verification and ProteoBench quantification scoring. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+Three Fish scripts select 20 corpus/workflow/format combinations. The routine inventory contains 15 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains the 15 catalogued ProteoBench datasets from that small selection, excluding the Zenodo MaxQuant entrapment folder. It runs the three separate calls: conversion, FASTA peptide verification and ProteoBench quantification scoring. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
 
 | Script | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
@@ -90,6 +90,9 @@ Three Fish scripts select 13 corpus/workflow/format combinations. The routine in
 | routine | routine | convert | parquet | `.parquet` |
 | routine | routine_pb | proteobench | hdf5 | `.h5mu` |
 | routine | routine | aggregate_medpolish | hdf5 | `.h5mu` |
+| routine | problems | convert | hdf5 | `.h5mu` |
+| routine | problems | proteobench | hdf5 | `.h5mu` |
+| routine | problems | aggregate_medpolish | hdf5 | `.h5mu` |
 | overview | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
 | overview | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
 | overview | entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
@@ -98,6 +101,9 @@ Three Fish scripts select 13 corpus/workflow/format combinations. The routine in
 | export | routine | export_prolfqua | hdf5 | `.h5ad` |
 | export | routine | export_proteopy | hdf5 | `.h5ad` |
 | export | routine | export_alphapepttools | hdf5 | `.h5mu` |
+| export | problems | export_msmu, export_prolfqua, export_proteopy, export_alphapepttools | hdf5 | `.h5mu`, `.h5ad` |
+
+The `problems` corpus collects submissions that fail, or convert with questionable results, for a known reason; `corpuses/problems.md` lists them. `export_msmu` passes `--fasta` with the FASTA the ProteoBench workflow table names for the dataset's module, so msmu's contaminant flags include the FASTA's; a module without a row exports with the vendor's own flags only.
 
 APB Parquet outputs are directories. Export workflows write their target’s native H5AD/H5MU artifact independently of the backend label, so running each native export once covers its output contract.
 

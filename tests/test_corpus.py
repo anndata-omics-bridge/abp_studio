@@ -61,6 +61,7 @@ from apb_studio.workflows.workflow_aggregate_medpolish import steps as aggregate
 from apb_studio.workflows.workflow_convert import steps as convert_steps
 from apb_studio.workflows.workflow_convert_ion import steps as convert_ion_steps
 from apb_studio.workflows.workflow_convert_no_param import steps as convert_no_param_steps
+from apb_studio.workflows.workflow_export_msmu import steps as export_msmu_steps
 from apb_studio.workflows.workflow_proteobench import WORKFLOW_COLUMNS as PROTEOBENCH_COLUMNS
 from apb_studio.workflows.workflow_proteobench import steps as proteobench_steps
 from apb_studio.workflows.workflow_proteobench_entrapment import (
@@ -979,6 +980,30 @@ def test_compound_software_uses_the_base_parameter_parser(tmp_path: Path) -> Non
     timing_file = context.output_dir / "converted.timings.json"
     assert command[command.index("--timings-output") + 1] == str(timing_file)
     assert step.outputs[-1] == Artifact(role="tool_timings", path=timing_file)
+
+
+def test_msmu_export_checks_the_module_fasta_the_table_names(tmp_path: Path) -> None:
+    table = tmp_path / "workflow_proteobench.csv"
+    table.write_text("module,fasta,level\ndia_aif,fasta/hye.fasta,ion\n", encoding="utf-8")
+    context = WorkflowContext(
+        corpus=tmp_path / "corpus.csv",
+        data_root=tmp_path,
+        dataset=dataset(),
+        workflow_table=table,
+        output_dir=tmp_path / "outputs",
+        report=tmp_path / "report.json",
+        tools={"apb-export": tmp_path / "apb-export"},
+    )
+
+    step = export_msmu_steps(context)[0]
+    fasta = resolve_file(tmp_path, "fasta/hye.fasta")
+    assert step.command[step.command.index("--fasta") + 1] == str(fasta)
+    assert Artifact(role="fasta", path=fasta) in step.inputs
+
+    elsewhere = context.model_copy(
+        update={"dataset": dataset().model_copy(update={"module": "dia_plasma"})}
+    )
+    assert "--fasta" not in export_msmu_steps(elsewhere)[0].command, "no row, no FASTA check"
 
 
 def test_no_param_workflow_uses_tsv_software_mapping_without_parameter_file(tmp_path: Path) -> None:
