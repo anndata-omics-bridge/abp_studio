@@ -3,6 +3,7 @@
 import subprocess
 from pathlib import Path
 
+from apb_studio.corpus import oddities
 from apb_studio.corpus.models import RunManifest
 from apb_studio.corpus.runs import command_for, dataset_dependencies, publish_index
 from apb_studio.corpus.tables import load_corpus
@@ -18,7 +19,8 @@ BY_INPUT = {row.input_file: row for row in load_corpus(ROOT / RUN.corpus)}
 
 rule all:
     input:
-        str(ROOT / "corpus_index.json")
+        index=str(ROOT / "corpus_index.json"),
+        oddities=str(ROOT / "oddities.json"),
 
 
 rule dataset:
@@ -38,8 +40,10 @@ rule dataset:
 
 rule index:
     input:
-        [str(ROOT / link.path) for link in RUN.reports]
+        reports=[str(ROOT / link.path) for link in RUN.reports],
+        projection=str(Path(oddities.__file__)),
     output:
-        str(ROOT / "corpus_index.json")
+        index=str(ROOT / "corpus_index.json"),
+        oddities=str(ROOT / "oddities.json"),
     run:
         publish_index(ROOT, RUN)

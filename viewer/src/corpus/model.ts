@@ -3,7 +3,7 @@ import type { Artifact, ChartPoint, ChartView, CsvRow, CsvRows, DatasetReport, D
 // Pure projections of persisted documents. No filesystem or proteomics inference.
 const CORPUS_FIELDS = ['input_file', 'vendor_parameter_file', 'module', 'software_name']
 const AUXILIARY_OUTPUTS = new Set(['representation', 'tool_timings'])
-const SCIENTIFIC_OUTPUT_ROLES = new Set(['result', 'converted', 'aggregated', 'export'])
+const SCIENTIFIC_OUTPUT_ROLES = new Set(['result', 'converted', 'aggregated', 'export', 'fasta_verified'])
 
 /** Actual persisted scientific files distinguish AnnData and MuData within the HDF5 backend. */
 export function scientificOutputExtensions (reports: Iterable<DatasetReport | null | undefined>): string[] {

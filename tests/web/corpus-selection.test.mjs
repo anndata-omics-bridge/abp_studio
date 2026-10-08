@@ -6,6 +6,7 @@ import * as model from '../../viewer/src/corpus/model.ts'
 import * as filters from '../../viewer/src/corpus/filters.ts'
 import * as representation from '../../viewer/src/corpus/representation.ts'
 import { representationScores } from '../../viewer/src/corpus/scores.ts'
+import * as oddities from '../../viewer/src/corpus/oddities.ts'
 
 function deferred () {
   let resolve
@@ -72,12 +73,13 @@ function controller (options = {}) {
     clear () { settingsDirectory = '' }, redraw () {}
   }
   const context = {
-    ...model, ...filters, ...representation, representationScores,
+    ...model, ...filters, ...representation, ...oddities, representationScores,
+    renderOdditiesSummary: () => {},
     emptyCsv: () => [],
     readCatalog: options.readCatalog ?? (async () => ({ runs: [] })),
     readInputKinds: options.readInputKinds ?? (async () => ({})),
     readStore: options.readStore ?? (async () => null),
-    readStoreJson: async () => null,
+    readStoreJson: options.readStoreJson ?? (async () => null),
     validatedToolTimings: () => null,
     async mountTable (_target, rows) {
       mounts.push(rows)

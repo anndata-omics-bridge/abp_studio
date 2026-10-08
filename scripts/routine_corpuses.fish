@@ -1,12 +1,16 @@
 #!/usr/bin/env fish
 # Edit these corpus:workflow:format entries to choose the saved runs Studio should produce.
-# Convert in all storage formats, score through three tools, and median-polish primary X.
+# Convert in all storage formats, score through three tools, and median-polish primary X;
+# run the problems corpus, whose known failures are listed in corpuses/problems.md, the same way.
 set -l combinations \
     routine:convert:hdf5 \
     routine:convert:duckdb \
     routine:convert:parquet \
     routine_pb:proteobench:hdf5 \
-    routine:aggregate_medpolish:hdf5
+    routine:aggregate_medpolish:hdf5 \
+    problems:convert:hdf5 \
+    problems:proteobench:hdf5 \
+    problems:aggregate_medpolish:hdf5
 
 argparse --name routine_corpuses h/help p/plan c/clean d/dry-run f/force j/cores= -- $argv
 or exit 2

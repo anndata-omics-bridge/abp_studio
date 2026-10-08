@@ -7,7 +7,7 @@ import {
 import type { RunFilters, DatasetFilters } from '../filters.js'
 
 export type MainTab = 'runs' | 'insights' | 'files'
-export type InsightTab = 'results' | 'visualizations' | 'scores' | 'settings' | 'log'
+export type InsightTab = 'results' | 'visualizations' | 'scores' | 'oddities' | 'settings' | 'log'
 export type SettingsTab = 'execution-settings' | 'saved-run' | 'corpus-input' | 'input-metadata' | 'workflow-input' | 'workflow-source'
 
 // Global selectors, faceted sidebars, tabs and one light-DOM host per panel.
@@ -29,6 +29,7 @@ const INSIGHT_TABS = [
   ['results', 'Datasets'],
   ['visualizations', 'Visualizations'],
   ['scores', 'Score comparison'],
+  ['oddities', 'Oddities'],
   ['settings', 'Settings & inputs'],
   ['log', 'Scheduler log']
 ] as const
@@ -428,6 +429,7 @@ export class CorpusApp extends LitElement {
         <section id="visualization-chart-panel" class="visualization-chart-panel" role="tabpanel"></section>
       </section>
       <section id="scores" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-scores" ?hidden=${this.insightTab !== 'scores' || !this.hasProteobench}></section>
+      <section id="oddities" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-oddities" ?hidden=${this.insightTab !== 'oddities'}></section>
       <section id="settings" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-settings" ?hidden=${this.insightTab !== 'settings'}>
         <nav class="tabs subtabs" aria-label="Settings and input views">
           ${SETTINGS_TABS.map(([id, label]) => html`

@@ -118,7 +118,7 @@ test('score comparison is available only for runs using ProteoBench, with keyboa
   assert.ok(!ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab').includes('scores'))
   app.hasProteobench = true
   assert.deepEqual(ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab'), [
-    'results', 'visualizations', 'scores', 'settings', 'log'
+    'results', 'visualizations', 'scores', 'oddities', 'settings', 'log'
   ])
   app.selectInsight('visualizations')
   const press = keyboard(app, 'data-insight-tab')
@@ -132,7 +132,7 @@ test('score comparison is available only for runs using ProteoBench, with keyboa
 test('insight subtabs stay separate from workspace navigation and retain their selection', () => {
   const app = createShell()
   assert.deepEqual(ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab'), [
-    'results', 'visualizations', 'settings', 'log'
+    'results', 'visualizations', 'oddities', 'settings', 'log'
   ])
   app.select('insights')
   app.selectInsight('visualizations')
@@ -174,7 +174,7 @@ test('workspace and insight tabs support wrapping arrows, Home and End with matc
 
   app.select('insights')
   const insightKey = keyboard(app, 'data-insight-tab')
-  assert.deepEqual(insightKey('End'), { focused: 3, prevented: true })
+  assert.deepEqual(insightKey('End'), { focused: 4, prevented: true })
   assert.equal(app.insightTab, 'log')
   assert.deepEqual(insightKey('ArrowRight'), { focused: 0, prevented: true })
   assert.equal(app.insightTab, 'results')
@@ -393,7 +393,7 @@ test('dataset facets are closed dropdowns that retain multiple selected values a
   ]
   const rendered = markup(app.render())
   const overview = rendered.slice(rendered.indexOf('id="insights"'), rendered.indexOf('id="files"'))
-  assert.equal([...overview.matchAll(/<details class="facet-dropdown">/g)].length, 3)
+  assert.equal([...overview.matchAll(/<details class="facet-dropdown">/g)].length, 4)
   assert.doesNotMatch(overview, /<details[^>]*\bopen[= >]/)
   assert.match(overview, /class="facet-selection"[^>]*>All<\/span>/)
   facetHandler(app, 'MaxQuant')({ currentTarget: new HTMLInputElement({ checked: true }) })

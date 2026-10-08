@@ -92,6 +92,25 @@ test('dataset output ignores phantom artifacts from failed and skipped steps', (
   )
 })
 
+test('failed scoring selects the verified scientific output and its representation', () => {
+  const link = { input_file: 'input.tsv', path: 'report', progress: 'progress' }
+  const verifiedPath = '/run/verified.h5mu'
+  const record = { status: 'failed', steps: [
+    { name: 'convert', status: 'succeeded', outputs: [
+      { role: 'converted', path: '/run/converted.h5mu', size_bytes: 10 }
+    ] },
+    { name: 'verify', status: 'succeeded', outputs: [
+      { role: 'fasta_verified', path: verifiedPath, size_bytes: 10 }
+    ] },
+    { name: 'score', status: 'failed', outputs: [] }
+  ] }
+  const [row] = datasetRows({ reports: [link] }, [], [], new Map([['report', record]]), new Map(), null)
+  const converted = { artifact: { path: '/run/converted.h5mu.apb.json' }, representation: {} }
+  const verified = { artifact: { path: `${verifiedPath}.apb.json` }, representation: {} }
+  assert.equal(row.output_file, verifiedPath)
+  assert.equal(preferredLoadedRepresentation(row, [verified, converted]), verified)
+})
+
 test('failed-step evidence stays in Show More without becoming the summary output', () => {
   const link = { input_file: 'submissions/hash/input.csv', path: 'report', progress: 'progress' }
   const record = { status: 'failed', steps: [

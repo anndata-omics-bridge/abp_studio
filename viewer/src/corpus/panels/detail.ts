@@ -1,5 +1,5 @@
 import type { CellComponent, ColumnDefinition } from '../../shared/tabulator.js'
-import type { CsvRows, DatasetReport, DatasetRow, Representation, RepresentationView } from '../types.js'
+import type { CsvRows, DatasetOddities, DatasetReport, DatasetRow, Representation, RepresentationView } from '../types.js'
 import type { CorpusApp } from '../shell/corpus-app.js'
 
 import { formatBytes, workflowFields } from '../model.js'
@@ -18,6 +18,8 @@ import { fileLink } from '../render/links.js'
 import { renderAnnDataStructure } from '../render/anndata-structure.js'
 import { renderTabs } from '../render/tabs.js'
 import { renderWorkflowFiles } from '../render/workflow-files.js'
+import { renderOdditiesDetail } from '../render/oddities.js'
+import { oddityCountLabel } from '../oddities.js'
 import {
   renderAnnData,
   renderAnnotationAnnData,
@@ -50,6 +52,7 @@ function fileCell (path: string, basename: string, parent: string, size: string 
 export function createDetailPanel (app: CorpusApp, readRepresentation: (path: string) => Promise<Representation | null>, runPath: () => string) {
   let selected = ''
   let selectedRecord: DatasetReport | null | undefined = null
+  let selectedOddities: DatasetOddities | null | undefined = null
   let selectedTab = ''
   let selectedObject = ''
   let defaultTab = 'io'
@@ -141,6 +144,7 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
     clearDetail()
     selected = ''
     selectedRecord = null
+    selectedOddities = null
     selectedTab = ''
     selectedObject = ''
     defaultTab = 'io'
@@ -182,12 +186,13 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
   }
 
   async function show (row: DatasetRow, navigate = false) {
-    const changed = selected !== row.input_file || selectedRecord !== row.record
+    const changed = selected !== row.input_file || selectedRecord !== row.record || selectedOddities !== row.oddities
     const sameFile = selected === row.input_file
     const retainedTab = sameFile && !navigate ? selectedTab : ''
     if (!sameFile) selectedObject = ''
     selected = row.input_file
     selectedRecord = row.record
+    selectedOddities = row.oddities
     element('detail-title').textContent = `${row.software_name} · ${row.module} · ${row.input_file_name || row.input_file.split('/').at(-1)}`
     updateSidebarSelection()
     if (navigate) {
@@ -202,6 +207,11 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
     const ioPanel = element('detail-io')
     const notices = element('detail-notices')
     registerTab('io', 'Inputs & outputs', ioPanel)
+    const odditiesPanel = document.createElement('section')
+    odditiesPanel.className = 'detail-panel'
+    odditiesPanel.hidden = true
+    element('detail').append(odditiesPanel)
+    registerTab('oddities', 'Oddities', odditiesPanel, host => renderOdditiesDetail(host, row.oddities))
     tabs.hidden = false
     activateTab('io')
     const diagnostics = document.createElement('details')
@@ -321,6 +331,10 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
           cellClick: (_event, cell) => { void show(rowForCell(cell), true) }
         },
         { title: 'Result', field: 'status', width: 110 },
+        {
+          title: 'Oddities', field: 'oddity_count', sorter: 'number', width: 150,
+          formatter: cell => oddityCountLabel(rowForCell(cell))
+        },
         { title: 'Module', field: 'module', minWidth: 120 },
         { title: 'Software', field: 'software_name', minWidth: 120 },
         {

@@ -83,6 +83,51 @@ export interface DatasetRow extends ReportLink {
   runtime_seconds: number | null
   peak_memory_bytes: number | null
   record?: DatasetReport | null
+  oddities?: DatasetOddities | null
+  oddity_count?: number | null
+  oddity_state?: string
+}
+export type OddityKind = 'unknown_modification' | 'unmatched_peptides' | 'unreadable_numeric' | 'effectively_empty' | 'annotation_only' | 'quantification_only' | 'annotation_corrections'
+export interface OddityFinding {
+  kind: OddityKind
+  level: string
+  layer: string
+  convention: string
+  details: Record<string, unknown>
+}
+export interface OddityCoverage {
+  level: string
+  numeric: 'recorded' | 'not_recorded'
+  fasta: 'checked' | 'not_checked'
+  annotation_conventions: string[]
+}
+export interface DatasetOddities {
+  input_file: string
+  software_name: string
+  module: string
+  status: string
+  source_step: string
+  source_path: string
+  source_status: string
+  available: boolean
+  findings: OddityFinding[]
+  coverage: OddityCoverage[]
+  notes: string[]
+}
+export interface RunOddities {
+  format: 'apb-studio-oddities'
+  format_version: 1
+  run_id: string
+  datasets: DatasetOddities[]
+  software: {
+    software_name: string
+    dataset_count: number
+    summarized_count: number
+    numeric_recorded_count: number
+    fasta_checked_count: number
+    annotation_checked_count: number
+    affected_datasets: Partial<Record<OddityKind, number>>
+  }[]
 }
 export interface DirectedArtifact extends Artifact { direction: 'Input' | 'Output'; step: string }
 export interface StepArtifact extends Artifact { step: string }

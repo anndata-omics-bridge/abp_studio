@@ -12,6 +12,8 @@ import {
 import { createDetailPanel } from './panels/detail.js'
 import { createScoresPanel } from './panels/scores.js'
 import { representationScores } from './scores.js'
+import { validatedOddities, withOddities } from './oddities.js'
+import { renderOdditiesSummary } from './render/oddities.js'
 import type { RepresentationSummary } from './scores.js'
 import { createSettingsPanel } from './panels/settings.js'
 import { createVisualizationPanel } from './panels/visualizations.js'
@@ -24,7 +26,7 @@ import './app.css'
 import './representation.css'
 import './json-viewer.css'
 import type { ColumnDefinition, Tabulator } from '../shared/tabulator.js'
-import type { Artifact, CatalogRun, CsvRows, DatasetReport, DatasetRow, InputKind, Operation, RunChoice, RunManifest, ToolTimings } from './types.js'
+import type { Artifact, CatalogRun, CsvRows, DatasetReport, DatasetRow, InputKind, Operation, RunChoice, RunManifest, RunOddities, ToolTimings } from './types.js'
 import type { ExecutionSettings } from './panels/settings.js'
 
 type DetailPanel = ReturnType<typeof createDetailPanel>
@@ -46,6 +48,8 @@ interface ViewerState {
   reports: Map<string, DatasetReport>
   timingFiles: Map<string, ToolTimings | null>
   representationFiles: Map<string, RepresentationSummary | null>
+  oddities: RunOddities | null
+  odditiesStamp: string
   table: Tabulator | null
 }
 interface ArtifactEntry { row: DatasetRow; artifact: Artifact }
@@ -68,6 +72,8 @@ const state: ViewerState = {
   reports: new Map(),
   timingFiles: new Map(),
   representationFiles: new Map(),
+  oddities: null,
+  odditiesStamp: '',
   table: null
 }
 
@@ -130,6 +136,8 @@ async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsP
   state.reports.clear()
   state.timingFiles.clear()
   state.representationFiles.clear()
+  state.oddities = null
+  state.odditiesStamp = ''
   state.operationStamp = ''
   const manifest = choice.manifest
   app.hasProteobench = Boolean(manifest.tools?.['apb-proteobench'])
@@ -176,6 +184,7 @@ function renderSelection (app: CorpusApp, detail: DetailPanel, visualizations: V
     await detail.refresh(state.rows, rows)
     await visualizations.render(chartViews(rows, state.timingFiles, ionDimensions()))
     await scores.render(state.run, rows, state.representationFiles, [...new Set(state.rows.map(row => row.software_name))].sort())
+    renderOdditiesSummary(host(app, 'oddities'), state.oddities)
   })
   return selectionRender
 }
@@ -221,6 +230,12 @@ async function readArtifactCache<T> (
 async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: VisualizationPanel, scores: ScoresPanel) {
   if (!state.manifest) return
   const operation = await readStore<Operation>(`${state.run}/operation.json`)
+  const odditiesDocument = await readStoreJson(`${state.run}/oddities.json`)
+  const odditiesStamp = JSON.stringify(odditiesDocument)
+  if (odditiesStamp !== state.odditiesStamp) {
+    state.oddities = odditiesDocument ? validatedOddities(odditiesDocument, state.manifest.run_id) : null
+    state.odditiesStamp = odditiesStamp
+  }
   if (state.operationStamp !== (operation?.updated_at ?? '')) {
     state.reports.clear()
     state.timingFiles.clear()
@@ -258,6 +273,7 @@ async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: 
     state.manifest, state.corpus, state.inputMetadata, state.reports, progress,
     operation, state.workflowRows, ionDimensions()
   ).map(row => ({ ...row, input_file_kind: state.inputKinds[row.input_file] ?? null }))
+  rows = withOddities(rows, state.oddities)
   state.rows = rows
   app.datasets = rows
   app.outputExtensions = scientificOutputExtensions(rows.map(row => row.record))
@@ -314,6 +330,8 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
       state.reports.clear()
       state.timingFiles.clear()
       state.representationFiles.clear()
+      state.oddities = null
+      state.odditiesStamp = ''
       destroyTables()
       detail.reset()
       settings.clear()
@@ -322,6 +340,7 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
       updateSummary(app, 'Waiting for a run', 0, {}, [])
       await visualizations.render(chartViews([]))
       await scores.render('', [], new Map(), [])
+      renderOdditiesSummary(host(app, 'oddities'), null)
     }
     app.error = ''
   } catch (error) {

@@ -63,6 +63,8 @@ Runs declaring `apb-proteobench` also have a Score comparison subtab in Run over
 
 File details adds a FASTA check subtab when peptide verification was recorded: the recorded reference FASTA, matched and unmatched feature counts per level, and whether I/L-equivalent matching was used. It reads actual result provenance, including MuData root provenance, and leaves missing sources or matching settings unknown. ProteoBench checks use the module reference, even when a submitter searched a different database; unmatched sequences therefore do not by themselves establish a conversion bug.
 
+Oddities combines unknown modifications, unmatched peptides, unreadable numbers, empty layers and annotation matching evidence in File details. The dataset table counts finding groups and offers an Oddities filter; Run overview counts affected datasets once per software and finding kind. Coverage distinguishes older unrecorded numeric diagnostics, unperformed FASTA/annotation checks and unavailable results. The final index job writes `oddities.json` from the displayed scientific output's representation; after a later workflow failure, the summary identifies its earlier successful source.
+
 The Structure tab depicts physical AnnData ownership using representation version 4. H5AD shows one AnnData with combined tool namespaces directly under `uns["apb"]`; H5MU provides a MuData-container subtab and one subtab per embedded AnnData, including annotation modalities. MuData stores common `provenance` under each tool once, while each AnnData stores its own rules, roles and results. ProteoBench keeps `annotation` matching evidence beside `scoring[quantity_name]`; FASTA keeps operation-specific validation summaries. There are no shared/level wrappers or client-side ownership reconstruction. The viewer shows actual trees, scalar values and object paths, with primary quantity names such as `Intensity · X`. Root metadata and cross-modality relations appear only in the container subtab. The physical reconstruction descriptor is explicitly noted as omitted, never displayed as a fabricated value. Older representation versions are rejected; existing saved artifacts are not migrated.
 
 ## Run
@@ -124,6 +126,7 @@ Bare `clean` deletes every current or legacy run directory under the configured 
 | `reports/<key>.progress.json` | Atomic live step state and recent output |
 | `reports/<key>.json` | Complete dataset result with full stdout and stderr |
 | `corpus_index.json` | Final validated index pointing to all dataset reports |
+| `oddities.json` | Versioned recorded diagnostics, check coverage, source provenance and affected-dataset counts |
 | `snakemake.log` | Scheduler output |
 | `artifacts/**/*.apb.json` | Compact APB scientific representations for final and intermediate results |
 

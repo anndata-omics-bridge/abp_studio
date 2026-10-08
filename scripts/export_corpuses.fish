@@ -1,5 +1,6 @@
 #!/usr/bin/env fish
-# Run every routine export from scratch; --force keeps no archived results.
+# Run every export over the routine and problems corpora from scratch; --force keeps no archived results.
+set -l corpora routine problems
 set -l workflows export_msmu export_prolfqua export_proteopy export_alphapepttools
 
 cd (path resolve (status dirname)/..)
@@ -14,8 +15,10 @@ if not command -q apb-export
     set -gx PATH $PATH "$export_bin"
 end
 
-for workflow in $workflows
-    printf 'uv run corpus run routine --workflow %s --format hdf5 --cores 3 --force\n' "$workflow"
-    uv run corpus run routine --workflow "$workflow" --format hdf5 --cores 3 --force
-    or exit $status
+for corpus in $corpora
+    for workflow in $workflows
+        printf 'uv run corpus run %s --workflow %s --format hdf5 --cores 3 --force\n' "$corpus" "$workflow"
+        uv run corpus run "$corpus" --workflow "$workflow" --format hdf5 --cores 3 --force
+        or exit $status
+    end
 end

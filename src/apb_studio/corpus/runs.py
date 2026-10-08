@@ -27,6 +27,7 @@ from apb_studio.corpus.models import (
     utc_now,
     write_record,
 )
+from apb_studio.corpus.oddities import publish_oddities
 from apb_studio.corpus.tables import (
     CORPUS_COLUMNS,
     INPUT_METADATA_COLUMNS,
@@ -322,6 +323,7 @@ def command_for(root: Path, manifest: RunManifest, link: ReportLink) -> list[str
 
 def publish_index(root: Path, manifest: RunManifest) -> None:
     """Validate every final report, including failed APB results, before publishing the index."""
+    reports: list[DatasetReport] = []
     for link in manifest.reports:
         report = DatasetReport.model_validate_json((root / link.path).read_text())
         if (
@@ -333,6 +335,8 @@ def publish_index(root: Path, manifest: RunManifest) -> None:
             or any(step.status in {"pending", "running"} for step in report.steps)
         ):
             raise ValueError(f"Mismatched or unfinished dataset report: {link.path}")
+        reports.append(report)
+    publish_oddities(root, manifest, reports)
     write_record(
         root / "corpus_index.json",
         CorpusIndex(

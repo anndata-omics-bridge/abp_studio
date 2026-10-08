@@ -4,6 +4,7 @@ import { runInNewContext } from 'node:vm'
 import { isolatedSource } from './source.mjs'
 import * as model from '../../viewer/src/corpus/model.ts'
 import * as representation from '../../viewer/src/corpus/representation.ts'
+import * as oddities from '../../viewer/src/corpus/oddities.ts'
 import { workflowFlow } from '../../viewer/src/corpus/workflow-flow.ts'
 
 class Element extends EventTarget {
@@ -94,7 +95,7 @@ function controller (read = async () => scientific()) {
     return element
   }
   const context = {
-    document, ...model, ...representation, workflowFlow, node,
+    document, ...model, ...representation, ...oddities, workflowFlow, node,
     columnTitle: field => field,
     fileUrl: path => path,
     sourceUrl: (run, path) => `${run}/${path}`,
@@ -114,6 +115,10 @@ function controller (read = async () => scientific()) {
     { document, ...model, ...representation }
   )
   context.renderFastaChecks = fastaRenderer
+  context.renderOdditiesDetail = runInNewContext(
+    `${isolatedSource('viewer/src/corpus/render/dom.ts')}\n${isolatedSource('viewer/src/corpus/render/oddities.ts')}\nrenderOdditiesDetail`,
+    { document, ...oddities }
+  )
   const tabs = isolatedSource('viewer/src/corpus/render/tabs.ts')
   const files = isolatedSource('viewer/src/corpus/render/workflow-files.ts')
   const detail = isolatedSource('viewer/src/corpus/panels/detail.ts')
@@ -154,7 +159,7 @@ test('sidebar starts with a scientific file and Show more opens AnnData directly
   assert.equal(hosts['file-list'].children[1].getAttribute('aria-current'), 'true')
   assert.equal(activeTab(hosts), 'anndata')
   assert.deepEqual(hosts['detail-tabs'].children.map(button => button.textContent), [
-    'AnnData', 'Structure', 'Inputs & outputs', 'APB metadata', 'Representation JSON'
+    'AnnData', 'Structure', 'Inputs & outputs', 'Oddities', 'APB metadata', 'Representation JSON'
   ])
   const objectTabs = hosts.detail.querySelector('.representation-tabs')
   assert.deepEqual(objectTabs.children.map(button => button.textContent), ['AnnData · ion', 'AnnData · protein'])
@@ -402,4 +407,27 @@ test('empty levels default to Structure and stale loads cannot replace a newer f
   await load
   assert.equal(pending.hosts.detail.children.length, 0)
   assert.equal(pending.hosts['detail-title'].textContent, 'Select a file to inspect its results')
+})
+
+test('Oddities renders source evidence and retains its tab when the summary arrives', async () => {
+  const { panel, hosts } = controller()
+  const dataset = row('Synthetic')
+  await panel.show(dataset)
+  hosts['detail-tabs'].children.find(button => button.textContent === 'Oddities').click()
+  await settle()
+  assert.match(hosts.detail.textContent, /Oddities have not been summarized/)
+  const updated = { ...dataset, oddities: {
+    input_file: dataset.input_file, available: true, source_step: 'convert', source_status: 'succeeded', notes: [],
+    findings: [{ kind: 'unreadable_numeric', level: 'ion', layer: 'QValue', convention: '', details: {
+      cell_count: 12, distinct_token_count: 1, examples: ['NA']
+    } }],
+    coverage: [{ level: 'ion', numeric: 'recorded', fasta: 'not_checked', annotation_conventions: [] }]
+  } }
+  await panel.show(updated)
+  await settle()
+  assert.equal(activeTab(hosts), 'oddities')
+  assert.match(hosts.detail.textContent, /Source: convert \(succeeded\)/)
+  assert.match(hosts.detail.textContent, /12 cells · 1 distinct tokens/)
+  assert.match(hosts.detail.textContent, /Not checked/)
+  assert.equal(panel.columns([]).find(column => column.title === 'Oddities').sorter, 'number')
 })

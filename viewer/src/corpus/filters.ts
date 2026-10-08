@@ -9,7 +9,8 @@ export const RUN_FACETS = [
 export const DATASET_FACETS = [
   ['software_name', 'Software'],
   ['module', 'Module'],
-  ['status', 'Result']
+  ['status', 'Result'],
+  ['oddity_state', 'Oddities']
 ] as const
 
 type RunFacet = typeof RUN_FACETS[number][0]
@@ -27,6 +28,7 @@ export interface DatasetFilters {
   software_name: string[]
   module: string[]
   status: string[]
+  oddity_state: string[]
 }
 
 export interface FacetOption { value: string; count: number }
@@ -41,7 +43,7 @@ export function emptyRunFilters (): RunFilters {
 }
 
 export function emptyDatasetFilters (): DatasetFilters {
-  return { search: '', software_name: [], module: [], status: [] }
+  return { search: '', software_name: [], module: [], status: [], oddity_state: [] }
 }
 
 function searchTokens (search: string): string[] {
@@ -72,7 +74,7 @@ function runValue (run: RunChoice, facet: RunFacet): string {
 }
 
 function datasetValue (row: DatasetRow, facet: DatasetFacet): string {
-  return row[facet]
+  return row[facet] ?? 'Not summarized'
 }
 
 type FacetDefinitions<F extends string> = readonly (readonly [F, string])[]
