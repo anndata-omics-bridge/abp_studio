@@ -156,5 +156,4 @@ def test_parameter_contract_preserves_ignored_and_required_workflows(tmp_path: P
     assert workflow_parameter_inputs("convert_ion", tmp_path, parameterized) == (
         tmp_path / "params.xml",
     )
-    with pytest.raises(ValueError, match="has no vendor parameter file"):
-        workflow_parameter_inputs("convert_ion", tmp_path, parameter_free)
+    assert workflow_parameter_inputs("convert_ion", tmp_path, parameter_free) == ()

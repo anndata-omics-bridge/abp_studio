@@ -155,14 +155,14 @@ def test_a_dataset_without_parameters_refuses_parameter_workflows(
     workflows = tmp_path / "workflows"
     workflows.mkdir()
     (workflows / "__init__.py").write_text("")
-    (workflows / "workflow_convert_ion.py").write_text("TOOLS = ('apb2',)\n")
+    (workflows / "workflow_proteobench_run.py").write_text("TOOLS = ('apb2',)\n")
     monkeypatch.setattr(discovery, "WORKFLOWS", workflows)
     monkeypatch.setattr(runs, "_tool_version", lambda _executable: "apb2 1.0")
     settings = ExecutionSettings(
         corpus_name="routine",
         corpus=corpus,
         data_root=tmp_path,
-        workflow="convert_ion",
+        workflow="proteobench_run",
         format="hdf5",
         workflow_table=None,
         tools={"apb2": Path(sys.executable)},
@@ -1105,11 +1105,13 @@ def test_no_param_software_table_covers_proteobench_corpus() -> None:
     [("hdf5", ".h5ad"), ("parquet", ".parquet"), ("duckdb", ".duckdb")],
 )
 @pytest.mark.parametrize("secondary", [False, True])
+@pytest.mark.parametrize("parameters", [False, True])
 def test_convert_ion_workflow_selects_only_ion_and_keeps_timing_artifacts(
     tmp_path: Path,
     storage_format: StorageFormat,
     suffix: str,
     secondary: bool,
+    parameters: bool,
 ) -> None:
     folder = tmp_path / "submission"
     folder.mkdir()
@@ -1124,7 +1126,7 @@ def test_convert_ion_workflow_selects_only_ion_and_keeps_timing_artifacts(
         dataset=dataset().model_copy(
             update={
                 "input_file": "submission/input_file.tsv",
-                "vendor_parameter_file": "submission/params.txt",
+                "vendor_parameter_file": "submission/params.txt" if parameters else "",
             }
         ),
         format=storage_format,
@@ -1150,7 +1152,7 @@ def test_convert_ion_workflow_selects_only_ion_and_keeps_timing_artifacts(
     assert [artifact.role for artifact in step.inputs] == [
         "vendor_table",
         *(["vendor_secondary"] if secondary else []),
-        "vendor_parameter_file",
+        *(["vendor_parameter_file"] if parameters else []),
     ]
     assert [artifact.role for artifact in step.outputs] == [
         "result",

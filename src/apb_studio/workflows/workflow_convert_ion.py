@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from apb_studio.corpus.models import Artifact, StepSpec
+from apb_studio.corpus.parameters import optional_parameter_inputs
 from apb_studio.corpus.tables import resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.artifacts import representation, single_level_result_path
-from apb_studio.workflows.software import parameter_software
+from apb_studio.workflows.software import parameter_software, result_software
 
 TOOLS = ("apb2",)
+PARAMETER_INPUTS = optional_parameter_inputs
 
 
 def steps(context: WorkflowContext) -> list[StepSpec]:
@@ -17,7 +19,12 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
     vendor_source = source.parent if secondary_inputs else source
-    parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
+    parameters = optional_parameter_inputs(context.data_root, dataset)
+    software = (
+        parameter_software(dataset.software_name)
+        if parameters
+        else result_software(dataset.software_name)
+    )
     apb2 = context.tool("apb2")
     basename = context.output_dir / "converted"
     target = single_level_result_path(context.output_dir, "converted", context.format)
@@ -27,10 +34,9 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
         "convert",
         str(vendor_source),
         "ion",
-        "--params",
-        str(parameters),
+        *[argument for path in parameters for argument in ("--params", str(path))],
         "--software",
-        parameter_software(dataset.software_name),
+        software,
         "--output",
         str(basename),
         "--format",
@@ -48,7 +54,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                     Artifact(role="vendor_secondary", path=secondary)
                     for secondary in secondary_inputs
                 ],
-                Artifact(role="vendor_parameter_file", path=parameters),
+                *[Artifact(role="vendor_parameter_file", path=path) for path in parameters],
             ],
             outputs=[
                 Artifact(role="result", path=target, format=context.format),
