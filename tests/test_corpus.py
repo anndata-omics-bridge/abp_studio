@@ -1699,7 +1699,7 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
     all_rows = load_corpus(root / "corpuses" / "all.csv")
     proteobench_rows = load_corpus(root / "corpuses" / "proteobench.csv")
 
-    assert len(proteobench_rows) == 198
+    assert len(proteobench_rows) == 197
     quant_modules = packaged_config().modules_in("all")
     expected = {
         row.input_file: row
@@ -1708,6 +1708,8 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
         and row.module != "dda_peptidoform"
         and row.software_name != "Sage"
         and row.vendor_parameter_file
+        # A garbled sample name loses a run; kept in corpuses/problems.csv instead.
+        and "5691d485" not in row.input_file
     }
     assert {row.input_file: row for row in proteobench_rows} == expected
     assert {row.module for row in all_rows} >= {"dia_plasma", "entrapment_dia_astral", "directlfq"}

@@ -1,0 +1,4 @@
+input_file,vendor_parameter_file,module,software_name
+zenodo/directlfq/maxquant_yeast_interactome,,directlfq,MaxQuant
+zenodo/directlfq/Spectronaut_LargeFC/20210210_154121_S209-S-1-240min_Report.tsv,,directlfq,Spectronaut
+zenodo/directlfq/diann_charite_dataset/Charite-DIA-NN_analysis.txt,,directlfq,DIA-NN
