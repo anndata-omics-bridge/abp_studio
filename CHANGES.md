@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-08: The FASTA check tab shows "I/L-only matched", apb-fasta's `il_only_matched_feature_count`, in place of the removed "I/L equivalent" setting; results without the count show "Not recorded".
+
 - 2026-10-05: Four export workflows, `export_msmu`, `export_prolfqua`, `export_proteopy` and `export_alphapepttools`, run one `apb-export TARGET` call per dataset and keep the file that tool opens as an `export` artifact. Like apb-aggregate, the private apb-export stays out of Studio's lock: put `apb-export` on `PATH`, for example with `uv tool install --editable ../apb-export`. ProteoPy reads a protein level, so ion-only vendors fail that workflow by design.
 
 - 2026-10-05: APB Studio no longer depends on the private apb-aggregate: the `samples` extra, `tool.uv.sources`, the lockfile and CI drop it, so public CI needs no token. The `aggregate` workflow still runs the `apb-aggregate` command when it is on `PATH` or given with `--aggregate-executable`; install it locally with `uv tool install --editable ../apb-aggregate`.

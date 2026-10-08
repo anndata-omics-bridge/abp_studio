@@ -109,19 +109,19 @@ test('FASTA check counts and source stay paired in standalone AnnData', () => {
 test('FASTA checks use MuData source provenance without assigning checks to unchecked levels', () => {
   const representation = {
     root: { apb: { fasta: { provenance: { peptide_verification: {
-      sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }, il_equivalent: false
+      sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }
     } } } } },
     levels: [ion, protein, { ...ion, name: 'peptide', apb: { fasta: {
       peptide_verification: { matched_feature_count: 0, unmatched_feature_count: 2 },
-      provenance: { peptide_verification: { sources: { 0: { path: 'other.fasta' } }, il_equivalent: true } }
+      provenance: { peptide_verification: { sources: { 0: { path: 'other.fasta' } } } }
     } } }]
   }
   const snapshot = structuredClone(representation)
   assert.deepEqual(fastaChecks(representation), [
     { level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1,
-      sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }, il_equivalent: false },
+      sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } } },
     { level: 'peptide', matched_feature_count: 0, unmatched_feature_count: 2,
-      sources: { 0: { path: 'other.fasta' } }, il_equivalent: true }
+      sources: { 0: { path: 'other.fasta' } } }
   ])
   assert.deepEqual(representation, snapshot)
 })

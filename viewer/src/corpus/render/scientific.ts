@@ -18,15 +18,15 @@ export function renderFastaChecks (host: HTMLElement, representation: Representa
   card.className = 'scientific-card fasta-checks'
   card.append(
     node('h3', 'FASTA peptide checks'),
-    node('p', 'Peptide matching against the workflow reference. An unmatched peptide can reflect a different search database or sequence variant.', 'structure-intro'),
+    node('p', 'Peptide matching against the workflow reference. I/L-only matched features occur only as another I/L spelling. An unmatched peptide can reflect a different search database or sequence variant.', 'structure-intro'),
     dataTable(
-      ['Level', 'Reference FASTA used', 'Matched features', 'Unmatched features', 'I/L equivalent'],
+      ['Level', 'Reference FASTA used', 'Matched features', 'Unmatched features', 'I/L-only matched'],
       checks.map(check => [
         check.level,
         Object.values(check.sources ?? {}).map(source => source.path).filter(Boolean).join(', ') || 'Not recorded',
         check.matched_feature_count?.toLocaleString(),
         check.unmatched_feature_count?.toLocaleString(),
-        check.il_equivalent === undefined ? 'Not recorded' : check.il_equivalent ? 'Yes' : 'No'
+        check.il_only_matched_feature_count?.toLocaleString() ?? 'Not recorded'
       ])
     )
   )

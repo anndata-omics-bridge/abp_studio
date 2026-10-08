@@ -220,10 +220,10 @@ export interface PeptideVerification {
   feature_count?: number
   matched_feature_count?: number
   unmatched_feature_count?: number
+  il_only_matched_feature_count?: number
 }
 export interface FastaVerificationProvenance {
   sources?: Record<string, FastaSource>
-  il_equivalent?: boolean
 }
 export interface FastaCheck extends PeptideVerification, FastaVerificationProvenance {
   level: string
