@@ -12,8 +12,8 @@ const ion = {
   var: { row_count: 50, key_columns: ['ion'], columns: [] },
   layers: [{ name: 'Intensity', storage_slot: 'X', primary: true }],
   apb: {
-    fasta: { peptide_verification: { matched_feature_count: 49, unmatched_feature_count: 1 } },
-    proteobench: { annotation: { matched_observation_count: 6 } }
+    fasta: { result: { peptide_verification: { matched_feature_count: 49, unmatched_feature_count: 1 } } },
+    proteobench: { result: { scoring: { Intensity: { layer_name: 'Intensity' } } } }
   }
 }
 const protein = {
@@ -29,20 +29,20 @@ const relation = {
   coordinates: { row_count: 72 }, metadata: { matching: 'sequence' }
 }
 
-test('H5AD keeps result-wide provenance and level results in its single AnnData', () => {
-  const combined = { ...ion, apb: {
-    fasta: { ...provenance.fasta, ...ion.apb.fasta },
-    proteobench: { ...provenance.proteobench, ...ion.apb.proteobench }
-  } }
-  const representation = { artifact: { physical_format: 'h5ad' }, root: null, levels: [combined] }
+test('H5AD keeps its root part and its level part apart in its single AnnData', () => {
+  const representation = { artifact: { physical_format: 'h5ad' }, root: { apb: provenance }, levels: [ion] }
   const [view, ...rest] = structureViews(representation)
   assert.equal(rest.length, 0)
   assert.equal(view.kind, 'anndata')
   assert.equal(view.objectPath, 'adata')
-  assert.equal(view.diagram.uns, combined.apb, 'display the emitted tree without recomposing it')
-  assert.equal(view.diagram.uns.fasta.provenance.peptide_verification.protein_count, 100)
-  assert.equal(view.diagram.uns.fasta.peptide_verification.matched_feature_count, 49)
-  assert.deepEqual(apbMetadataScopes(representation)[0].value.uns.apb, combined.apb)
+  assert.equal(view.unsKey, 'uns["ion"]["apb"]')
+  assert.equal(view.diagram.uns, ion.apb, 'display the emitted level part without recomposing it')
+  assert.equal(view.rootUns, provenance, 'display the emitted root part beside it')
+  assert.equal('provenance' in view.diagram.uns.fasta, false)
+  const scopes = apbMetadataScopes(representation)
+  assert.deepEqual(scopes.map(scope => scope.label), ['AnnData root', 'ion'])
+  assert.deepEqual(scopes[0].value.uns.apb, provenance)
+  assert.deepEqual(scopes[1].value.uns.apb, ion.apb)
   assert.equal(view.hasStorage, true)
   assert.equal('storage' in view.diagram.uns, false, 'do not fabricate a descriptor value')
 })
@@ -70,6 +70,8 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
   })
   assert.deepEqual(apbMetadataScopes(representation)[0].value.uns.apb, root.uns)
   assert.equal(ions.objectPath, 'mdata.mod["ion"]')
+  assert.equal(ions.unsKey, 'uns["apb"]')
+  assert.equal('rootUns' in ions, false)
   assert.deepEqual(ions.diagram.uns, ion.apb)
   assert.deepEqual(proteins.diagram.uns, protein.apb)
   assert.equal('provenance' in ions.diagram.uns.fasta, false)
@@ -97,9 +99,7 @@ test('custom hierarchy determines embedded AnnData order', () => {
 })
 
 test('FASTA check counts and source stay paired in standalone AnnData', () => {
-  const representation = { root: null, levels: [{ ...ion, apb: {
-    fasta: { ...provenance.fasta, ...ion.apb.fasta }
-  } }] }
+  const representation = { artifact: { physical_format: 'h5ad' }, root: { apb: provenance }, levels: [ion] }
   assert.deepEqual(fastaChecks(representation), [{
     level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1,
     protein_count: 100, sources: { 0: { path: 'ref.fasta' } }
@@ -111,17 +111,15 @@ test('FASTA checks use MuData source provenance without assigning checks to unch
     root: { apb: { fasta: { provenance: { peptide_verification: {
       sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }
     } } } } },
-    levels: [ion, protein, { ...ion, name: 'peptide', apb: { fasta: {
-      peptide_verification: { matched_feature_count: 0, unmatched_feature_count: 2 },
-      provenance: { peptide_verification: { sources: { 0: { path: 'other.fasta' } } } }
-    } } }]
+    levels: [ion, protein, { ...ion, name: 'peptide', apb: { fasta: { result: {
+      peptide_verification: { matched_feature_count: 0, unmatched_feature_count: 2 }
+    } } } }]
   }
   const snapshot = structuredClone(representation)
+  const sources = { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }
   assert.deepEqual(fastaChecks(representation), [
-    { level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1,
-      sources: { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } } },
-    { level: 'peptide', matched_feature_count: 0, unmatched_feature_count: 2,
-      sources: { 0: { path: 'other.fasta' } } }
+    { level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1, sources },
+    { level: 'peptide', matched_feature_count: 0, unmatched_feature_count: 2, sources }
   ])
   assert.deepEqual(representation, snapshot)
 })

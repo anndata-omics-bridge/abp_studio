@@ -155,7 +155,7 @@ test('failed-step evidence stays in Show More without becoming the summary outpu
 
 test('representation documents are versioned and projected into labelled Plotly boxes', () => {
   const document = validatedRepresentation({
-    format: 'apb2-result-representation', format_version: '4', artifact: { name: 'result.h5mu' },
+    format: 'apb2-result-representation', format_version: '5', artifact: { name: 'result.h5mu' },
     levels: [], annotation_tables: [], feature_relations: []
   })
   assert.equal(document.artifact.name, 'result.h5mu')
@@ -204,7 +204,7 @@ test('representation documents are versioned and projected into labelled Plotly 
 test('representation display expands known embedded JSON and keeps native aggregate history', () => {
   const nestedRule = JSON.stringify({ schema_version: '0.3', software_name: 'Sage' })
   const source = {
-    format: 'apb2-result-representation', format_version: '4',
+    format: 'apb2-result-representation', format_version: '5',
     artifact: { name: 'result.h5ad' }, annotation_tables: [], feature_relations: [],
     levels: [{ apb: { parse: {
       rule_json: nestedRule,

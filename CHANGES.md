@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-08: **Breaking:** `oddities.json` version 2 lists every producer summary entry of the displayed representation, root and levels; dataset state, counts and the Oddities tabs follow entry status. The viewer reads APB2 representation version 5: FASTA and score records under `result`, and an h5ad's root part beside its level part.
+
 - 2026-10-08: The FASTA check tab shows "I/L-only matched", apb-fasta's `il_only_matched_feature_count`, in place of the removed "I/L equivalent" setting; results without the count show "Not recorded".
 
 - 2026-10-05: Four export workflows, `export_msmu`, `export_prolfqua`, `export_proteopy` and `export_alphapepttools`, run one `apb-export TARGET` call per dataset and keep the file that tool opens as an `export` artifact. Like apb-aggregate, the private apb-export stays out of Studio's lock: put `apb-export` on `PATH`, for example with `uv tool install --editable ../apb-export`. ProteoPy reads a protein level, so ion-only vendors fail that workflow by design.

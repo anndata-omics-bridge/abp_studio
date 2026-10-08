@@ -3,14 +3,14 @@ import { test } from 'node:test'
 import { oddityCountLabel, oddityState, validatedOddities, withOddities } from '../../viewer/src/corpus/oddities.ts'
 import { emptyDatasetFilters, filterDatasets } from '../../viewer/src/corpus/filters.ts'
 
-const clean = {
-  input_file: 'clean.tsv', available: true, findings: [],
-  coverage: [{ level: 'ion', numeric: 'recorded', fasta: 'not_checked', annotation_conventions: [] }]
-}
-const old = { ...clean, input_file: 'old.tsv', coverage: [{ ...clean.coverage[0], numeric: 'not_recorded' }] }
-const attention = { ...clean, input_file: 'attention.tsv', findings: [{ kind: 'unmatched_peptides' }] }
-const failed = { ...clean, input_file: 'failed.tsv', available: false, coverage: [] }
-const summary = { format: 'apb-studio-oddities', format_version: 1, run_id: 'routine', datasets: [clean, old, attention, failed], software: [] }
+const metric = (status, value = 0) => ({
+  scope: 'ion', record: 'parse', name: `m_${status}`, label: status, value, unit: 'cells', status, layer: ''
+})
+const clean = { input_file: 'clean.tsv', available: true, metrics: [metric('ok')] }
+const old = { ...clean, input_file: 'old.tsv', metrics: [metric('ok'), metric('not_checked', null)] }
+const attention = { ...clean, input_file: 'attention.tsv', metrics: [metric('ok'), metric('attention', 3)] }
+const failed = { ...clean, input_file: 'failed.tsv', available: false, metrics: [] }
+const summary = { format: 'apb-studio-oddities', format_version: 2, run_id: 'routine', datasets: [clean, old, attention, failed], software: [] }
 
 test('recorded zero, partial coverage, unavailable and missing summaries remain distinct', () => {
   assert.equal(oddityState(clean), 'No recorded findings')
@@ -27,5 +27,5 @@ test('recorded zero, partial coverage, unavailable and missing summaries remain 
 test('summary validation refuses another run or an unsupported version', () => {
   assert.equal(validatedOddities(summary, 'routine'), summary)
   assert.throws(() => validatedOddities(summary, 'other'), /mismatched/)
-  assert.throws(() => validatedOddities({ ...summary, format_version: 2 }, 'routine'), /Unsupported/)
+  assert.throws(() => validatedOddities({ ...summary, format_version: 1 }, 'routine'), /Unsupported/)
 })

@@ -51,10 +51,10 @@ export function referenceScores (document: unknown): ReferenceScores | null {
   return slices.length ? { id: typeof value.id === 'string' ? value.id : '', slices } : null
 }
 
-/** Read v4 metadata from its owning AnnData, including each entrapment confidence kind. */
+/** Read v5 metadata from its owning AnnData, including each entrapment confidence kind. */
 export function representationScores (representation: Representation): ScoreQuantity[] {
   return representation.levels.flatMap(level => {
-    const proteobench = object(level.apb?.proteobench)
+    const proteobench = object(object(level.apb?.proteobench).result)
     const quantified = Object.entries(object(proteobench.scoring)).map(([quantity, value]) => ({
       kind: 'quantification' as const, level: level.name, quantity,
       slices: scoreSlices(object(object(value).scores).results)

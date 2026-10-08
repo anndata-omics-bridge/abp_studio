@@ -228,7 +228,7 @@ export async function renderApbMetadata (host: HTMLElement, representation: Repr
   article.className = 'representation'
   article.append(
     node('h3', 'APB provenance and extension metadata'),
-    node('p', 'Metadata is grouped by tool on its owning object. MuData holds common provenance; each AnnData holds its own results. Standalone AnnData holds both. The storage reconstruction descriptor is omitted.', 'structure-intro'),
+    node('p', 'Metadata is grouped by tool in a root part and one part per level, never merged: a MuData\'s uns["apb"] and each modality\'s, or a standalone AnnData\'s uns["apb"] and uns[level]["apb"]. The storage reconstruction descriptor is omitted.', 'structure-intro'),
     metadataCards([
       ['Workflow step', step],
       ['Source artifact', representation.artifact?.name],

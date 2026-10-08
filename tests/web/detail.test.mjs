@@ -181,9 +181,9 @@ test('FASTA check tab shows the recorded reference beside counts and keeps unrec
   result.root.apb.fasta = { provenance: { peptide_verification: {
     sources: { 0: { path: 'ProteoBenchFASTA_MixedSpecies_HYE.fasta' } }
   } } }
-  result.levels[0].apb = { fasta: { peptide_verification: {
+  result.levels[0].apb = { fasta: { result: { peptide_verification: {
     matched_feature_count: 17469, unmatched_feature_count: 12, il_only_matched_feature_count: 9
-  } } }
+  } } } }
   const { panel, hosts } = controller(async () => result)
   await panel.refresh([row('FragPipe')])
   assert.equal(activeTab(hosts), 'anndata')
@@ -198,9 +198,9 @@ test('FASTA check tab shows the recorded reference beside counts and keeps unrec
   assert.equal(table.children[1].children.length, 1, 'unchecked protein level is not reported as verified')
 
   const unknown = scientific(['ion'])
-  unknown.levels[0].apb = { fasta: { peptide_verification: {
+  unknown.levels[0].apb = { fasta: { result: { peptide_verification: {
     matched_feature_count: 0, unmatched_feature_count: 2
-  } } }
+  } } } }
   const next = controller(async () => unknown)
   await next.panel.refresh([row('Other')])
   next.hosts['detail-tabs'].children.find(button => button.textContent === 'FASTA check').click()
@@ -418,16 +418,17 @@ test('Oddities renders source evidence and retains its tab when the summary arri
   assert.match(hosts.detail.textContent, /Oddities have not been summarized/)
   const updated = { ...dataset, oddities: {
     input_file: dataset.input_file, available: true, source_step: 'convert', source_status: 'succeeded', notes: [],
-    findings: [{ kind: 'unreadable_numeric', level: 'ion', layer: 'QValue', convention: '', details: {
-      cell_count: 12, distinct_token_count: 1, examples: ['NA']
-    } }],
-    coverage: [{ level: 'ion', numeric: 'recorded', fasta: 'not_checked', annotation_conventions: [] }]
+    metrics: [
+      { scope: 'ion', record: 'parse', name: 'unreadable_cells', label: 'Unreadable numeric cells', value: 12, unit: 'cells', status: 'attention', layer: '' },
+      { scope: 'ion', record: 'parse', name: 'effectively_empty_layers', label: 'Effectively empty layers', value: null, unit: 'layers', status: 'not_checked', layer: '' }
+    ]
   } }
   await panel.show(updated)
   await settle()
   assert.equal(activeTab(hosts), 'oddities')
   assert.match(hosts.detail.textContent, /Source: convert \(succeeded\)/)
-  assert.match(hosts.detail.textContent, /12 cells · 1 distinct tokens/)
+  assert.match(hosts.detail.textContent, /Unreadable numeric cells/)
+  assert.match(hosts.detail.textContent, /12 cells/)
   assert.match(hosts.detail.textContent, /Not checked/)
   assert.equal(panel.columns([]).find(column => column.title === 'Oddities').sorter, 'number')
 })

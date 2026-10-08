@@ -11,6 +11,12 @@
 | `aa1d53e8`, `5691d485` | dia_astral, dia_diapasef | PEAKS | Target identity with a missing value | `aggregate`, `aggregate_medpolish` |
 | `5691d485` | dia_diapasef | PEAKS | Module sample `ttSCP_diaPASEF_Condition_A_Sample_Alpha_02_11500` absent from quantification | every ProteoBench workflow |
 
+## Converting, with vendor rows dropped
+
+| Submission | Module | Software | Problem |
+| --- | --- | --- | --- |
+| `58dfec05`, `4decb9e0` | dda_qexactive | WOMBAT | FlashLFQ's ambiguous peaks glue two peptides as `SEQA\|SEQB` (1,507 and 1,183 rows); apb2's `wombat` preparation drops and logs them; reported as ProteoBench issue #1164 |
+
 ## Converting, with peptides matching the FASTA only as I/L
 
 | Submission | Module | Software | Problem |

@@ -2,19 +2,18 @@ import type { AnnDataDiagram, AnnDataStructure, ApbMetadata, DatasetReport, Data
 
 // Pure projections of the versioned APB scientific representation.
 export const REPRESENTATION_FORMAT = 'apb2-result-representation'
-export const REPRESENTATION_VERSION = '4'
+export const REPRESENTATION_VERSION = '5'
 const EMBEDDED_JSON_FIELDS = new Set([
   'rule_json', 'plan_json', 'search_parameters'
 ])
 
 /** Pair each recorded level check with the source provenance on its owning result. */
 export function fastaChecks (representation: Representation): FastaCheck[] {
+  const provenance = representation.root?.apb?.fasta?.provenance?.peptide_verification
   return representation.levels.flatMap(level => {
-    const fasta = level.apb?.fasta
-    if (!fasta?.peptide_verification) return []
-    const provenance = fasta.provenance?.peptide_verification ??
-      representation.root?.apb?.fasta?.provenance?.peptide_verification
-    return [{ level: level.name, ...fasta.peptide_verification, ...provenance }]
+    const verification = level.apb?.fasta?.result?.peptide_verification
+    if (!verification) return []
+    return [{ level: level.name, ...verification, ...provenance }]
   })
 }
 
@@ -184,6 +183,9 @@ export function structureViews (representation: Representation): StructureView[]
     kind: 'anndata',
     label: `AnnData · ${level.name}`,
     objectPath: embedded ? `mdata.mod[${JSON.stringify(level.name)}]` : 'adata',
+    // A standalone H5AD keeps the level part under uns[level] and its root part in uns["apb"].
+    unsKey: embedded ? 'uns["apb"]' : `uns[${JSON.stringify(level.name)}]["apb"]`,
+    ...(embedded ? {} : { rootUns: representation.root?.apb ?? {} }),
     diagram: annDataDiagram(level),
     hasStorage: true,
     annotation: false
@@ -209,6 +211,7 @@ export function structureViews (representation: Representation): StructureView[]
       label: `AnnData · ${description}`,
       // The sidecar records logical names, not encoded physical annotation keys.
       objectPath: `mdata.mod · annotation table ${JSON.stringify(table.name)}`,
+      unsKey: 'uns["apb"]',
       diagram,
       hasStorage: false,
       annotation: true
@@ -277,22 +280,16 @@ export function alignedSummary (value: Partial<NamedTable> = {}) {
 export function apbMetadataScopes (representation: Representation) {
   const physicalFormat = representation?.artifact?.physical_format
   const levels = representation?.levels ?? []
-  if (physicalFormat === 'h5ad') {
-    return levels.map(level => ({
-      label: level.name,
-      value: apbNamespace(level.apb)
-    }))
-  }
   const rootLabel = physicalFormat === 'h5mu'
     ? 'MuData'
-    : 'Result · root APB metadata'
+    : physicalFormat === 'h5ad' ? 'AnnData root' : 'Result · root APB metadata'
   return [
     {
       label: rootLabel,
       value: apbNamespace(representation.root?.apb)
     },
     ...levels.map(level => ({
-      label: physicalFormat === 'h5mu'
+      label: physicalFormat === 'h5mu' || physicalFormat === 'h5ad'
         ? level.name
         : `Level "${level.name}" · APB metadata`,
       value: apbNamespace(level.apb)

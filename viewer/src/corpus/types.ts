@@ -87,19 +87,17 @@ export interface DatasetRow extends ReportLink {
   oddity_count?: number | null
   oddity_state?: string
 }
-export type OddityKind = 'unknown_modification' | 'unmatched_peptides' | 'unreadable_numeric' | 'effectively_empty' | 'annotation_only' | 'quantification_only' | 'annotation_corrections'
-export interface OddityFinding {
-  kind: OddityKind
-  level: string
+export type MetricStatus = 'ok' | 'attention' | 'not_checked'
+/** One producer summary entry, as recorded in the displayed sidecar. */
+export interface OddityMetric {
+  scope: string
+  record: string
+  name: string
+  label: string
+  value: string | number | boolean | null
+  unit: string
+  status: MetricStatus
   layer: string
-  convention: string
-  details: Record<string, unknown>
-}
-export interface OddityCoverage {
-  level: string
-  numeric: 'recorded' | 'not_recorded'
-  fasta: 'checked' | 'not_checked'
-  annotation_conventions: string[]
 }
 export interface DatasetOddities {
   input_file: string
@@ -110,23 +108,21 @@ export interface DatasetOddities {
   source_path: string
   source_status: string
   available: boolean
-  findings: OddityFinding[]
-  coverage: OddityCoverage[]
+  metrics: OddityMetric[]
   notes: string[]
 }
+export interface AffectedDatasets { record: string; name: string; label: string; datasets: number }
 export interface RunOddities {
   format: 'apb-studio-oddities'
-  format_version: 1
+  format_version: 2
   run_id: string
   datasets: DatasetOddities[]
   software: {
     software_name: string
     dataset_count: number
     summarized_count: number
-    numeric_recorded_count: number
-    fasta_checked_count: number
-    annotation_checked_count: number
-    affected_datasets: Partial<Record<OddityKind, number>>
+    attention_count: number
+    affected: AffectedDatasets[]
   }[]
 }
 export interface DirectedArtifact extends Artifact { direction: 'Input' | 'Output'; step: string }
@@ -232,7 +228,7 @@ export interface ApbMetadata extends Record<string, unknown> {
   hierarchy?: { identities?: [string, string][] }
   fasta?: {
     provenance?: { peptide_verification?: FastaVerificationProvenance }
-    peptide_verification?: PeptideVerification
+    result?: { peptide_verification?: PeptideVerification }
   }
 }
 export interface Level {
@@ -260,7 +256,7 @@ export interface FeatureRelation {
 }
 export interface Representation {
   format: 'apb2-result-representation'
-  format_version: '4'
+  format_version: '5'
   artifact: { name: string; physical_format: string; size_bytes?: number } | null
   root?: { apb?: ApbMetadata } | null
   levels: Level[]
@@ -286,6 +282,10 @@ export interface AnnDataStructure {
   kind: 'anndata'
   label: string
   objectPath: string
+  /** Where this AnnData keeps its level part: ``uns["apb"]``, or ``uns["ion"]["apb"]`` in H5AD. */
+  unsKey: string
+  /** A standalone H5AD's root part, kept apart in ``uns["apb"]``. */
+  rootUns?: ApbMetadata
   diagram: AnnDataDiagram
   hasStorage: boolean
   annotation: boolean

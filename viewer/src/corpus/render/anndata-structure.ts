@@ -160,30 +160,42 @@ function alignedSlot (name: string, values: NamedTable[]): HTMLElement {
   )
 }
 
-function unsSlot (uns: ApbMetadata, objectPath: string, hasStorage: boolean): HTMLElement {
+interface UnsPart { uns: ApbMetadata; unsKey: string; hasStorage: boolean }
+
+function unsGroups (part: UnsPart, objectPath: string): HTMLElement {
   const content = document.createElement('div')
   const groups = document.createElement('div')
   groups.className = 'structure-uns-groups'
   content.append(groups)
-  for (const [tool, value] of Object.entries(uns)) {
+  for (const [tool, value] of Object.entries(part.uns)) {
     const group = document.createElement('section')
     group.append(
       node('h6', tool),
-      node('code', `${objectPath}.uns["apb"][${JSON.stringify(tool)}]`, 'structure-path'),
+      node('code', `${objectPath}.${part.unsKey}[${JSON.stringify(tool)}]`, 'structure-path'),
       jsonTree(value)
     )
     groups.append(group)
   }
-  if (hasStorage) {
-    content.append(node('p', 'Also stored: uns["apb"]["storage"], the physical reconstruction descriptor. Its contents are not included in the representation.', 'structure-scope-description'))
+  if (part.hasStorage) {
+    content.append(node('p', `Also stored: ${part.unsKey}["storage"], the physical reconstruction descriptor. Its contents are not included in the representation.`, 'structure-scope-description'))
   }
-  if (!Object.keys(uns).length && !hasStorage) {
+  return content
+}
+
+/** One uns slot holding every APB part of an object: a standalone H5AD has a root and a level part. */
+function unsSlot (parts: UnsPart[], objectPath: string): HTMLElement {
+  const content = document.createElement('div')
+  content.append(...parts.map(part => unsGroups(part, objectPath)))
+  const children = parts.reduce((total, part) => total + Object.keys(part.uns).length, 0)
+  const stored = parts.some(part => part.hasStorage)
+  if (!children && !stored) {
     content.append(node('p', 'Empty; this annotation AnnData has no APB metadata. Annotation provenance belongs to the MuData container.', 'structure-empty'))
   }
+  const title = parts.filter(part => Object.keys(part.uns).length).map(part => part.unsKey).join(' · ')
   return slot(
     'uns',
-    Object.keys(uns).length ? 'uns["apb"]' : 'uns',
-    hasStorage ? `${count(Object.keys(uns).length)} direct ${Object.keys(uns).length === 1 ? 'child' : 'children'} · storage omitted` : 'Empty',
+    title || 'uns',
+    stored ? `${count(children)} direct ${children === 1 ? 'child' : 'children'} · storage omitted` : 'Empty',
     content
   )
 }
@@ -201,7 +213,10 @@ function diagramNode (view: AnnDataStructure): HTMLElement {
     axisSlot('obs', 'obs', diagram.obs),
     alignedSlot('obsm', diagram.aligned.obsm),
     layersSlot(diagram),
-    unsSlot(diagram.uns, view.objectPath, view.hasStorage),
+    unsSlot([
+      ...(view.rootUns ? [{ uns: view.rootUns, unsKey: 'uns["apb"]', hasStorage: true }] : []),
+      { uns: diagram.uns, unsKey: view.unsKey, hasStorage: view.hasStorage }
+    ], view.objectPath),
     alignedSlot('varm', diagram.aligned.varm),
     alignedSlot('varp', diagram.aligned.varp)
   )
@@ -230,7 +245,7 @@ function muDataSection (host: HTMLElement, view: MuDataStructure): void {
     dataTable(['AnnData', 'Observations', 'Variables'], view.modalities.map(modality => [
       modality.name, count(modality.dimensions.observations), count(modality.dimensions.variables)
     ])),
-    unsSlot(view.uns, view.objectPath, view.hasStorage),
+    unsSlot([{ uns: view.uns, unsKey: 'uns["apb"]', hasStorage: view.hasStorage }], view.objectPath),
     slot('varp', 'varp · feature relations', `${count(view.relations.length)} relations`,
       view.relations.length
         ? dataTable(['Relation', 'Annotation table', 'Target AnnData', 'Coordinates'], view.relations.map(relation => [
@@ -253,7 +268,7 @@ export async function renderAnnDataStructure (host: HTMLElement, representation:
       'p',
       embedded
         ? 'One subtab per object: the MuData container, then each embedded AnnData. Each diagram shows only the slots owned by that AnnData.'
-        : 'One AnnData object. Provenance, parsing evidence and results are grouped by tool directly in its uns["apb"].',
+        : 'One AnnData object with two APB parts, never merged: the root part in uns["apb"] and the level part in uns[level]["apb"]. Each groups provenance and results by tool.',
       'structure-intro'
     )
   )
