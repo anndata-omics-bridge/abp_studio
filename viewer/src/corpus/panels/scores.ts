@@ -8,17 +8,19 @@ import { PLOT_CONFIG } from '../render/plotly.js'
 import { SCORE_COLORS, scoreFacetFigure } from '../render/score-facets.js'
 import type { ScorePlotMode } from '../render/score-facets.js'
 import { artifactStorePath } from '../representation.js'
-import { fileUrl, proteobenchReferenceUrl } from '../lib/fetch.js'
+import { fileUrl, sourceUrl } from '../lib/fetch.js'
+import type { ProteobenchReference } from '../lib/fetch.js'
 
-type ReadReference = (context: string, input: string) => Promise<unknown>
+type ReadReferences = (context: string) => Promise<Map<string, ProteobenchReference>>
 
 /** Lazy comparison panel: no extra fixture reads until its tab is opened. */
-export function createScoresPanel (host: HTMLElement, readReference: ReadReference) {
+export function createScoresPanel (host: HTMLElement, readReferences: ReadReferences) {
   let directory = ''
   let rows: DatasetRow[] = []
   let summaries = new Map<string, RepresentationSummary | null>()
   let software: string[] = []
   const references = new Map<string, ReferenceScores | null>()
+  const referencePaths = new Map<string, string>()
   const errors = new Map<string, string>()
   let loading: Promise<void> | null = null
   let confidence = 'q_value'
@@ -77,12 +79,15 @@ export function createScoresPanel (host: HTMLElement, readReference: ReadReferen
       const item = document.createElement('li')
       const reason = comparison.unmatched.find(entry => entry.input === row.input_file)?.reason
       item.append(node('strong', `${row.software_name} · ${row.module}`), node('span', row.input_file))
-      const original = document.createElement('a')
-      original.href = proteobenchReferenceUrl(directory, row.input_file)
-      original.target = '_blank'
-      original.rel = 'noopener'
-      original.textContent = 'Downloaded ProteoBench JSON'
-      item.append(original)
+      const referencePath = referencePaths.get(row.input_file)
+      if (referencePath) {
+        const original = document.createElement('a')
+        original.href = sourceUrl(referencePath)
+        original.target = '_blank'
+        original.rel = 'noopener'
+        original.textContent = 'Downloaded ProteoBench JSON'
+        item.append(original)
+      }
       const paired = comparison.points.find(point => point.input === row.input_file)
       if (paired) {
         const apb = document.createElement('a')
@@ -179,19 +184,21 @@ export function createScoresPanel (host: HTMLElement, readReference: ReadReferen
       const pending = rows.filter(row => !references.has(row.input_file))
       if (pending.length) host.setAttribute('aria-busy', 'true')
       loading = (async () => {
-        for (let start = 0; start < pending.length; start += 12) {
+        if (!pending.length) return
+        try {
+          const found = await readReferences(context)
           if (context !== directory) return
-          await Promise.all(pending.slice(start, start + 12).map(async row => {
-            try {
-              const document = await readReference(context, row.input_file)
-              if (context === directory) references.set(row.input_file, referenceScores(document))
-            } catch (error) {
-              if (context === directory) {
-                references.set(row.input_file, null)
-                errors.set(row.input_file, String(error))
-              }
-            }
-          }))
+          for (const row of pending) {
+            const reference = found.get(row.input_file)
+            references.set(row.input_file, referenceScores(reference?.document ?? null))
+            if (reference) referencePaths.set(row.input_file, reference.path)
+          }
+        } catch (error) {
+          if (context !== directory) return
+          for (const row of pending) {
+            references.set(row.input_file, null)
+            errors.set(row.input_file, String(error))
+          }
         }
       })().finally(() => { loading = null; host.removeAttribute('aria-busy') })
     }
@@ -214,6 +221,7 @@ export function createScoresPanel (host: HTMLElement, readReference: ReadReferen
       if (directory !== context) {
         directory = context
         references.clear()
+        referencePaths.clear()
         errors.clear()
         slice = ''
         confidence = 'q_value'

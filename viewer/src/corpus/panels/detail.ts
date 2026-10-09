@@ -347,7 +347,7 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
               row.input_file_name,
               row.input_file_parent,
               row.input_file_size_bytes,
-              sourceUrl(runPath(), row.input_file)
+              sourceUrl(row.input_file)
             )
           },
           minWidth: 240
@@ -377,7 +377,7 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
             ? { formatter: (cell: CellComponent) => {
                 const path: unknown = cell.getValue()
                 return typeof path === 'string' && path
-                  ? fileLink(sourceUrl(runPath(), path), path.split('/').at(-1) ?? path)
+                  ? fileLink(sourceUrl(path), path.split('/').at(-1) ?? path)
                   : '—'
               } }
             : {}),

@@ -13,7 +13,7 @@ test('snapshot links belong to their settings tab and optional links clear when 
     app: { hostFor },
     emptyCsv: () => [],
     fileUrl: path => `/data/${path}`,
-    sourceUrl: (run, path) => `/source/${run}/${path}`,
+    sourceUrl: path => `/fixtures/${path}`,
     fileLink: (href, label) => ({ href, label }),
     renderJson: (host, data) => { host.data = data },
     readStore: async (_path, kind) => kind === 'text' ? 'workflow source' : [],

@@ -24,9 +24,9 @@ const tableOptions: Options = {
   columnDefaults: { formatter: 'plaintext', headerFilter: 'input' }
 }
 
-function columnsFor (rows: CsvRows, sourceDirectory = ''): ColumnDefinition[] {
+function columnsFor (rows: CsvRows): ColumnDefinition[] {
   return (rows.columns ?? Object.keys(rows[0] ?? {})).map(field => {
-    if (!sourceDirectory || !['input_file', 'vendor_parameter_file', 'fasta'].includes(field)) {
+    if (!['input_file', 'vendor_parameter_file', 'fasta'].includes(field)) {
       return { title: field, field }
     }
     return {
@@ -35,7 +35,7 @@ function columnsFor (rows: CsvRows, sourceDirectory = ''): ColumnDefinition[] {
       formatter: cell => {
         const path: unknown = cell.getValue()
         if (typeof path !== 'string' || !path) return ''
-        return fileLink(sourceUrl(sourceDirectory, path), path)
+        return fileLink(sourceUrl(path), path)
       }
     }
   })
@@ -69,8 +69,8 @@ export function createSettingsPanel (app: CorpusApp) {
     host('corpus-description').textContent = ''
   }
 
-  async function showTable (id: string, rows: CsvRows, sourceDirectory = '') {
-    const table = await mountTable(host(id), rows, columnsFor(rows, sourceDirectory), tableOptions)
+  async function showTable (id: string, rows: CsvRows) {
+    const table = await mountTable(host(id), rows, columnsFor(rows), tableOptions)
     tables.push(table)
   }
 
@@ -103,18 +103,18 @@ export function createSettingsPanel (app: CorpusApp) {
     host('corpus-description').textContent =
       `${inventory.length} inventory entries · ${corpus.length} selected for this run. ` +
       'This is the frozen run snapshot.'
-    await showTable('corpus', inventory, directory)
+    await showTable('corpus', inventory)
     host('input-metadata-table').replaceChildren()
     if (manifest.input_metadata) {
       host('input-metadata-title').textContent = `Input sizes: ${manifest.input_metadata}`
-      await showTable('input-metadata-table', inputMetadata, directory)
+      await showTable('input-metadata-table', inputMetadata)
     } else {
       host('input-metadata-title').textContent = 'No input-size snapshot in this run'
     }
     host('workflow-table').replaceChildren()
     if (manifest.workflow_table) {
       host('workflow-table-title').textContent = manifest.workflow_table
-      await showTable('workflow-table', workflowRows, directory)
+      await showTable('workflow-table', workflowRows)
     } else {
       host('workflow-table-title').textContent = 'This workflow has no resource table'
     }

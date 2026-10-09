@@ -144,13 +144,13 @@ def inline_file(path: Path) -> Response:
     return Response(200, headers, file=path)
 
 
-def _directory(path: Path, root: Path) -> Response:
+def _directory(path: Path, root: Path, prefix: str) -> Response:
     entries: list[str] = []
     for child in sorted(path.iterdir(), key=lambda item: (not item.is_dir(), item.name.casefold())):
         if not child.resolve().is_relative_to(root.resolve()):
             continue
         label = child.name + ("/" if child.is_dir() else "")
-        href = f"/data/{quote(child.relative_to(root).as_posix())}"
+        href = f"/{prefix}/{quote(child.relative_to(root).as_posix())}"
         attributes = 'target="_blank" rel="noopener noreferrer"'
         if child.is_file():
             headers = dict(inline_file(child).headers)
@@ -165,13 +165,13 @@ def _directory(path: Path, root: Path) -> Response:
     return _page(path.name + "/", "<ul>" + "".join(entries) + "</ul>")
 
 
-def _data(store: Store, relative: str, *, view: bool) -> Response:
-    """Resolve one path below ``/data/`` onto a file in the store."""
-    target = _under(store.root, relative or ("." if view else INDEX_NAME))
+def serve_tree(root: Path, relative: str, *, prefix: str, view: bool) -> Response:
+    """Resolve one path below ``/<prefix>/`` onto a file or folder listing under ``root``."""
+    target = _under(root, relative or ("." if view else INDEX_NAME))
     if target is None:
         return _error(403, "Path outside the store")
     if target.is_dir():
-        return _directory(target, store.root.resolve())
+        return _directory(target, root.resolve(), prefix)
     return inline_file(target) if view else _file(target)
 
 
@@ -197,7 +197,9 @@ def resolve(url_path: str, web_root: Path, store: Store) -> Response:
         return _file(web_root / "index.html")
     head, _, tail = clean.partition("/")
     if head == DATA_PREFIX:
-        return _data(store, tail, view=parse_qs(parsed.query).get("view") == ["1"])
+        return serve_tree(
+            store.root, tail, prefix=DATA_PREFIX, view=parse_qs(parsed.query).get("view") == ["1"]
+        )
     target = _under(web_root, clean)
     if target is None:
         return _error(403, "Path outside the web root")

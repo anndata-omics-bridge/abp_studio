@@ -149,12 +149,15 @@ test('score panel reads references lazily, defaults to cutoff 1 after an empty l
     SCORE_COLORS: ['blue'], scoreFacetFigure,
     node (tag, text, className = '') { const element = new Element(tag); element.textContent = text; element.className = className; return element },
     artifactStorePath: (_directory, _output, path) => path, fileUrl: path => path,
-    proteobenchReferenceUrl: (directory, input) => `${directory}/${input}`,
+    sourceUrl: path => `fixtures/${path}`,
     host,
-    readReference: async (directory, input) => { reads.push([directory, input]); return { results: { 1: { error: 0.1 }, 2: { error: 0.15 } } } }
+    readReferences: async directory => {
+      reads.push(directory)
+      return new Map([[a.input_file, { path: 'metadata/repo/hash.json', document: { results: { 1: { error: 0.1 }, 2: { error: 0.15 } } } }]])
+    }
   }
-  const panel = runInNewContext(`${isolatedSource('viewer/src/corpus/panels/scores.ts')}\ncreateScoresPanel(host, readReference)`, context)
   const a = row()
+  const panel = runInNewContext(`${isolatedSource('viewer/src/corpus/panels/scores.ts')}\ncreateScoresPanel(host, readReferences)`, context)
   const cache = new Map([[`${a.input_file}.apb.json`, { scores: scores({ 1: { error: 0.2 }, 2: { error: 0.3 } }) }]])
   await panel.render('first', [a], cache, ['DIA-NN'])
   assert.equal(reads.length, 0, 'hidden comparisons must not read fixture metadata')

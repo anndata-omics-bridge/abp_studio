@@ -12,9 +12,15 @@ export interface Catalog extends SchemaDocument {
   output_extensions?: Record<string, string[]>
 }
 
-// HTTP reads stay on the viewer origin so Vite can proxy them in development.
-function dataPath (path: string): string {
-  return `data/${path.split('/').map(encodeURIComponent).join('/')}`
+export interface ProteobenchReference {
+  path: string
+  document: unknown
+}
+
+// The viewer reads only files: runs under data/ and the fixture store under fixtures/, so a
+// plain file server can serve both. HTTP reads stay on the viewer origin so Vite can proxy them.
+function treePath (tree: 'data' | 'fixtures', path: string): string {
+  return `${tree}/${path.split('/').map(encodeURIComponent).join('/')}`
 }
 
 function navigationBase (): string {
@@ -23,31 +29,23 @@ function navigationBase (): string {
 }
 
 export function dataUrl (path: string): string {
-  return new URL(dataPath(path), document.baseURI).href
+  return new URL(treePath('data', path), document.baseURI).href
 }
 
-export function fileUrl (path: string): string {
-  const url = new URL(dataPath(path), navigationBase())
+function navigationUrl (tree: 'data' | 'fixtures', path: string): string {
+  const url = new URL(treePath(tree, path), navigationBase())
   if (!/\.json$/i.test(path)) url.searchParams.set('view', '1')
   return url.href
 }
 
-export function sourceUrl (context: string, path: string): string {
-  const url = new URL('api/source', navigationBase())
-  url.searchParams.set('context', context)
-  url.searchParams.set('path', path)
-  return url.href
+/** Open a run file or folder: a report, a snapshot or an artifact. */
+export function fileUrl (path: string): string {
+  return navigationUrl('data', path)
 }
 
-export function proteobenchReferenceUrl (context: string, input: string): string {
-  const url = new URL('api/proteobench-reference', navigationBase())
-  url.searchParams.set('context', context)
-  url.searchParams.set('input', input)
-  return url.href
-}
-
-function apiUrl (path: string): string {
-  return new URL(`api/${path}`, document.baseURI).href
+/** Open a fixture-store file or folder: a vendor table, a parameter file or a FASTA. */
+export function sourceUrl (path: string): string {
+  return navigationUrl('fixtures', path)
 }
 
 function isSchemaDocument (value: unknown): value is SchemaDocument {
@@ -56,7 +54,7 @@ function isSchemaDocument (value: unknown): value is SchemaDocument {
 }
 
 export async function readCatalog (): Promise<Catalog> {
-  const response = await fetch(apiUrl('catalog'), { cache: 'no-store' })
+  const response = await fetch(dataUrl('index.json'), { cache: 'no-store' })
   if (!response.ok) throw new Error(`catalog: HTTP ${response.status}`)
   const document: unknown = await response.json()
   if (!isSchemaDocument(document)) throw new Error('Unsupported catalog schema')
@@ -77,11 +75,10 @@ export async function readCatalog (): Promise<Catalog> {
   return document as Catalog
 }
 
-/** Read filesystem kinds for the selected run's frozen inputs without loading their contents. */
+/** Read the file or folder kind the run recorded for each selected input. */
 export async function readInputKinds (context: string): Promise<Record<string, InputKind>> {
-  const url = new URL(apiUrl('input-kinds'))
-  url.searchParams.set('context', context)
-  const response = await fetch(url.href, { cache: 'no-store' })
+  const response = await fetch(dataUrl(`${context}/input_kinds.json`), { cache: 'no-store' })
+  if (response.status === 404) return {}
   if (!response.ok) throw new Error(`input kinds: HTTP ${response.status}`)
   const document: unknown = await response.json()
   if (!isSchemaDocument(document) || !('input_kinds' in document)) throw new Error('Unsupported input kinds schema')
@@ -93,15 +90,25 @@ export async function readInputKinds (context: string): Promise<Record<string, I
   return kinds as Record<string, InputKind>
 }
 
-/** Read downloaded scores for the exact input in the selected run's snapshot. */
-export async function readProteobenchReference (context: string, input: string): Promise<unknown> {
-  const url = new URL(apiUrl('proteobench-reference'))
-  url.searchParams.set('context', context)
-  url.searchParams.set('input', input)
-  const response = await fetch(url.href, { cache: 'no-store' })
-  if (response.status === 404) return null
-  if (!response.ok) throw new Error(`ProteoBench reference: HTTP ${response.status}`)
-  return response.json()
+/** Read the downloaded ProteoBench JSON the run recorded for each selected submission. */
+export async function readProteobenchReferences (context: string): Promise<Map<string, ProteobenchReference>> {
+  const response = await fetch(dataUrl(`${context}/proteobench_references.json`), { cache: 'no-store' })
+  if (response.status === 404) return new Map()
+  if (!response.ok) throw new Error(`ProteoBench references: HTTP ${response.status}`)
+  const document: unknown = await response.json()
+  if (!isSchemaDocument(document) || !('references' in document)) throw new Error('Unsupported ProteoBench references schema')
+  const references = document.references
+  if (typeof references !== 'object' || references === null || Array.isArray(references)) {
+    throw new Error('Invalid ProteoBench references')
+  }
+  const entries = Object.entries(references).map(([input, reference]: [string, unknown]) => {
+    if (typeof reference !== 'object' || reference === null || !('path' in reference) ||
+      typeof reference.path !== 'string' || !('document' in reference)) {
+      throw new Error(`Invalid ProteoBench reference: ${input}`)
+    }
+    return [input, { path: reference.path, document: reference.document }] as const
+  })
+  return new Map(entries)
 }
 
 /** Empty snapshots retain their CSV headers for the table adapter. */

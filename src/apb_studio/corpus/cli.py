@@ -28,6 +28,7 @@ from apb_studio.corpus.discovery import (
     workflow_tools,
 )
 from apb_studio.corpus.models import ExecutionSettings, Operation, StorageFormat, write_record
+from apb_studio.corpus.publish import publish_site
 from apb_studio.corpus.runs import (
     dataset_alias,
     prepare_run,
@@ -35,7 +36,7 @@ from apb_studio.corpus.runs import (
     select_datasets,
 )
 from apb_studio.corpus.tables import load_corpus
-from apb_studio.corpus_viewer.routes import resolve as resolve_corpus_viewer
+from apb_studio.corpus_viewer.routes import corpus_resolver
 from apb_studio.disk import atomic_write_text, interprocess_file_lock
 from apb_studio.fixture_store import Store
 from apb_studio.fixture_viewer.routes import VIEWER_IDENTITY_PATH, viewer_identity
@@ -199,6 +200,10 @@ class ImmediateRunOptions:
         bool,
         Parameter(name="--force", help="Delete previous results and rerun every dataset"),
     ] = True
+    output_root: Annotated[
+        Path | None,
+        Parameter(name="--output-root", help="Override the configured APB Studio output root"),
+    ] = None
 
 
 DEFAULT_IMMEDIATE_OPTIONS = ImmediateRunOptions()
@@ -316,6 +321,7 @@ def _immediate_run_options(options: ImmediateRunOptions, /) -> RunOptions:
         cores=options.cores,
         dry_run=options.dry_run,
         force=options.force,
+        output_root=options.output_root,
     )
 
 
@@ -416,6 +422,7 @@ def _schedule(root: Path, *, cores: int, dry_run: bool, force: bool) -> None:
             cleared = clear_results(root)
             logger.info("Previous results deleted from {}", cleared)
         write_record(root / "operation.json", Operation(status="running"))
+        publish_catalog(root.parents[2])
     try:
         log_name = "dry-run.log" if dry_run else "snakemake.log"
         code = _stream_scheduler(command, root / log_name)
@@ -530,7 +537,7 @@ def _serve_viewer(*, output_root: Path | None = None, port: int = VIEWER_PORT) -
             VIEWER_HOST,
             port,
             web_root=VIEWER_WEB_ROOT,
-            resolver=resolve_corpus_viewer,
+            resolver=corpus_resolver(load_settings().test_data_root),
         )
     except OSError as error:
         if error.errno != errno.EADDRINUSE:
@@ -608,6 +615,35 @@ def view() -> None:
 def stop_view() -> None:
     """Stop the managed corpus viewer."""
     _stop_viewer(output_root=None, port=VIEWER_PORT)
+
+
+@app.command
+def publish(
+    site: Annotated[Path, Parameter(help="Empty folder for the viewer and its runs")],
+    /,
+    *,
+    output_root: Annotated[
+        Path | None,
+        Parameter(name="--output-root", help="Override the configured APB Studio output root"),
+    ] = None,
+) -> None:
+    """Copy the corpus viewer and every saved run into SITE for a plain file server.
+
+    The fixture store is not copied; serve it beside them as SITE/fixtures.
+    """
+    store = _viewer_root(output_root)
+    try:
+        copied = publish_site(store, VIEWER_WEB_ROOT, site.resolve())
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
+    for run in copied:
+        logger.info("{}: published", run.relative_to(site.resolve() / "data"))
+    logger.info(
+        "Published {} runs to {}; serve the fixture store as {}",
+        len(copied),
+        site,
+        site / "fixtures",
+    )
 
 
 def main() -> None:

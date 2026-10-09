@@ -274,7 +274,7 @@ def test_run_help_lists_configured_corpuses_and_workflows(
     assert "Available workflows" in rendered
     for workflow in cli.available_workflows():
         assert workflow in rendered
-    for option in ("--workflow", "--format", "--cores", "--dry-run", "--force"):
+    for option in ("--workflow", "--format", "--cores", "--dry-run", "--force", "--output-root"):
         assert option in rendered
     for option in (
         "--corpus",
@@ -282,7 +282,6 @@ def test_run_help_lists_configured_corpuses_and_workflows(
         "--workflow-table",
         "--downloads",
         "--apb-executable",
-        "--output-root",
         "--datasets",
         "--fixtures",
         "--scope",
@@ -392,11 +391,17 @@ def test_run_selects_named_corpus_and_one_workflow(
         exit_on_error=False,
         result_action="return_value",
     )
+    cli.app(
+        ["run", "routine", "--output-root", "/tmp/publish"],
+        exit_on_error=False,
+        result_action="return_value",
+    )
 
-    assert [name for name, _options in runs] == ["routine", "all"]
-    assert [options.workflow for _name, options in runs] == ["aggregate", "convert"]
-    assert all(run_options.storage_format == "parquet" for _name, run_options in runs)
+    assert [name for name, _options in runs] == ["routine", "all", "routine"]
+    assert [options.workflow for _name, options in runs] == ["aggregate", "convert", "convert"]
+    assert all(run_options.storage_format == "parquet" for _name, run_options in runs[:2])
     assert all(run_options.cores == 3 for _name, run_options in runs)
+    assert [options.output_root for _name, options in runs] == [None, None, Path("/tmp/publish")]
 
 
 def test_run_reports_unknown_corpus_without_traceback(
@@ -567,3 +572,23 @@ def test_shutdown_never_signals_a_stale_pid_for_another_listener(
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_a_new_run_is_in_the_published_catalog_while_it_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = tmp_path / "corpus"
+    root = store / "routine" / "convert" / "hdf5"
+    root.mkdir(parents=True)
+    (root / "run.json").write_text('{"schema_version": 2}', encoding="utf-8")
+    seen: list[list[str]] = []
+
+    def scheduler(_command: list[str], _log: Path) -> int:
+        seen.append(json.loads((store / "index.json").read_text(encoding="utf-8"))["runs"])
+        return 0
+
+    monkeypatch.setattr(cli, "_stream_scheduler", scheduler)
+    cli._schedule(root, cores=1, dry_run=False, force=False)
+
+    assert seen == [["routine/convert/hdf5/run.json"]]

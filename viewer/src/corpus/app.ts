@@ -1,4 +1,4 @@
-import { emptyCsv, readCatalog, readInputKinds, readProteobenchReference, readStore, readStoreJson } from './lib/fetch.js'
+import { emptyCsv, readCatalog, readInputKinds, readProteobenchReferences, readStore, readStoreJson } from './lib/fetch.js'
 import { emptyDatasetFilters, filterDatasets } from './filters.js'
 import {
   chartViews,
@@ -364,7 +364,7 @@ async function main () {
     host(app, 'visualization-tabs'),
     host(app, 'visualization-chart-panel')
   )
-  const scores = createScoresPanel(host(app, 'scores'), readProteobenchReference)
+  const scores = createScoresPanel(host(app, 'scores'), readProteobenchReferences)
   const detail = createDetailPanel(app, readRepresentation, () => state.run)
   const settings = createSettingsPanel(app)
   app.addEventListener('run-change', event => {

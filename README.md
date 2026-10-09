@@ -1,21 +1,24 @@
 # APB Studio
 
-APB Studio downloads ProteoBench and Zenodo fixtures, runs concrete Python workflows over existing files, and serves two local TypeScript viewers.
+APB Studio tests the [AnnData Proteomics Bridge](https://anndata-omics-bridge.github.io/apb2/) (APB) on real data. It converts published results of more than a dozen proteomics tools into AnnData and MuData, scores them against [ProteoBench](https://proteobench.cubimed.rub.de/), and shows every result in the browser.
+
+**Browse the published runs: <https://fgcz-ms.uzh.ch/public/apb-studio/>**
+
+- **Fixture Manager** downloads ProteoBench submissions and Zenodo datasets (the directLFQ benchmark and MaxQuant entrapment tables) into a local fixture store
+- **Corpus Runner** runs one workflow over a named corpus with Snakemake: conversion, FASTA checks, ProteoBench scoring, pMultiQC reports, aggregation and exports; each dataset's steps, runtime, memory and outputs are recorded
+- **Corpus viewer** browses runs, datasets, APB metadata and APB-versus-ProteoBench scores; it reads only files, so a published copy runs on a plain file server
+
+Installation: [docs/install.md](docs/install.md).
 
 ## Start
 
 ```bash
-uv sync --frozen --extra dev --group docs
 uv run fixture corpus smallest-per-module
 uv run corpus run routine
 uv run corpus view
 ```
 
-The `aggregate` and `aggregate_medpolish` workflows run the private `apb-aggregate` command, which APB Studio does not install. Install it once with `uv tool install --editable ../apb-aggregate` so it is on PATH.
-
 The corpus viewer is at http://127.0.0.1:8766/. `uv run corpus view` starts it or safely restarts the matching managed process; another viewer or service on the port is refused. `uv run corpus view stop` stops it. The viewer shows saved settings, the absolute server artifact directory, exact CSV inputs, workflow source, live dataset/step progress, stdout, stderr, errors, runtime, peak memory, and input/output-size charts. Input, parameter, TOML/FASTA resource, generated artifact, and frozen snapshot links retain complete filenames. Folders open as browsable listings in new tabs; text and HTML display inline. JSON opens directly as `application/json`, unchanged by the server, using the browser's native display. Binary files such as H5MU, H5AD, DuckDB and individual Parquet files download instead of opening preview tabs; APB Parquet directories remain browsable. Large files stream from disk. It reads persisted files and remains useful after the runner exits. Refresh polling happens every two seconds. `uv run fixture view` starts the fixture viewer on port 8765.
-
-The executables declared by the selected workflow must be on `PATH`. The development extra installs the workspace checkouts for local integration testing; Studio invokes them only through subprocesses.
 
 ## Inputs
 
@@ -60,11 +63,11 @@ Execution settings explicitly record `corpus_name`, `corpus`, optional `workflow
 uv run corpus configure
 ```
 
-`corpus configure` is read-only. Its compact JSON names the main settings file, effective settings, run defaults, corpus config and resolved corpus mappings, acquisition metadata, and workflow-table directory. Runs uses a Saved runs header for the catalog. Run overview and File details show a sticky selected-run banner naming Corpus, Workflow, Format, the observed Output extension and dataset progress. Change run opens a compact corpus/workflow/format selector; run search lives in the Runs sidebar. The Runs tab has a left search and corpus, workflow and format facets with counts, beside the sortable run catalog. Filters narrow both the catalog and selector; an opened combination stays available when it falls outside those filters. Both Runs and Run overview show the actual scientific Output extension from recorded artifacts; Format remains the requested backend. A missing or pending output appears as `—`, and the viewer never guesses H5AD or H5MU from `hdf5`. Its `GET /api/catalog` endpoint scans the stable output folders on every poll, so a newly running operation appears and a cleaned operation disappears without rebuilding a static index. Current settings and CSV snapshots live inside that combination directory and are rewritten only when their contents change. Legacy hashed directories, directories without operation state, and cleaned operations stay out of the selector.
+`corpus configure` is read-only. Its compact JSON names the main settings file, effective settings, run defaults, corpus config and resolved corpus mappings, acquisition metadata, and workflow-table directory. Runs uses a Saved runs header for the catalog. Run overview and File details show a sticky selected-run banner naming Corpus, Workflow, Format, the observed Output extension and dataset progress. Change run opens a compact corpus/workflow/format selector; run search lives in the Runs sidebar. The Runs tab has a left search and corpus, workflow and format facets with counts, beside the sortable run catalog. Filters narrow both the catalog and selector; an opened combination stays available when it falls outside those filters. Both Runs and Run overview show the actual scientific Output extension from recorded artifacts; Format remains the requested backend. A missing or pending output appears as `—`, and the viewer never guesses H5AD or H5MU from `hdf5`. Runs rewrite the catalog file `index.json` when they start, are marked running, finish or are cleaned; the viewer polls that file, so a newly running operation appears and a cleaned operation disappears. Current settings and CSV snapshots live inside that combination directory and are rewritten only when their contents change. Legacy hashed directories, directories without operation state, and cleaned operations stay out of the selector.
 
 Run overview places dataset search and multi-select software, module and result dropdowns in a left pane, beside Datasets, Visualizations, Settings & inputs and Scheduler log subtabs. Dataset filters apply to the table, charts and file chooser; settings and scheduler logs describe the full run. Each settings subtab contains its own snapshot links, including both corpus snapshots in Corpus and the saved Python source in Workflow script. The Datasets subtab is one compact table with the last observed scientific output from a succeeded step and a frozen Open column containing Show more per dataset; failed or skipped steps never contribute the summary output. Its Ion vars column reads the persisted ion-level `var` dimension from that output's APB representation, not the vendor table's row count. Show more opens File details directly on AnnData, with Structure alongside it and individual AnnData objects in nested subtabs. File details keeps the same dataset search above its left file chooser, with additional dropdowns under a collapsed Filter options control. Each chooser entry shows the software name, an actual file or folder icon, and the persisted input size. Repeated software names also show their module, determined from the full run so labels remain stable when filtering; full paths remain available on hover and in Inputs & outputs. Filtering a file out of the chooser leaves its scientific view open, and the next refresh supplies its newest report. Inputs & outputs shows ordered step cards with input and output files, status, sizes and explicit handoffs between steps. Handoffs match exact recorded paths, so identical basenames in different locations remain separate. Full paths and exact byte counts expand per file; supporting representations and timing files expand within their owning step. Planned outputs remain visible as Not observed until their sizes are recorded, including partial failed-step artifacts when present. APB metadata is a separate top-level tab with nested MuData and modality tabs which render each owning object’s tool namespaces under `uns["apb"]`; another top-level tab exposes the complete representation JSON which drives the viewer. Every quantification-level or annotation-table modality has an AnnData object subtab containing only scientific tables and nested tabs for its axes, individual layers, and aligned structures. This prevents an intermediate converted level from being repeated beside the same level in the final aggregate. Known JSON-text provenance fields render as structured trees, while invalid text remains inspectable. Quantitative layers use Plotly box traces from bounded persisted per-observation quartiles with explicit observation and quantity axes; categorical layers show fixed-size category and missing-value counts without treating their codes as numbers. The complete execution report remains an expandable diagnostic in Inputs & outputs. The Visualizations tab creates a Workflow tab plus one tab for every recorded step/tool pair. The X axis selector switches between vendor input size and the persisted ion `var` dimension; points without an ion count are omitted rather than shown at zero. Each tab contains runtime, peak process-tree RSS and scientific artifact size; the Workflow tab sums observed step runtimes, takes their maximum memory and retains distinct step/software artifact series. Partial failed-workflow evidence remains visible, missing values are not zero, and JSON representation sidecars are excluded.
 
-Runs declaring `apb-proteobench` also have a Score comparison subtab in Run overview. It pairs persisted APB score metadata with the downloaded submission JSON for the exact input repository and hash, without rerunning scoring. One scatter facet per score plots ProteoBench on X and APB on Y with identical numeric axis limits and a dashed `y = x` line. The MA plot checkbox switches every facet to the arithmetic mean `(APB + ProteoBench) / 2` on X and the signed difference `APB − ProteoBench` on Y, with a dashed zero line and symmetric difference limits. Switching views preserves dataset and cutoff selections, and hover retains both original scores. Dataset filters narrow the comparisons; a completeness-cutoff selector keeps replicate thresholds aligned. Software colors stay stable within the run, and hover shows both scores, their difference, submission, module and quantity. Missing or non-finite values remain unpaired, with source links and reasons in an expandable list. Entrapment compares scalar summary scores for an explicitly selected APB confidence kind against the downloaded reported-FDR score set; FDP curves are excluded.
+Runs declaring `apb-proteobench` also have a Score comparison subtab in Run overview. It pairs persisted APB score metadata with the downloaded submission JSON for the exact input repository and hash, which the run copies into `proteobench_references.json` when it starts, without rerunning scoring. One scatter facet per score plots ProteoBench on X and APB on Y with identical numeric axis limits and a dashed `y = x` line. The MA plot checkbox switches every facet to the arithmetic mean `(APB + ProteoBench) / 2` on X and the signed difference `APB − ProteoBench` on Y, with a dashed zero line and symmetric difference limits. Switching views preserves dataset and cutoff selections, and hover retains both original scores. Dataset filters narrow the comparisons; a completeness-cutoff selector keeps replicate thresholds aligned. Software colors stay stable within the run, and hover shows both scores, their difference, submission, module and quantity. Missing or non-finite values remain unpaired, with source links and reasons in an expandable list. Entrapment compares scalar summary scores for an explicitly selected APB confidence kind against the downloaded reported-FDR score set; FDP curves are excluded.
 
 File details adds a FASTA check subtab when peptide verification was recorded: the recorded reference FASTA, matched and unmatched feature counts per level, and whether I/L-equivalent matching was used. It reads actual result provenance, including MuData root provenance, and leaves missing sources or matching settings unknown. ProteoBench checks use the module reference, even when a submitter searched a different database; unmatched sequences therefore do not by themselves establish a conversion bug.
 
@@ -93,9 +96,9 @@ uv run corpus run routine --no-force --dry-run         # confirm the routine run
 
 `convert_ion` requests only the ion level from APB2 and keeps its separate conversion timings. Vendor parameter files are optional, as in `convert`; absent files use result-producing software evidence. HDF5 output is a single-level `converted.h5ad`; Parquet and DuckDB use their selected formats. The original `convert` workflow still converts all compatible levels. Peptidoform-only datasets in the acquisition inventory correctly fail an ion-only request.
 
-The `run` surface takes one corpus name plus `--workflow`, `--format`, `--cores`, `--dry-run`, and `--force`/`--no-force`. Runs force by default, deleting the selected combination’s previous generated results and legacy history without archiving. `--dry-run` is nondestructive; use `--no-force --dry-run` to confirm a completed run schedules zero jobs. `corpus run --help` reads `corpuses.json` and shows every available corpus with its resolved target plus every discovered packaged workflow. Roots come from Studio's settings JSON; required executables resolve from `PATH`.
+The `run` surface takes one corpus name plus `--workflow`, `--format`, `--cores`, `--dry-run`, `--force`/`--no-force` and `--output-root`. Runs force by default, deleting the selected combination’s previous generated results and legacy history without archiving. `--dry-run` is nondestructive; use `--no-force --dry-run` to confirm a completed run schedules zero jobs. `corpus run --help` reads `corpuses.json` and shows every available corpus with its resolved target plus every discovered packaged workflow. Roots come from Studio's settings JSON; `--output-root` writes one run elsewhere, such as `apb_publish_output`, without changing them. Required executables resolve from `PATH`.
 
-Three editable Fish scripts select 13 saved combinations: [routine_corpuses.fish](scripts/routine_corpuses.fish) runs routine conversion in three storage formats, the three-call ProteoBench scoring workflow on `routine_pb` and primary-X median-polish aggregation in HDF5; [overview_corpuses.fish](scripts/overview_corpuses.fish) runs ProteoBench pMultiQC, the `proteobench_plasma` report, entrapment scoring and directLFQ conversion; [export_corpuses.fish](scripts/export_corpuses.fish) runs the four routine native exports. Every script always uses `--force`, deleting previous results without retaining archives. The routine and overview scripts accept `--plan` to print commands without changing files and `--dry-run` to preview forced jobs without deleting results. The export script uses `apb-export` from PATH or the sibling export package's virtual environment. See [selected combinations and actual output extensions](docs/workflows.md#selected-combinations) for the complete list and cleanup controls.
+Three editable Fish scripts select 20 saved combinations: [routine_corpuses.fish](scripts/routine_corpuses.fish) runs routine conversion in three storage formats, the three-call ProteoBench scoring workflow on `routine_pb` and primary-X median-polish aggregation in HDF5; [overview_corpuses.fish](scripts/overview_corpuses.fish) runs ProteoBench pMultiQC, the `proteobench_plasma` report, entrapment scoring and directLFQ conversion; [export_corpuses.fish](scripts/export_corpuses.fish) runs the four native exports over routine and problems. Every script always uses `--force`, deleting previous results without retaining archives. The routine and overview scripts accept `--plan` to print commands without changing files and `--dry-run` to preview forced jobs without deleting results. The export script uses `apb-export` from PATH or the sibling export package's virtual environment. See [selected combinations and actual output extensions](docs/workflows.md#selected-combinations) for the complete list and cleanup controls.
 
 `workflow_convert.py` invokes `apb2 convert` once for all compatible levels and writes the selected format directly. It also requests a separate `converted.timings.json` artifact: the convert step's Visualizations tab shows Studio timings and APB2 internal phases in separate subtabs when that file is present. Studio's subprocess runtime and memory remain independent. `workflow_aggregate.py` converts, then runs one `aggregate-<method>` step per `;`-separated entry in the table's `method` cell; each step aggregates to the coarsest reachable identity and adds its layers to the previous step's result. The table runs `all` for every vendor and adds `rlm_confidence_case` and `rlm_confidence_precision` for AlphaPept, DIA-NN, MaxQuant and Spectronaut, whose every rule variant catalogues ion identification confidence. Conversion includes all compatible levels; aggregation starts at the finest level present in the persisted hierarchy and processes every available quantitative layer with `--layers all`. General all-layer aggregation remains available but is deferred from the selected scripts. HDF5 conversion stores compatible levels together as MuData.
 
@@ -127,6 +130,8 @@ Bare `clean` deletes every current or legacy run directory under the configured 
 | `input_metadata.csv` | Selected vendor input sizes joined explicitly from the acquisition downloads table |
 | `workflow_<name>.csv` | Optional copied workflow table |
 | `workflow_<name>.py` | Source snapshot shown by the viewer |
+| `input_kinds.json` | Whether each selected input is a file or a folder, recorded when the run starts |
+| `proteobench_references.json` | Each selected submission's downloaded ProteoBench JSON and its fixture-store path, NaN written as null |
 | `operation.json` | Scheduler running/succeeded/failed/interrupted state |
 | `reports/<key>.progress.json` | Atomic live step state and recent output |
 | `reports/<key>.json` | Complete dataset result with full stdout and stderr |
@@ -136,6 +141,52 @@ Bare `clean` deletes every current or legacy run directory under the configured 
 | `artifacts/**/*.apb.json` | Compact APB scientific representations for final and intermediate results |
 
 Execution JSON documents have `schema_version: 2`; scientific representation documents have their own `format_version`. Report/index links are relative to the run directory and can be fetched directly by the browser. Final reports retain full logs; live progress carries the last 16 KiB of each stream. Memory is sampled every 100 ms as summed RSS across the APB process tree; it is an estimate and can miss short spikes. Declared input artifacts record observed sizes when present, and every output that exists after a command records its total file or recursive-directory byte size independently of the command status.
+
+The output root's `corpus/index.json` lists the visible runs; the viewer reads it instead of scanning folders.
+
+## Deploy on a file server
+
+The corpus viewer reads only files, so any static file server can host it with its runs and the fixture store. The fixture viewer stays local.
+
+```bash
+fish scripts/publish_corpuses.fish SITE
+rsync -a test_data_download/ SITE/fixtures/
+python3 -m http.server --directory SITE    # local preview at http://localhost:8000/
+```
+
+[publish_corpuses.fish](scripts/publish_corpuses.fish) forces the published corpus, workflow and format combinations into `apb_publish_output` with `--output-root`, leaving the configured output root untouched, then runs `corpus publish SITE --output-root apb_publish_output`. `--plan` prints its commands. `corpus publish SITE` copies the viewer to `SITE/` and every saved run of the output root to `SITE/data/`, without `.snakemake/` and `run.lock`, then writes `SITE/data/index.json`. It refuses a folder that is not empty. Upload `SITE` as it is:
+
+| Path | Content |
+| --- | --- |
+| `/` | Viewer page and its bundled scripts |
+| `/data/` | Runs, one folder per corpus, workflow and format |
+| `/fixtures/` | The fixture store; links to vendor tables, parameter files, FASTAs and downloaded ProteoBench JSON point here |
+
+Any server hosting `SITE` needs no Python or proxy:
+
+- Serve files as they are, with directory listing on: Parquet results and folder inputs open as listings
+- JSON as `application/json`; text tables as `text/plain` if they should display rather than download
+- Binary results such as `.h5ad`, `.h5mu` and `.duckdb` download
+
+### FGCZ instance
+
+<https://fgcz-ms.uzh.ch/public/apb-studio/> is the Apache folder `/srv/www/htdocs/public/apb-studio/` on `fgcz-r-035.uzh.ch`, with directory listing on; Apache adds the trailing slash the viewer's relative links need. From `apb_studio/`:
+
+```bash
+fish scripts/publish_corpuses.fish apb_publish_site
+ssh fgcz-r-035.uzh.ch mkdir /srv/www/htdocs/public/apb-studio
+scp -rp apb_publish_site/* fgcz-r-035.uzh.ch:/srv/www/htdocs/public/apb-studio/
+scp -rp test_data_download fgcz-r-035.uzh.ch:/srv/www/htdocs/public/apb-studio/fixtures
+ssh fgcz-r-035.uzh.ch chmod -R a+rX /srv/www/htdocs/public/apb-studio
+```
+
+- The `chmod` is required: Studio and the APB tools write some files as `0600` through temporary files, `scp -p` keeps that mode, and Apache answers 403
+- `apb_publish_output/` and `apb_publish_site/` are git-ignored; the configured output root is not touched
+- The publish script refuses a non-empty `apb_publish_site/`; delete it before republishing
+- Republishing: delete `apb-studio/data/` and `apb-studio/assets/` on the server, copy `apb_publish_site/*` again, then rerun the `chmod`
+- `fixtures/` changes only when the fixture store does; 84 GB on 9 October 2026
+
+Reports keep the absolute paths of the machine that ran them in their recorded commands. Runs made before 9 October 2026 lack `input_kinds.json` and `proteobench_references.json`; the viewer then shows no file kinds or reference scores for them until they are rerun.
 
 ## Development
 

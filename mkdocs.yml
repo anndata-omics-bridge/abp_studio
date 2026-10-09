@@ -12,6 +12,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Install: install.md
   - Architecture: architecture.md
   - Adding a workflow: workflows.md
   - External datasets: datasets.md

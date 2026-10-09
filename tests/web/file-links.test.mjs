@@ -32,7 +32,7 @@ test('readable files open tabs, JSON stays raw, and binary files download withou
     assert.equal(event.defaultPrevented, false)
   }
   for (const filename of ['scored.h5mu', 'converted.H5AD', 'result.parquet', 'data.duckdb', 'tables.zip']) {
-    for (const href of [`/data/${filename}?view=1`, `/api/source?path=inputs%2F${filename}`]) {
+    for (const href of [`/data/${filename}?view=1`, `/fixtures/inputs/${filename}?view=1`]) {
       const link = fileLink(href, filename)
       assert.equal(link.download, filename)
       assert.equal(link.target, undefined)

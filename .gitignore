@@ -18,6 +18,8 @@ public/
 # outputs (filesystem-as-database lives outside the repo, but ignore stray local runs)
 /outputs/
 /apb_outputs/
+/apb_publish_output/
+/apb_publish_site/
 *.h5ad
 *.h5mu
 

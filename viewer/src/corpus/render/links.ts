@@ -4,7 +4,7 @@ const BINARY_SUFFIX = /\.(?:h5mu|h5ad|h5|hdf5|duckdb|parquet|arrow|feather|sqlit
 export function fileLink (href: string, label: string, { directory = false } = {}): HTMLAnchorElement {
   const link = document.createElement('a')
   const url = new URL(href, document.baseURI)
-  const path = url.searchParams.get('path') ?? decodeURIComponent(url.pathname)
+  const path = decodeURIComponent(url.pathname)
   if (/\.json$/i.test(path)) url.searchParams.delete('view')
   link.href = url.href
   link.textContent = label

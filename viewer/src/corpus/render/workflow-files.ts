@@ -28,15 +28,16 @@ function renderFile (row: DatasetRow, run: string, steps: FlowStep[], item: Flow
   const { artifact, size } = item
   const source = direction === 'input' && item.producer == null ? sourcePath(row, item) : ''
   const observedSize = size ?? (source === row.input_file && formatBytes(row.input_file_size_bytes) ? Number(row.input_file_size_bytes) : null)
-  const href = source && !(source === row.input_file && row.input_file_kind === 'folder')
-    ? sourceUrl(run, source)
+  const href = source
+    ? sourceUrl(source)
     : item.producer != null && observedSize != null
       ? fileUrl(artifactStorePath(run, row.output_dir, artifact.path)) : ''
   const basename = artifact.path.split('/').at(-1) || artifact.path
   const entry = node('li', '', 'workflow-file')
   const name = node('strong', '', 'workflow-file-name')
   name.title = artifact.path
-  name.append(href ? fileLink(href, basename, { directory: artifact.format === 'parquet' }) : node('span', basename))
+  const directory = artifact.format === 'parquet' || (source !== '' && source === row.input_file && row.input_file_kind === 'folder')
+  name.append(href ? fileLink(href, basename, { directory }) : node('span', basename))
   const sizeLabel = direction === 'output' && observedSize == null ? 'Not observed' : formatBytes(observedSize) || 'Size unavailable'
   entry.append(name, node('span', [ROLE_NAMES[artifact.role] ?? columnTitle(artifact.role), sizeLabel].join(' · '), 'workflow-file-meta'))
   if (direction === 'input' && item.producer != null) {

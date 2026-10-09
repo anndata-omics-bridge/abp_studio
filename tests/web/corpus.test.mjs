@@ -730,12 +730,12 @@ test('viewer exposes corpus charts and frozen input metadata', () => {
   assert.match(styles, /\.subtabs\s*\{[^}]*overflow-x:\s*auto/)
 })
 
-test('run selection comes from the live server catalog', () => {
+test('run selection comes from the catalog file runs write, never a computed route', () => {
   const application = readFileSync('viewer/src/corpus/app.ts', 'utf8')
   const fetching = readFileSync('viewer/src/corpus/lib/fetch.ts', 'utf8')
-  assert.match(fetching, /new URL\(`api\/\$\{path\}`/)
+  assert.match(fetching, /fetch\(dataUrl\('index\.json'\)/)
+  assert.doesNotMatch(fetching, /api\//)
   assert.match(application, /await readCatalog\(\)/)
-  assert.doesNotMatch(application, /await read\('index\.json'\)/)
 })
 
 test('dataset table stays compact while show more exposes every artifact and the persisted report', () => {

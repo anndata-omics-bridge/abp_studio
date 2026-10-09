@@ -81,7 +81,7 @@ A workflow needs no runner change to become runnable. `--workflow <name>` select
 
 ## Selected combinations
 
-Three Fish scripts select 20 corpus/workflow/format combinations. The routine inventory contains 15 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains the 15 catalogued ProteoBench datasets from that small selection, excluding the Zenodo MaxQuant entrapment folder. It runs the three separate calls: conversion, FASTA peptide verification and ProteoBench quantification scoring. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+Three Fish scripts select 20 corpus/workflow/format combinations. The routine inventory contains 13 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains the 12 catalogued ProteoBench datasets from that small selection, excluding the Zenodo MaxQuant entrapment folder. It runs the three separate calls: conversion, FASTA peptide verification and ProteoBench quantification scoring. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
 
 | Script | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
@@ -137,7 +137,7 @@ uv run corpus clean proteobench proteobench_pmultiqc  # selected combination, al
 
 `corpus clean` reports each run as deleted or not deleted and exits non-zero if any failed. A selected clean requires both positional names and matches current stable run directories exactly; bare clean also deletes legacy hash-named runs. Cleaning deliberately does not validate the whole manifest — it reads only `data_root`, for the guard that refuses to touch a run overlapping the fixture store — so a run recorded under an older manifest schema can still be deleted.
 
-The corpus viewer does not read the published `index.json` for its selector. Its `GET /api/catalog` endpoint scans current stable run operation files on every request. Running, succeeded, failed and interrupted combinations are selectable; prepared manifests without an operation and legacy hashed directories are not. Consequently the two-second viewer poll reflects both run creation and run deletion without a catalog rewrite.
+The corpus viewer reads its selector from `index.json`, which runs rewrite when they start, are marked running, finish or are cleaned. Running, succeeded, failed and interrupted combinations are selectable; prepared manifests without an operation and legacy hashed directories are not. Consequently the two-second viewer poll reflects both run creation and run deletion.
 
 ## Verifying a new workflow
 

@@ -36,6 +36,7 @@ from apb_studio.corpus.tables import (
     resolve_secondary_inputs,
     write_rows,
 )
+from apb_studio.corpus.viewer_inputs import write_viewer_inputs
 from apb_studio.disk import atomic_write_text
 
 
@@ -198,6 +199,7 @@ def prepare_run(
         else utc_now()
     )
     write_rows(root / "selected_corpus.csv", CORPUS_COLUMNS, [row.model_dump() for row in rows])
+    write_viewer_inputs(root, rows, settings.data_root)
     metadata_file: str | None = None
     if settings.downloads is not None:
         metadata = join_input_metadata(rows, settings.downloads)
