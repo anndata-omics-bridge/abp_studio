@@ -93,9 +93,9 @@ uv run corpus run routine --no-force --dry-run         # confirm the routine run
 
 `convert_ion` requests only the ion level from APB2 and keeps its separate conversion timings. Vendor parameter files are optional, as in `convert`; absent files use result-producing software evidence. HDF5 output is a single-level `converted.h5ad`; Parquet and DuckDB use their selected formats. The original `convert` workflow still converts all compatible levels. Peptidoform-only datasets in the acquisition inventory correctly fail an ion-only request.
 
-The `run` surface takes a corpus name and an optional workflow name (default `convert`) plus `--format`, `--cores`, `--dry-run`, `--force`/`--no-force`, `--output-root` and `--strict`. Runs force by default, deleting the selected combination’s previous generated results and legacy history without archiving. `--dry-run` is nondestructive; use `--no-force --dry-run` to confirm a completed run schedules zero jobs. `corpus run --help` lists `all` and every corpus file in `corpuses/` plus every discovered packaged workflow. Roots come from Studio's settings JSON; `--output-root` writes one run elsewhere, such as `apb_publish_output`, without changing them. Required executables resolve from `PATH`.
+The `run` surface takes a corpus name and an optional workflow name (default `convert`) plus `--format`, `--cores`, `--dry-run`, `--force`/`--no-force`, `--output-root` and `--strict`. Runs force by default, deleting the selected combination’s previous generated results and legacy history without archiving. `--dry-run` is nondestructive; use `--no-force --dry-run` to confirm a completed run schedules zero jobs. `corpus run --help` lists `all` and every corpus file in `corpuses/` plus every discovered packaged workflow. Roots come from Studio's settings JSON; `--output-root` writes one run elsewhere without changing them. Required executables resolve from `PATH`.
 
-[scripts/corpus_runs.fish](scripts/corpus_runs.fish) holds, one plain command each, the runs we publish and the runs the manuscript figures read; [scripts/integration_runs.fish](scripts/integration_runs.fish) holds the routine checks and exports, in the same form. See [selected combinations and actual output extensions](docs/workflows.md#selected-combinations) for what each produces.
+[scripts/corpus_runs.fish](scripts/corpus_runs.fish) holds, one plain command each, every run we serve, all into the configured output root, which the manuscript figures read as well, and ends with `corpus publish`; [scripts/integration_runs.fish](scripts/integration_runs.fish) holds the routine checks and exports, in the same form. See [selected combinations and actual output extensions](docs/workflows.md#selected-combinations) for what each produces.
 
 `workflow_convert.py` invokes `apb2 convert` once for all compatible levels and writes the selected format directly. It also requests a separate `converted.timings.json` artifact: the convert step's Visualizations tab shows Studio timings and APB2 internal phases in separate subtabs when that file is present. Studio's subprocess runtime and memory remain independent. `workflow_aggregate.py` converts, then runs one `aggregate-<method>` step per `;`-separated entry in the table's `method` cell; each step aggregates to the coarsest reachable identity and adds its layers to the previous step's result. The table runs `all` for every vendor and adds `rlm_confidence_case` and `rlm_confidence_precision` for AlphaPept, DIA-NN, MaxQuant and Spectronaut, whose every rule variant catalogues ion identification confidence. Conversion includes all compatible levels; aggregation starts at the finest level present in the persisted hierarchy and processes every available quantitative layer with `--layers all`. General all-layer aggregation remains available but is deferred from the selected scripts. HDF5 conversion stores compatible levels together as MuData.
 
@@ -146,12 +146,12 @@ The output root's `corpus/index.json` lists the visible runs; the viewer reads i
 The corpus viewer reads only files, so any static file server can host it with its runs and the fixture store. The fixture viewer stays local.
 
 ```bash
-# run the "public site" lines of scripts/corpus_runs.fish, which end in `corpus publish apb_publish_site`
+fish scripts/corpus_runs.fish    # every served run, then corpus publish apb_publish_site
 rsync -a test_data_download/ apb_publish_site/fixtures/
 python3 -m http.server --directory apb_publish_site    # local preview at http://localhost:8000/
 ```
 
-The public-site lines of [corpus_runs.fish](scripts/corpus_runs.fish) force the published corpus, workflow and format combinations into `apb_publish_output` with `--output-root` and `--strict`, leaving the configured output root untouched, then run `corpus publish apb_publish_site --output-root apb_publish_output`. `corpus publish SITE` copies the viewer to `SITE/` and every saved run of the output root to `SITE/data/`, without `.snakemake/` and `run.lock`, then writes `SITE/data/index.json`. It refuses a folder that is not empty. Upload `SITE` as it is:
+[corpus_runs.fish](scripts/corpus_runs.fish) forces every served combination into the configured output root with `--strict`, then runs `corpus publish apb_publish_site`. Whatever that root holds is published, so `corpus view` locally and the site show the same runs. `corpus publish SITE` copies the viewer to `SITE/` and every saved run of the output root to `SITE/data/`, without `.snakemake/` and `run.lock`, then writes `SITE/data/index.json`. It refuses a folder that is not empty. Upload `SITE` as it is:
 
 | Path | Content |
 | --- | --- |
@@ -170,7 +170,7 @@ Any server hosting `SITE` needs no Python or proxy:
 <https://fgcz-ms.uzh.ch/public/apb-studio/> is the Apache folder `/srv/www/htdocs/public/apb-studio/` on `fgcz-r-035.uzh.ch`, with directory listing on; Apache adds the trailing slash the viewer's relative links need. From `apb_studio/`:
 
 ```bash
-# run the "public site" lines of scripts/corpus_runs.fish first
+fish scripts/corpus_runs.fish
 ssh fgcz-r-035.uzh.ch mkdir /srv/www/htdocs/public/apb-studio
 scp -rp apb_publish_site/* fgcz-r-035.uzh.ch:/srv/www/htdocs/public/apb-studio/
 scp -rp test_data_download fgcz-r-035.uzh.ch:/srv/www/htdocs/public/apb-studio/fixtures
@@ -178,7 +178,7 @@ ssh fgcz-r-035.uzh.ch chmod -R a+rX /srv/www/htdocs/public/apb-studio
 ```
 
 - The `chmod` is required: Studio and the APB tools write some files as `0600` through temporary files, `scp -p` keeps that mode, and Apache answers 403
-- `apb_publish_output/` and `apb_publish_site/` are git-ignored; the configured output root is not touched
+- `apb_publish_site/` is git-ignored
 - `corpus publish` refuses a non-empty `apb_publish_site/`; delete it before republishing
 - Republishing: delete `apb-studio/data/` and `apb-studio/assets/` on the server, copy `apb_publish_site/*` again, then rerun the `chmod`
 - `fixtures/` changes only when the fixture store does; 84 GB on 9 October 2026
