@@ -89,4 +89,4 @@ def test_catalog_report_links_cannot_leave_the_run_directory(tmp_path: Path) -> 
 def test_ordinary_corpus_runs_delete_previous_results_by_default() -> None:
     assert cli.RunOptions().force
     assert cli.DEFAULT_IMMEDIATE_OPTIONS.force
-    assert cli._immediate_run_options(cli.DEFAULT_IMMEDIATE_OPTIONS).force
+    assert cli._immediate_run_options(cli.DEFAULT_WORKFLOW, cli.DEFAULT_IMMEDIATE_OPTIONS).force

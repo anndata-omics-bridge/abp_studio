@@ -12,6 +12,8 @@ from apb_studio.disk import atomic_write_text
 
 type StorageFormat = Literal["hdf5", "duckdb", "parquet"]
 type StepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
+type ReportStatus = StepStatus | Literal["not_downloaded"]
+"""A dataset's status: its steps' outcome, or ``not_downloaded`` when it never ran."""
 
 
 def utc_now() -> str:
@@ -26,12 +28,14 @@ class Record(BaseModel):
 
 
 class Dataset(Record):
-    """Exactly the four corpus CSV columns; paths are relative to the data root.
+    """One corpus dataset resolved through the fixture manifest; paths are below the data root.
 
-    ``input_file`` names one vendor table or a folder of related tables. An empty
-    ``vendor_parameter_file`` means the dataset has none.
+    ``dataset`` is the key a corpus file names. ``input_file`` is the stored vendor table or
+    folder of related tables, or the dataset's store folder when it is not downloaded. An
+    empty ``vendor_parameter_file`` means the dataset has none.
     """
 
+    dataset: str = Field(min_length=1)
     input_file: str = Field(min_length=1)
     vendor_parameter_file: str
     module: str = Field(min_length=1)
@@ -88,7 +92,7 @@ class DatasetReport(Record):
     workflow: str
     format: StorageFormat
     dataset: Dataset
-    status: StepStatus = "running"
+    status: ReportStatus = "running"
     started_at: str = Field(default_factory=utc_now)
     finished_at: str | None = None
     runtime_seconds: float = 0
@@ -129,6 +133,8 @@ class RunManifest(Record):
     execution_settings: str = "execution_settings.json"
     source_corpus: str = "corpus.csv"
     input_metadata: str | None = None
+    not_downloaded: list[str] = Field(default_factory=list)
+    """Keys of selected datasets the fixture had not stored when the run was prepared."""
 
 
 class ExecutionSettings(Record):
@@ -141,10 +147,11 @@ class ExecutionSettings(Record):
     corpus_name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
     workflow: str
     format: StorageFormat
-    corpus: Path
+    corpus: Path | None
+    """The corpus file; ``None`` for the reserved ``all``, every downloaded dataset."""
     data_root: Path
     workflow_table: Path | None
-    downloads: Path | None = None
+    downloads: Path
     tools: dict[str, Path] = Field(min_length=1)
     cores: int = Field(ge=1)
     datasets: Path | None = None

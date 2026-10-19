@@ -233,7 +233,9 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
     if (!preferred?.representation) {
       const message = row.status === 'failed'
         ? 'This file failed. Inspect its outputs and complete execution report below.'
-        : !row.record || ['pending', 'running'].includes(row.status)
+        : row.status === 'not_downloaded'
+          ? 'This dataset is not in the fixture store, so it did not run. Download it with `fixture download` and run the corpus again.'
+          : !row.record || ['pending', 'running'].includes(row.status)
           ? `This file is ${row.status || 'pending'}. Scientific views appear when results are available.`
           : 'No scientific representation was produced for this dataset.'
       notices.append(node('p', message, 'empty-note'))

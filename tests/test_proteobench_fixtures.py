@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import gzip
 import io
 import json
 import math
@@ -11,6 +12,7 @@ import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pandas as pd
@@ -23,7 +25,8 @@ from pydantic import ValidationError
 
 from apb_studio import fetch, zenodo_fixtures
 from apb_studio import proteobench_fixtures as rawdb
-from apb_studio.fixture_store import Store
+from apb_studio.corpus.tables import read_rows
+from apb_studio.fixture_store import DOWNLOAD_COLUMNS, Store
 from apb_studio.settings import StudioSettings
 from apb_studio.table_storage import GzipTables, PlainTables, TableStorage
 
@@ -399,32 +402,9 @@ def test_metadata_refresh_replaces_restores_and_guards(
         rawdb._download_module_jsons(url, metadata)
 
 
-def test_strategy_flags_mark_the_smallest_per_grouping() -> None:
-    flagged = rawdb._strategy_flags(_catalog_frame()).set_index("intermediate_hash")
-    assert flagged["smallest_per_software_version"].to_dict() == {
-        "a": True,
-        "b": False,
-        "c": True,
-        "d": False,
-        "e": True,
-    }
-    assert flagged["smallest_per_software"].to_dict() == {
-        "a": True,
-        "b": False,
-        "c": False,
-        "d": False,
-        "e": True,
-    }
-    assert flagged["smallest_per_module"].to_dict() == {
-        "a": True,
-        "b": False,
-        "c": False,
-        "d": False,
-        "e": True,
-    }
-
-
-def test_catalog_writes_rows_and_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_catalog_writes_one_row_per_submission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     metadata = tmp_path / "metadata_source"
     metadata.mkdir()
     for name, features in (("hash-a", 5), ("hash-b", 9)):
@@ -446,7 +426,8 @@ def test_catalog_writes_rows_and_flags(tmp_path: Path, monkeypatch: pytest.Monke
     catalog = pd.read_csv(Store(store).catalog_csv)
     assert catalog["intermediate_hash"].tolist() == ["hash-a", "hash-b"]
     assert catalog["repo_name"].tolist() == ["Results_quant_ion_DDA"] * 2
-    assert catalog["smallest_per_module"].tolist() == [True, False]
+    assert catalog["nr_feature"].tolist() == [5, 9]
+    assert not [column for column in catalog.columns if column.startswith("smallest")]
 
 
 def test_existing_dataset_detection(tmp_path: Path) -> None:
@@ -462,37 +443,31 @@ def test_existing_dataset_detection(tmp_path: Path) -> None:
     assert untouched is frame and empty == {}
 
 
-def test_catalog_selection_rejects_unknown_or_corrupt_strategy_columns() -> None:
-    catalog = _catalog_frame()
-    assert rawdb._selected_catalog(catalog, None) is catalog
-    with pytest.raises(ValueError, match="Unknown corpus selection strategy"):
-        rawdb._selected_catalog(catalog, "smallest_by_magic")
-
-    corrupt = catalog.assign(smallest_per_module="maybe")
-    with pytest.raises(ValueError, match="has invalid values"):
-        rawdb._selected_catalog(corrupt, "smallest_per_module")
-
-
 def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = Store(tmp_path)
-    with pytest.raises(SystemExit, match="Run 'catalog' first"):
-        rawdb.download(store=tmp_path)
-    _catalog_frame().to_csv(store.catalog_csv, index=False)
+    catalog = _catalog_frame()
     ok = store.submission_dir("Repo", "a")
     ok.mkdir(parents=True)
-    (ok / "input_file.tsv").write_text("x", encoding="utf-8")
+    (ok / "input_file.tsv.gz").write_bytes(gzip.compress(b"x\n"))
+    (ok / "param_0..json").write_text("{}", encoding="utf-8")
     tableless = store.submission_dir("Repo", "b")
     tableless.mkdir(parents=True)
     monkeypatch.setattr(rawdb, "get_raw_data", lambda *_args, **_kwargs: {"b": tableless})
+    requested = catalog[catalog["module"] == "dda_qexactive"]
 
-    rawdb.download(store=tmp_path, module="dda_qexactive")
+    rawdb._download(store, requested, PlainTables())
+    rawdb._write_downloads(store, catalog, requested)
 
+    assert tuple(pd.read_csv(store.downloads_csv).columns) == DOWNLOAD_COLUMNS
     manifest = pd.read_csv(store.downloads_csv).fillna("").set_index("intermediate_hash")
+    assert manifest.loc["a", "dataset"] == "Repo/a"
     assert manifest.loc["a", "status"] == "ok"
-    assert manifest.loc["a", "input_file_path"] == "submissions/Repo/a/input_file.tsv"
+    assert manifest.loc["a", "input_file_path"] == "submissions/Repo/a/input_file.tsv.gz"
+    assert manifest.loc["a", "vendor_parameter_file_path"] == "submissions/Repo/a/param_0..json"
     assert manifest.loc["b", "status"] == "input_file_missing", "extracted, but no table in it"
     assert manifest.loc["c", "status"] == "not_on_server"
     assert manifest.loc["e", "status"] == "not_selected", "manifest still covers the catalog"
+    assert manifest.loc["e", "dataset_dir"] == "submissions/Other/e", "known before download"
 
     calls: list[Path] = []
     monkeypatch.setattr(
@@ -500,21 +475,16 @@ def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.M
         "get_raw_data",
         lambda _df, output_directory, **_k: calls.append(output_directory) or {},
     )
-    rawdb.download(store=tmp_path)
+    rawdb._download(store, catalog, PlainTables())
     assert calls == [store.submissions_dir / "Other", store.submissions_dir / "Repo"]
-    assert store.downloads_csv.read_text().count("input_file_path,input_file_size_bytes") == 1
 
-    present_only = _catalog_frame().loc[lambda frame: frame["intermediate_hash"] == "a"]
-    present_only.to_csv(store.catalog_csv, index=False)
     calls.clear()
-    rawdb.download(store=tmp_path)
+    rawdb._download(store, catalog.loc[catalog["intermediate_hash"] == "a"], PlainTables())
     assert calls == []
 
-    numeric = _catalog_frame().assign(repo_name=1)
-    numeric.to_csv(store.catalog_csv, index=False)
+    numeric = catalog.assign(repo_name=1)
     with pytest.raises(TypeError, match="repo_name"):
-        rawdb.download(store=tmp_path)
-
+        rawdb._download(store, numeric, PlainTables())
     with pytest.raises(TypeError, match="repo_name and intermediate_hash"):
         rawdb._write_downloads(store, numeric, numeric)
 
@@ -619,125 +589,44 @@ def test_resource_summary_covers_every_module(tmp_path: Path) -> None:
     assert str(resources.loc["dia_singlecell", "fasta"]).endswith("noecoli.fasta")
 
 
-def test_corpus_commands_expose_all_selection_strategies(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[str | None, ...]] = []
-    monkeypatch.setattr(
-        rawdb,
-        "_acquire_corpus",
-        lambda *arguments: calls.append(arguments),
-    )
-    zenodo_calls: list[tuple[str, object]] = []
-    monkeypatch.setattr(
-        rawdb,
-        "_acquire_zenodo_corpus",
-        lambda *arguments: zenodo_calls.append(arguments),
-    )
+def test_download_command_names_one_corpus_or_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, TableStorage]] = []
+    monkeypatch.setattr(rawdb, "acquire", lambda name, tables: calls.append((name, tables)))
 
-    commands = {
-        "all": (None, "all.csv", PlainTables()),
-        "proteobench-entrapment": (
-            None,
-            "proteobench_entrapment.csv",
-            PlainTables(),
-            "proteobench_entrapment",
-        ),
-        "proteobench-plasma": (
-            None,
-            "proteobench_plasma.csv",
-            PlainTables(),
-            "proteobench_plasma",
-        ),
-        "smallest-per-module": ("smallest_per_module", "routine.csv", PlainTables()),
-        "smallest-per-software": ("smallest_per_software", "routine.csv", PlainTables()),
-        "smallest-per-software-version": (
-            "smallest_per_software_version",
-            "routine.csv",
-            PlainTables(),
-        ),
-    }
-    for command in commands:
-        rawdb.app(["corpus", command], exit_on_error=False, result_action="return_value")
-    assert calls == list(commands.values())
-    assert zenodo_calls == [(record.name, PlainTables()) for record in rawdb.ZENODO.records]
-
-    zenodo_calls.clear()
-    for record in rawdb.ZENODO.records:
-        rawdb.app(
-            ["corpus", record.name.replace("_", "-"), "--gzip"],
-            exit_on_error=False,
-            result_action="return_value",
-        )
-    assert zenodo_calls == [(record.name, GzipTables()) for record in rawdb.ZENODO.records]
-
-    calls.clear()
+    rawdb.app(["download", "all"], exit_on_error=False, result_action="return_value")
     rawdb.app(
-        ["corpus", "smallest-per-module", "--gzip"],
-        exit_on_error=False,
-        result_action="return_value",
+        ["download", "routine", "--no-gzip"], exit_on_error=False, result_action="return_value"
     )
-    assert calls == [("smallest_per_module", "routine.csv", GzipTables())]
+
+    assert calls == [("all", GzipTables()), ("routine", PlainTables())], "gzipped by default"
+
+    def refuse(_name: str, _tables: TableStorage) -> None:
+        raise ValueError("Unknown corpus 'x'")
+
+    monkeypatch.setattr(rawdb, "acquire", refuse)
+    with pytest.raises(SystemExit, match="Unknown corpus 'x'"):
+        rawdb.download("x")
 
 
-def test_acquire_corpus_materializes_the_selected_strategy(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+def test_the_download_help_lists_all_and_every_corpus_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store = Store(tmp_path / "test_data_download")
-    catalog_frame = rawdb._strategy_flags(_catalog_frame())
-    store.root.mkdir()
-    catalog_frame.to_csv(store.catalog_csv, index=False)
-    for row in catalog_frame.to_dict(orient="records"):
-        folder = store.submission_dir(row["repo_name"], row["intermediate_hash"])
-        folder.mkdir(parents=True)
-        (folder / "input_file.tsv").write_text("value\n", encoding="utf-8")
-        (folder / "param_0.txt").write_text("params", encoding="utf-8")
+    corpuses = tmp_path / "corpuses"
+    corpuses.mkdir()
+    (corpuses / "routine.csv").write_text("dataset,note\nRepo/a,\nRepo/b,\n", encoding="utf-8")
+    (corpuses / "problems.md").write_text("not a corpus", encoding="utf-8")
+    settings = StudioSettings(
+        test_data_root=tmp_path / "test_data_download", output_root=tmp_path / "out"
+    )
+    monkeypatch.setattr(rawdb, "load_settings", lambda: settings)
 
-    selected_hashes: list[str] = []
-
-    def download_selected(
-        _target: Store,
-        selected: pd.DataFrame,
-        _catalog: pd.DataFrame,
-        _tables: TableStorage,
-    ) -> None:
-        selected_hashes.extend(selected["intermediate_hash"].tolist())
-
-    def write_resources(_store: Path | None = None, **_kwargs: object) -> None:
-        pd.DataFrame([
-            {
-                "module": "dda_qexactive",
-                "fasta": "fasta/reference.fasta",
-            }
-        ]).to_csv(store.resources_csv, index=False)
-
-    monkeypatch.setattr(rawdb, "_store", lambda _root: store)
-    monkeypatch.setattr(rawdb, "catalog", lambda **_kwargs: None)
-    monkeypatch.setattr(rawdb, "_download", download_selected)
-    monkeypatch.setattr(rawdb, "resources", write_resources)
-    monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
-    workflow_table = tmp_path / "workflow_tables" / "workflow_proteobench.csv"
-    workflow_table.parent.mkdir()
-    workflow_table.write_text("module,fasta,level\ndda_qexactive,fasta/a.fasta,ion\n")
-
-    rawdb._acquire_corpus("smallest_per_module", "routine.csv", PlainTables())
-
-    assert workflow_table.read_text() == "module,fasta,level\ndda_qexactive,fasta/a.fasta,ion\n"
-    assert [path.name for path in workflow_table.parent.iterdir()] == [workflow_table.name]
-    assert selected_hashes == ["a", "e"]
-    written = pd.read_csv(tmp_path / "corpuses" / "routine.csv")
-    assert written["software_name"].tolist() == ["A", "C"]
-    assert json.loads((tmp_path / "corpuses.json").read_text(encoding="utf-8")) == {
-        "directlfq": "corpuses/directlfq.csv",
-        "proteobench": "corpuses/proteobench.csv",
-        "proteobench_entrapment": "corpuses/proteobench_entrapment.csv",
-        "proteobench_plasma": "corpuses/proteobench_plasma.csv",
-        "routine": "corpuses/routine.csv",
-    }
+    assert rawdb._download_help().splitlines()[-2:] == [
+        "- all: every ProteoBench module and Zenodo record",
+        "- routine: 2 datasets",
+    ]
 
 
-def test_acquiring_all_downloads_every_proteobench_module_and_keeps_local_zenodo(
+def test_downloading_all_fetches_every_module_and_zenodo_record_and_writes_no_corpus(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = Store(tmp_path / "test_data_download")
@@ -763,63 +652,47 @@ def test_acquiring_all_downloads_every_proteobench_module_and_keeps_local_zenodo
                 input="report.tsv",
                 files={"report.tsv": "report.gz"},
             ),
-            zenodo_fixtures.ZenodoDataset(
-                name="not-acquired",
-                module="directlfq",
-                software_name="DIA-NN",
-                input="report.tsv",
-                files={"report.tsv": "missing.gz"},
-            ),
         ),
     )
-    local = store.zenodo_dataset_dir(record.name, "local")
-    local.mkdir(parents=True)
-    (local / "report.tsv").write_text("value\n1\n")
     selected_modules: list[str] = []
     download = rawdb._download
 
-    def download_selected(
-        target: Store, selected: pd.DataFrame, catalog: pd.DataFrame, tables: TableStorage
-    ) -> None:
+    def download_selected(target: Store, selected: pd.DataFrame, tables: TableStorage) -> None:
         selected_modules.extend(selected["module"].tolist())
-        download(target, selected, catalog, tables)
+        download(target, selected, tables)
 
-    def no_zenodo_acquisition(*_args: object) -> None:
-        pytest.fail("acquiring all must not download missing Zenodo datasets")
+    acquired: list[tuple[str, list[str]]] = []
+
+    def acquire_zenodo(
+        _store: Store,
+        zenodo: zenodo_fixtures.ZenodoRecord,
+        _tables: TableStorage,
+        datasets: list[zenodo_fixtures.ZenodoDataset],
+    ) -> None:
+        acquired.append((zenodo.name, [dataset.name for dataset in datasets]))
 
     monkeypatch.setattr(
-        rawdb,
-        "ZENODO",
-        zenodo_fixtures.ZenodoConfig(
-            schema_version=1,
-            records=(record,),
-        ),
+        rawdb, "ZENODO", zenodo_fixtures.ZenodoConfig(schema_version=1, records=(record,))
     )
     monkeypatch.setattr(rawdb, "_store", lambda _root: store)
     monkeypatch.setattr(rawdb, "catalog", lambda **_kwargs: None)
     monkeypatch.setattr(rawdb, "_download", download_selected)
     monkeypatch.setattr(rawdb, "resources", lambda **_kwargs: None)
     monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
-    monkeypatch.setattr(zenodo_fixtures, "acquire", no_zenodo_acquisition)
+    monkeypatch.setattr(zenodo_fixtures, "acquire", acquire_zenodo)
 
-    rawdb._acquire_corpus(None, "all.csv", PlainTables())
+    rawdb.acquire("all", PlainTables())
 
     assert selected_modules == ["dda_qexactive", "dia_plasma", "entrapment_dia_astral"]
-    inventories = tmp_path / "corpuses"
-    all_rows = rawdb.read_rows(inventories / "all.csv")
-    assert {row["module"] for row in all_rows} == {
-        "dda_qexactive",
-        "dia_plasma",
-        "entrapment_dia_astral",
-        "directlfq",
-    }
-    assert len(all_rows) == 4
-    assert [row["module"] for row in rawdb.read_rows(inventories / "proteobench_plasma.csv")] == [
-        "dia_plasma"
-    ]
-    assert [
-        row["module"] for row in rawdb.read_rows(inventories / "proteobench_entrapment.csv")
-    ] == ["entrapment_dia_astral"]
+    assert acquired == [("directlfq", ["local"])]
+    statuses = {row["dataset"]: row["status"] for row in read_rows(store.downloads_csv)}
+    assert statuses == {
+        "dda_qexactive/b": "ok",
+        "dia_plasma/b": "ok",
+        "entrapment_dia_astral/b": "ok",
+        "zenodo/directlfq/local": "not_selected",
+    }, "the stub fetched nothing for Zenodo"
+    assert not (tmp_path / "corpuses").exists(), "the fixture never writes a corpus"
 
 
 def test_view_and_main_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -831,10 +704,23 @@ def test_view_and_main_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert served == [(Store(tmp_path.resolve()), "0.0.0.0", 1)]
 
     called: list[str] = []
+
+    class _App:
+        download = SimpleNamespace(help_epilogue="")
+
+        def __getitem__(self, name: str) -> SimpleNamespace:
+            return getattr(self, name)
+
+        def __call__(self) -> None:
+            called.append("app")
+
+    fake = _App()
     monkeypatch.setattr(rawdb, "_configure_logging", lambda: called.append("logging"))
-    monkeypatch.setattr(rawdb, "app", lambda: called.append("app"))
+    monkeypatch.setattr(rawdb, "_download_help", lambda: "names")
+    monkeypatch.setattr(rawdb, "app", fake)
     rawdb.main()
     assert called == ["logging", "app"]
+    assert fake.download.help_epilogue == "names"
 
 
 def test_clean_empties_the_store(tmp_path: Path) -> None:

@@ -252,15 +252,23 @@ def test_cli_uses_nested_view_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert events == ["stop", "serve", "stop"]
 
 
+def _corpus_files(workspace: Path, *names: str) -> None:
+    """Corpus files beside a store at ``workspace/store``."""
+    corpuses = workspace / "corpuses"
+    corpuses.mkdir()
+    for name in names:
+        (corpuses / f"{name}.csv").write_text("dataset,note\n", encoding="utf-8")
+
+
 def test_run_help_lists_configured_corpuses_and_workflows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    source = tmp_path / "corpuses.json"
-    source.write_text('{"all": "all.csv", "routine": "routine.csv"}\n', encoding="utf-8")
-    monkeypatch.setattr(cli, "config_path", lambda _root: source)
-    monkeypatch.setattr(cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path))
+    _corpus_files(tmp_path, "routine")
+    monkeypatch.setattr(
+        cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path / "store")
+    )
     monkeypatch.setattr(cli.run_app, "help_epilogue", cli._run_help())
 
     with pytest.raises(SystemExit) as stopped:
@@ -274,9 +282,12 @@ def test_run_help_lists_configured_corpuses_and_workflows(
     assert "Available workflows" in rendered
     for workflow in cli.available_workflows():
         assert workflow in rendered
-    for option in ("--workflow", "--format", "--cores", "--dry-run", "--force", "--output-root"):
+    assert "CORPUS" in rendered
+    assert "WORKFLOW" in rendered, "the workflow is the second positional argument"
+    for option in ("--format", "--cores", "--dry-run", "--force", "--output-root", "--strict"):
         assert option in rendered
     for option in (
+        "--workflow",
         "--corpus",
         "--data-root",
         "--workflow-table",
@@ -294,10 +305,10 @@ def test_clean_help_lists_configured_corpuses_and_workflows(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    source = tmp_path / "corpuses.json"
-    source.write_text('{"proteobench": "proteobench.csv"}\n', encoding="utf-8")
-    monkeypatch.setattr(cli, "config_path", lambda _root: source)
-    monkeypatch.setattr(cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path))
+    _corpus_files(tmp_path, "proteobench")
+    monkeypatch.setattr(
+        cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path / "store")
+    )
     monkeypatch.setattr(cli.app["clean"], "help_epilogue", cli._run_help())
 
     with pytest.raises(SystemExit) as stopped:
@@ -312,16 +323,18 @@ def test_clean_help_lists_configured_corpuses_and_workflows(
         assert workflow in rendered
 
 
-def test_run_help_reports_missing_corpus_config_and_workflows(
+def test_run_help_reports_an_invalid_corpus_file_and_workflows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = tmp_path / "missing.json"
-    monkeypatch.setattr(cli, "config_path", lambda _root: source)
-    monkeypatch.setattr(cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path))
+    _corpus_files(tmp_path, "all")
+    monkeypatch.setattr(
+        cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path / "store")
+    )
 
     rendered = cli._run_help()
-    assert rendered.startswith(f"Corpus config: {source}")
+    assert rendered.startswith(f"Corpus files: {tmp_path / 'corpuses'}")
+    assert "not 'all'" in rendered
     assert "Available workflows" in rendered
     assert "convert" in rendered
 
@@ -384,10 +397,10 @@ def test_run_selects_named_corpus_and_one_workflow(
     runs: list[tuple[str, cli.RunOptions]] = []
     monkeypatch.setattr(cli, "_run_corpus", lambda name, options: runs.append((name, options)))
 
-    arguments = ["--workflow", "aggregate", "--format", "parquet", "--cores", "3"]
+    arguments = ["aggregate", "--format", "parquet", "--cores", "3"]
     cli.app(["run", "routine", *arguments], exit_on_error=False, result_action="return_value")
     cli.app(
-        ["run", "all", "--workflow", "convert", "--format", "parquet", "--cores", "3"],
+        ["run", "all", "convert", "--format", "parquet", "--cores", "3"],
         exit_on_error=False,
         result_action="return_value",
     )
@@ -408,12 +421,12 @@ def test_run_reports_unknown_corpus_without_traceback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = tmp_path / "corpuses.json"
-    source.write_text('{"routine": "routine.csv"}\n', encoding="utf-8")
-    monkeypatch.setattr(cli, "config_path", lambda _root: source)
-    monkeypatch.setattr(cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path))
+    _corpus_files(tmp_path, "routine")
+    monkeypatch.setattr(
+        cli, "load_settings", lambda: SimpleNamespace(test_data_root=tmp_path / "store")
+    )
 
-    with pytest.raises(SystemExit, match="Unknown corpus 'missing'; available: routine"):
+    with pytest.raises(SystemExit, match="Unknown corpus 'missing'; available: all, routine"):
         cli.app(["run", "missing"], exit_on_error=False, result_action="return_value")
 
 

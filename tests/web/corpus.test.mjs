@@ -476,10 +476,10 @@ test('show more locates every intermediate and final representation inside the s
 
 test('status fractions preserve succeeded and failed proportions', () => {
   assert.deepEqual(statusFractions({ succeeded: 7, failed: 3 }, 10), {
-    succeeded: 0.7, failed: 0.3, running: 0, interrupted: 0
+    succeeded: 0.7, failed: 0.3, running: 0, interrupted: 0, not_downloaded: 0
   })
   assert.deepEqual(statusFractions({}, 0), {
-    succeeded: 0, failed: 0, running: 0, interrupted: 0
+    succeeded: 0, failed: 0, running: 0, interrupted: 0, not_downloaded: 0
   })
 })
 

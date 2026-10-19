@@ -32,9 +32,6 @@ export interface Submission {
   nr_feature: number | null
   is_temporary: boolean
   old_new: string
-  smallest_per_software_version: boolean
-  smallest_per_software: boolean
-  smallest_per_module: boolean
   status: string
   input_file: string
   size_mb: number | null

@@ -20,7 +20,7 @@ from cyclopts import App, Parameter
 from loguru import logger
 
 from apb_studio.corpus.clean import clear_results, delete_run, saved_run_roots
-from apb_studio.corpus.config import config_path, load_corpuses
+from apb_studio.corpus.config import ALL, corpus_dir, corpus_files
 from apb_studio.corpus.discovery import (
     SNAKEFILE,
     available_workflows,
@@ -35,6 +35,7 @@ from apb_studio.corpus.runs import (
     publish_catalog,
     select_datasets,
 )
+from apb_studio.corpus.selection import resolve_corpus
 from apb_studio.corpus.tables import load_corpus
 from apb_studio.corpus_viewer.routes import corpus_resolver
 from apb_studio.disk import atomic_write_text, interprocess_file_lock
@@ -104,7 +105,7 @@ class RunOptions:
 
     corpus: Annotated[
         Path | None,
-        Parameter(name="--corpus", help="Override the scope's corpus CSV"),
+        Parameter(name="--corpus", help="Override the named corpus file"),
     ] = None
     data_root: Annotated[
         Path | None,
@@ -124,7 +125,7 @@ class RunOptions:
     ] = None
     downloads: Annotated[
         Path | None,
-        Parameter(name="--downloads", help="Optional downloads.csv for input-size metadata"),
+        Parameter(name="--downloads", help="Override the fixture manifest downloads.csv"),
     ] = None
     apb_executable: Annotated[
         Path | None,
@@ -174,16 +175,16 @@ class RunOptions:
         bool,
         Parameter(name="--force", help="Delete previous results and rerun every dataset"),
     ] = True
+    strict: Annotated[
+        bool,
+        Parameter(name="--strict", help="Refuse to run when a selected dataset is not downloaded"),
+    ] = False
 
 
 @dataclass(frozen=True, slots=True)
 class ImmediateRunOptions:
     """Execution controls shared by every named-corpus run."""
 
-    workflow: Annotated[
-        str,
-        Parameter(name="--workflow", help="Packaged workflow name"),
-    ] = "convert"
     storage_format: Annotated[
         StorageFormat,
         Parameter(name="--format", help="Format passed through every APB step"),
@@ -204,34 +205,41 @@ class ImmediateRunOptions:
         Path | None,
         Parameter(name="--output-root", help="Override the configured APB Studio output root"),
     ] = None
+    strict: Annotated[
+        bool,
+        Parameter(name="--strict", help="Refuse to run when a selected dataset is not downloaded"),
+    ] = False
 
 
 DEFAULT_IMMEDIATE_OPTIONS = ImmediateRunOptions()
+DEFAULT_WORKFLOW = "convert"
 
 
 def _options_for_corpus(name: str, options: RunOptions, /) -> RunOptions:
-    """Resolve a configured inventory unless the caller supplied an explicit CSV."""
-    if options.corpus is not None:
+    """Resolve a named corpus file unless the caller supplied one, or named ``all``."""
+    if options.corpus is not None or name == ALL:
         return options
-    source = config_path(load_settings().test_data_root)
-    corpuses = load_corpuses(source)
-    if name not in corpuses:
+    directory = corpus_dir(load_settings().test_data_root)
+    files = corpus_files(directory)
+    if name not in files:
         raise ValueError(
-            f"Unknown corpus {name!r}; available: {', '.join(corpuses)}; config: {source}"
+            f"Unknown corpus {name!r}; available: {', '.join((ALL, *files))}; in {directory}"
         )
-    return replace(options, corpus=corpuses[name])
+    return replace(options, corpus=files[name])
 
 
 def _run_help() -> str:
-    """Describe configured corpuses and packaged workflows for command help."""
-    source = config_path(load_settings().test_data_root)
+    """Describe the corpus files and packaged workflows for command help."""
+    directory = corpus_dir(load_settings().test_data_root)
     try:
-        corpuses = load_corpuses(source)
+        files = corpus_files(directory)
     except (OSError, ValueError) as error:
-        corpus_section = f"Corpus config: {source}\n\n{error}"
+        corpus_section = f"Corpus files: {directory}\n\n{error}"
     else:
-        entries = "\n".join(f"- {name}: {path}" for name, path in corpuses.items())
-        corpus_section = f"Available corpuses from {source}:\n\n{entries}"
+        entries = "\n".join(f"- {name}: {path}" for name, path in files.items())
+        corpus_section = (
+            f"Available corpuses from {directory}:\n\n- {ALL}: every downloaded dataset\n{entries}"
+        )
     workflow_entries = "\n".join(f"- {name}" for name in available_workflows())
     return f"{corpus_section}\n\nAvailable workflows:\n\n{workflow_entries}"
 
@@ -239,9 +247,7 @@ def _run_help() -> str:
 def _execution_settings(corpus_name: str, options: RunOptions) -> ExecutionSettings:
     """Resolve source paths independently of the corpus CSV's own directory."""
     settings = load_settings()
-    if options.corpus is None:
-        raise ValueError("Corpus name must be resolved before execution")
-    corpus = options.corpus.resolve()
+    corpus = options.corpus.resolve() if options.corpus is not None else None
     data_root = (options.data_root or settings.test_data_root).resolve()
     tools = resolve_tools(options)
     table_name = workflow_table_name(options.workflow)
@@ -257,11 +263,7 @@ def _execution_settings(corpus_name: str, options: RunOptions) -> ExecutionSetti
         workflow=options.workflow,
         format=options.storage_format,
         workflow_table=table,
-        downloads=(
-            options.downloads.resolve()
-            if options.downloads is not None
-            else (data_root / "downloads.csv" if (data_root / "downloads.csv").is_file() else None)
-        ),
+        downloads=(options.downloads or Store(data_root).downloads_csv).resolve(),
         tools=tools,
         cores=options.cores,
         datasets=options.datasets.resolve() if options.datasets is not None else None,
@@ -275,8 +277,8 @@ def configure() -> None:
     location = settings_path()
     settings = load_settings()
     workspace = settings.test_data_root.parent
-    corpuses_source = config_path(settings.test_data_root)
-    corpuses = load_corpuses(corpuses_source)
+    corpuses_source = corpus_dir(settings.test_data_root)
+    corpuses = corpus_files(corpuses_source)
     document = {
         "settings_file": {
             "path": str(location),
@@ -284,7 +286,7 @@ def configure() -> None:
         },
         "settings": settings.model_dump(mode="json"),
         "run_defaults": {
-            "workflow": DEFAULT_IMMEDIATE_OPTIONS.workflow,
+            "workflow": DEFAULT_WORKFLOW,
             "format": DEFAULT_IMMEDIATE_OPTIONS.storage_format,
             "cores": DEFAULT_IMMEDIATE_OPTIONS.cores,
             "force": DEFAULT_IMMEDIATE_OPTIONS.force,
@@ -301,27 +303,29 @@ def configure() -> None:
 
 @run_app.default
 def run(
-    corpus: Annotated[str, Parameter(help="Configured corpus name")],
+    corpus: Annotated[str, Parameter(help="Corpus name: all, or a file in corpuses/")],
+    workflow: Annotated[str, Parameter(help="Packaged workflow name")] = DEFAULT_WORKFLOW,
     /,
     *,
     options: Annotated[ImmediateRunOptions, Parameter(name="*")] = DEFAULT_IMMEDIATE_OPTIONS,
 ) -> None:
     """Run one workflow over a named corpus."""
     try:
-        _run_corpus(corpus, _immediate_run_options(options))
+        _run_corpus(corpus, _immediate_run_options(workflow, options))
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from None
 
 
-def _immediate_run_options(options: ImmediateRunOptions, /) -> RunOptions:
+def _immediate_run_options(workflow: str, options: ImmediateRunOptions, /) -> RunOptions:
     """Expand the compact immediate-run surface into complete internal options."""
     return RunOptions(
-        workflow=options.workflow,
+        workflow=workflow,
         storage_format=options.storage_format,
         cores=options.cores,
         dry_run=options.dry_run,
         force=options.force,
         output_root=options.output_root,
+        strict=options.strict,
     )
 
 
@@ -329,14 +333,25 @@ def _run_corpus(name: str, options: RunOptions, /) -> None:
     """Prepare and schedule one configured corpus."""
     options = _options_for_corpus(name, options)
     execution = _execution_settings(name, options)
-    rows = select_datasets(load_corpus(execution.corpus), execution.datasets, execution.fixtures)
+    keys = load_corpus(execution.corpus) if execution.corpus is not None else None
+    selection = resolve_corpus(keys, execution.downloads)
+    missing = sorted(selection.not_downloaded)
+    if missing and options.strict:
+        raise ValueError(
+            f"{len(missing)} dataset(s) of {name} not downloaded: {', '.join(missing)}; "
+            f"run `fixture download {name}`"
+        )
+    rows = select_datasets(selection.datasets, execution.datasets, execution.fixtures)
     root, _ = prepare_run(
         rows,
         output_root=options.output_root or load_settings().output_root,
         settings=execution,
+        not_downloaded=selection.not_downloaded,
     )
     for row in rows:
         logger.info("{} / {}", row.module, dataset_alias(row))
+    if missing:
+        logger.warning("Not downloaded, reported as such: {}", ", ".join(missing))
     logger.info("Run files: {}", root)
     with interprocess_file_lock(root / "run.lock"):
         store = root.parents[2]

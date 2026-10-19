@@ -1,16 +1,17 @@
-"""Fixtures published as Zenodo records: what to fetch, where it lands, what it exports.
+"""Fixtures published as Zenodo records: what to fetch, where it lands, how it is listed.
 
-The records, their files and the corpus rows they become are facts about published data,
-so they live in ``config/zenodo.toml`` and are validated here. Every dataset is fetched
-with checksum verification and stored under its own folder, decompressed or, with
-``GzipTables``, with its tables gzipped, so a corpus row can name either one vendor table or
-the folder of related tables APB reads together.
+The records and their files are facts about published data, so they live in
+``config/zenodo.toml`` and are validated here. Every dataset is fetched with checksum
+verification and stored under its own folder, decompressed or, with ``GzipTables``, with its
+tables gzipped. Its manifest row names either one vendor table or the folder of related
+tables APB reads together.
 """
 
 from __future__ import annotations
 
 import hashlib
 import tomllib
+from collections.abc import Sequence
 from functools import lru_cache, partial
 from pathlib import Path
 from typing import Self
@@ -21,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apb_studio.corpus.config import CORPUS_NAME_PATTERN
 from apb_studio.fetch import REQUEST_TIMEOUT, fetch_file
-from apb_studio.fixture_store import Store
+from apb_studio.fixture_store import DOWNLOADED, Store, dataset_key
 from apb_studio.table_storage import TableStorage, find_stored_table
 
 PACKAGED = Path(__file__).parent / "config" / "zenodo.toml"
@@ -112,10 +113,18 @@ def packaged_config() -> ZenodoConfig:
     return load_config()
 
 
+def zenodo_key(record: ZenodoRecord, dataset: ZenodoDataset) -> str:
+    """The key a corpus file names one Zenodo dataset by: ``zenodo/<record>/<dataset>``."""
+    return dataset_key(f"{REPO_PREFIX}{record.name}", dataset.name)
+
+
 def dataset_input(store: Store, record: ZenodoRecord, dataset: ZenodoDataset) -> Path:
-    """Return what a corpus row points at: the named vendor table, or the dataset folder."""
+    """Return what a run reads: the stored vendor table, plain or gzipped, or the folder."""
     folder = store.zenodo_dataset_dir(record.name, dataset.name)
-    return folder if dataset.input is None else folder / dataset.input
+    if dataset.input is None:
+        return folder
+    table = find_stored_table(folder, dataset.input)
+    return folder / dataset.input if table is None else table.path
 
 
 def is_present(store: Store, record: ZenodoRecord, dataset: ZenodoDataset) -> bool:
@@ -148,15 +157,20 @@ def _record_files(record: ZenodoRecord) -> dict[str, tuple[str, str]]:
     return files
 
 
-def acquire(store: Store, record: ZenodoRecord, tables: TableStorage) -> None:
-    """Fetch every dataset of one record that is not yet completely stored.
+def acquire(
+    store: Store,
+    record: ZenodoRecord,
+    tables: TableStorage,
+    datasets: Sequence[ZenodoDataset] | None = None,
+) -> None:
+    """Fetch the named datasets of one record, or all of them, that are not yet stored.
 
     Each record file is checked against the record's MD5 before ``tables`` stores it, and a
     stored file is written under a temporary name first, so an interrupted run leaves no
     file that looks finished. The parameter file is never a table: APB reads it as text.
     """
     remote: dict[str, tuple[str, str]] | None = None
-    for dataset in record.datasets:
+    for dataset in record.datasets if datasets is None else datasets:
         if is_present(store, record, dataset):
             logger.info("[{}] already present: {}", record.name, dataset.name)
             continue
@@ -175,31 +189,10 @@ def acquire(store: Store, record: ZenodoRecord, tables: TableStorage) -> None:
         logger.info("[{}] stored {}", record.name, folder)
 
 
-def corpus_rows(store: Store, record: ZenodoRecord) -> list[dict[str, str]]:
-    """Return one corpus row per completely stored dataset of one record."""
-    rows: list[dict[str, str]] = []
-    for dataset in record.datasets:
-        if not is_present(store, record, dataset):
-            continue
-        folder = store.zenodo_dataset_dir(record.name, dataset.name)
-        rows.append({
-            "input_file": dataset_input(store, record, dataset).relative_to(store.root).as_posix(),
-            "vendor_parameter_file": (
-                (folder / dataset.parameters).relative_to(store.root).as_posix()
-                if dataset.parameters is not None
-                else ""
-            ),
-            "module": dataset.module,
-            "software_name": dataset.software_name,
-        })
-    return rows
-
-
 def _size(path: Path) -> int:
-    """Return a stored file's size, or the summed size of the files directly inside a folder."""
-    stored = find_stored_table(path.parent, path.name)
-    if stored is not None:
-        return stored.path.stat().st_size
+    """Return a file's size, or the summed size of the files directly inside a folder."""
+    if path.is_file():
+        return path.stat().st_size
     return sum(child.stat().st_size for child in path.iterdir() if child.is_file())
 
 
@@ -209,15 +202,23 @@ def download_rows(store: Store, config: ZenodoConfig) -> list[dict[str, str]]:
     for record in config.records:
         for dataset in record.datasets:
             present = is_present(store, record, dataset)
+            folder = store.zenodo_dataset_dir(record.name, dataset.name)
             source = dataset_input(store, record, dataset)
             rows.append({
+                "dataset": zenodo_key(record, dataset),
                 "module": dataset.module,
                 "repo_name": f"{REPO_PREFIX}{record.name}",
                 "intermediate_hash": dataset.name,
                 "software_name": dataset.software_name,
                 "software_version": dataset.software_version,
+                "dataset_dir": folder.relative_to(store.root).as_posix(),
                 "input_file_path": source.relative_to(store.root).as_posix() if present else "",
+                "vendor_parameter_file_path": (
+                    (folder / dataset.parameters).relative_to(store.root).as_posix()
+                    if present and dataset.parameters is not None
+                    else ""
+                ),
                 "input_file_size_bytes": str(_size(source)) if present else "",
-                "status": "ok" if present else "not_selected",
+                "status": DOWNLOADED if present else "not_selected",
             })
     return rows

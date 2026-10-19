@@ -15,18 +15,32 @@ RESOURCES_NAME = "resources.csv"
 INDEX_NAME = "index.json"
 SUMMARY_NAME = "summary.json"
 TABLE_NAMES = (CATALOG_NAME, DOWNLOADS_NAME, RESOURCES_NAME)
-# downloads.csv: one row per catalogued ProteoBench submission and per configured Zenodo
-# dataset, keyed by (repo_name, intermediate_hash).
+# downloads.csv, the fixture manifest: one row per catalogued ProteoBench submission and per
+# configured Zenodo dataset. ``dataset`` is ``<repo_name>/<intermediate_hash>``, the key a
+# corpus file lists. The paths are the stored files exactly, ``.gz`` included, so a corpus
+# never needs to know how the store keeps them; ``dataset_dir`` is where the dataset lives
+# whether or not it has been downloaded.
 DOWNLOAD_COLUMNS = (
+    "dataset",
     "module",
     "repo_name",
     "intermediate_hash",
     "software_name",
     "software_version",
+    "dataset_dir",
     "input_file_path",
+    "vendor_parameter_file_path",
     "input_file_size_bytes",
     "status",
 )
+DOWNLOADED = "ok"
+"""The manifest status of a dataset whose files are all stored."""
+
+
+def dataset_key(repo_name: str, intermediate_hash: str) -> str:
+    """The key a corpus file names one dataset by."""
+    return f"{repo_name}/{intermediate_hash}"
+
 
 # Where the viewer looks for one submission's summary, given its catalog row. The pattern
 # is published in ``index.json`` so the browser composes the URL and asks for the file:
@@ -42,7 +56,7 @@ class Store:
 
     @property
     def catalog_csv(self) -> Path:
-        """One row per ProteoBench submission, with the selection-strategy flags."""
+        """One row per ProteoBench submission."""
         return self.root / CATALOG_NAME
 
     @property
@@ -57,7 +71,7 @@ class Store:
 
     @property
     def downloads_csv(self) -> Path:
-        """What ``download`` found on disk for every catalogued submission."""
+        """The fixture manifest: what ``download`` found on disk for every known dataset."""
         return self.root / DOWNLOADS_NAME
 
     @property

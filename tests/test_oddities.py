@@ -84,6 +84,7 @@ def _report(steps: list[StepResult], status: StepStatus = "succeeded") -> Datase
         workflow="convert",
         format="hdf5",
         dataset=Dataset(
+            dataset="Repo/input",
             input_file="input.tsv",
             vendor_parameter_file="",
             module="dda",

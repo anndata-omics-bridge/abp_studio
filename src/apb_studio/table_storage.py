@@ -1,7 +1,8 @@
 """How the fixture store keeps vendor tables: as their tools wrote them, or gzipped.
 
-Writing is chosen once per acquisition (``fixture corpus ... --gzip``) and passed down as
-``PlainTables`` or ``GzipTables``, so download code never asks which mode it runs in. Reading
+Writing is chosen once per acquisition (``fixture download NAME``, gzipped unless
+``--no-gzip``) and passed down as ``PlainTables`` or ``GzipTables``, so download code never
+asks which mode it runs in. Reading
 needs no mode: a stored table's own ``.gz`` suffix says how to open it. Parameter files,
 summaries and every non-table file stay plain, because APB reads parameters as text.
 """
@@ -96,11 +97,6 @@ class PlainTable:
         """The file name the tool wrote."""
         return self.path.name
 
-    @property
-    def written_path(self) -> Path:
-        """The path the tool wrote, which corpus and download tables name."""
-        return self.path
-
     def open_text(self) -> TextIO:
         """Open the table as UTF-8 text, replacing undecodable bytes."""
         return self.path.open(encoding="utf-8", errors="replace", newline="")
@@ -116,11 +112,6 @@ class GzipTable:
     def name(self) -> str:
         """The file name the tool wrote, without ``.gz``."""
         return self.path.stem
-
-    @property
-    def written_path(self) -> Path:
-        """The path the tool wrote, without ``.gz``, which corpus and download tables name."""
-        return self.path.with_suffix("")
 
     def open_text(self) -> TextIO:
         """Open the decompressed table as UTF-8 text, replacing undecodable bytes."""

@@ -6,7 +6,7 @@ import gzip
 from pathlib import Path
 
 from apb_studio import proteobench_fixtures as rawdb
-from apb_studio.corpus.tables import resolve_file, resolve_secondary_inputs
+from apb_studio.corpus.tables import resolve_secondary_inputs
 from apb_studio.table_storage import (
     GzipTable,
     GzipTables,
@@ -94,15 +94,3 @@ def test_companions_of_a_gzipped_primary_table_are_found(tmp_path: Path) -> None
     found = resolve_secondary_inputs(tmp_path, "submissions/packed/input_file.tsv.gz")
 
     assert found == ((packed / "input_file_secondary.tsv.gz").resolve(),)
-
-
-def test_a_table_is_listed_by_the_name_its_tool_wrote_and_resolved_to_what_is_stored(
-    tmp_path: Path,
-) -> None:
-    packed = tmp_path / "submissions" / "input_file.tsv.gz"
-    packed.parent.mkdir()
-    packed.write_bytes(gzip.compress(b"a\n"))
-
-    assert stored_table(packed).written_path == packed.with_suffix("")
-    assert resolve_file(tmp_path, "submissions/input_file.tsv") == packed.resolve()
-    assert resolve_file(tmp_path, "submissions") == packed.parent.resolve()

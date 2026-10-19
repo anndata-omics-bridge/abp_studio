@@ -12,10 +12,7 @@ const CATALOG = [
     software_version: '0.9.11',
     nr_feature: '41314',
     is_temporary: 'False',
-    old_new: 'new',
-    smallest_per_software_version: 'True',
-    smallest_per_software: 'False',
-    smallest_per_module: 'True'
+    old_new: 'new'
   },
   { module: 'dia_aif', repo_name: 'Other', intermediate_hash: 'b', nr_feature: '' }
 ]
@@ -26,7 +23,6 @@ test('a catalogued submission with no summary reads as pending, not as zero', ()
   assert.equal(pending.size_mb, null)
   assert.equal(pending.rows, null)
   assert.equal(pending.nr_feature, null)
-  assert.equal(pending.smallest_per_module, false)
 })
 
 test("a submission's own summary is what says it is downloaded", () => {
@@ -51,7 +47,6 @@ test("a submission's own summary is what says it is downloaded", () => {
   assert.equal(row.input_file, 'submissions/Repo/a/input_file.csv')
   assert.equal(row.downloaded_at, '2026-09-04T21:30:00+00:00')
   assert.equal(row.downloaded_on, '2026-09-04', 'the day alone, for grouping')
-  assert.equal(row.smallest_per_software_version, true)
   assert.equal(row.is_temporary, false)
   assert.equal(missing.status, 'not downloaded')
 })

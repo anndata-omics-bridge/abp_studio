@@ -35,7 +35,11 @@ def _write_run(root: Path, corpus: str, status: str | None) -> Path:
 
 def _dataset(input_file: str) -> Dataset:
     return Dataset(
-        input_file=input_file, vendor_parameter_file="", module="test", software_name="Vendor"
+        dataset=f"Repo/{input_file}",
+        input_file=input_file,
+        vendor_parameter_file="",
+        module="test",
+        software_name="Vendor",
     )
 
 

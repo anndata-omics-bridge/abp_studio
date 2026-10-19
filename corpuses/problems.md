@@ -1,6 +1,6 @@
 # Problem corpus
 
-`problems.csv` collects the submissions that fail, or convert into questionable results, for a known reason; one row per submission. Run it with `uv run corpus run problems --workflow <name>`. Failures were confirmed on 8 October with `scripts/routine_corpuses.fish`, `scripts/export_corpuses.fish` and `aggregate`.
+`problems.csv` collects the submissions that fail, or convert into questionable results, for a known reason; one row per submission. Run it with `uv run corpus run problems <workflow>`. Failures were confirmed on 8 October with the routine and export runs and `aggregate`.
 
 ## Failing
 

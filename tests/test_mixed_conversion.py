@@ -18,6 +18,7 @@ from apb_studio.workflows.workflow_convert import steps as convert_steps
 
 def _dataset(input_file: str, parameters: str = "", software: str = "MaxQuant") -> Dataset:
     return Dataset(
+        dataset=f"zenodo/directlfq/{Path(input_file).stem}",
         input_file=input_file,
         vendor_parameter_file=parameters,
         module="directlfq",
@@ -122,7 +123,14 @@ def test_mixed_corpus_dependencies_track_provided_parameters_only(
     parameters = tmp_path / "params.xml"
     parameters.write_text("parameters", encoding="utf-8")
     corpus = tmp_path / "corpus.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [parameterized.model_dump(), parameter_free.model_dump()])
+    rows = [parameterized, parameter_free]
+    write_rows(corpus, CORPUS_COLUMNS, [{"dataset": row.dataset, "note": ""} for row in rows])
+    downloads = tmp_path / "downloads.csv"
+    write_rows(
+        downloads,
+        ["input_file_path", "input_file_size_bytes"],
+        [{"input_file_path": row.input_file, "input_file_size_bytes": "4"} for row in rows],
+    )
     monkeypatch.setattr(runs, "_tool_version", lambda _executable: "test 1.0")
     settings = ExecutionSettings(
         corpus_name="all",
@@ -131,6 +139,7 @@ def test_mixed_corpus_dependencies_track_provided_parameters_only(
         workflow=workflow,
         format="hdf5",
         workflow_table=None,
+        downloads=downloads,
         tools={"apb2": Path(sys.executable)},
         cores=1,
     )

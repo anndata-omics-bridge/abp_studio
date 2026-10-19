@@ -1,6 +1,6 @@
 /** Browser contracts for the persisted corpus records and APB representation v4. */
 export type StorageFormat = 'hdf5' | 'duckdb' | 'parquet'
-export type Status = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'interrupted'
+export type Status = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'interrupted' | 'not_downloaded'
 export type InputKind = 'file' | 'folder'
 export interface CsvRow { [field: string]: string }
 export type CsvRows = CsvRow[] & { columns?: string[] }

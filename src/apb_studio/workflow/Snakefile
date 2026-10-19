@@ -1,12 +1,11 @@
 """One complete linear Python workflow per dataset; JSON is the only rule output."""
 
-import subprocess
 from pathlib import Path
 
 from apb_studio.corpus import oddities
 from apb_studio.corpus.models import RunManifest
-from apb_studio.corpus.runs import command_for, dataset_dependencies, publish_index
-from apb_studio.corpus.tables import load_corpus
+from apb_studio.corpus.runs import command_for, dataset_job, publish_index
+from apb_studio.corpus.tables import load_datasets
 
 if not workflow.configfiles:
     raise ValueError("Pass the generated run.json using --configfile")
@@ -14,7 +13,8 @@ if not workflow.configfiles:
 ROOT = Path(workflow.configfiles[-1]).resolve().parent
 RUN = RunManifest.model_validate_json((ROOT / "run.json").read_text())
 BY_KEY = {Path(link.path).stem: link for link in RUN.reports}
-BY_INPUT = {row.input_file: row for row in load_corpus(ROOT / RUN.corpus)}
+BY_INPUT = {row.input_file: row for row in load_datasets(ROOT / RUN.corpus)}
+JOBS = {key: dataset_job(ROOT, RUN, BY_INPUT[link.input_file], link) for key, link in BY_KEY.items()}
 
 
 rule all:
@@ -25,9 +25,7 @@ rule all:
 
 rule dataset:
     input:
-        dependencies=lambda wc: dataset_dependencies(
-            ROOT, RUN, BY_INPUT[BY_KEY[wc.key].input_file], BY_KEY[wc.key]
-        )
+        dependencies=lambda wc: JOBS[wc.key].dependencies
     output:
         str(ROOT / "reports/{key}.json")
     params:
@@ -35,7 +33,7 @@ rule dataset:
         dataset=lambda wc: BY_INPUT[BY_KEY[wc.key].input_file].model_dump_json(),
         tool_versions=tuple(sorted(RUN.tool_versions.items())),
     run:
-        subprocess.run(params.command, check=True)
+        JOBS[wildcards.key].run()
 
 
 rule index:

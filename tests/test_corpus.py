@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,7 +14,7 @@ from pydantic import ValidationError
 
 from apb_studio.corpus import cli, discovery, runner, runs
 from apb_studio.corpus.clean import clear_results, delete_run
-from apb_studio.corpus.config import ensure_config, load_corpuses
+from apb_studio.corpus.config import corpus_files
 from apb_studio.corpus.discovery import (
     available_workflows,
     workflow_path,
@@ -40,20 +41,22 @@ from apb_studio.corpus.runs import (
     publish_index,
     select_datasets,
 )
+from apb_studio.corpus.selection import resolve_corpus
 from apb_studio.corpus.tables import (
     CORPUS_COLUMNS,
+    DATASET_COLUMNS,
     INPUT_METADATA_COLUMNS,
     join_input_metadata,
     join_workflow,
     load_corpus,
+    load_datasets,
     read_rows,
     resolve_file,
     resolve_secondary_inputs,
     write_rows,
 )
 from apb_studio.corpus.workflow_cli import WorkflowContext
-from apb_studio.corpus_export import export_corpus
-from apb_studio.fixture_store import Store
+from apb_studio.fixture_store import DOWNLOAD_COLUMNS
 from apb_studio.proteobench_config import packaged_config
 from apb_studio.settings import StudioSettings
 from apb_studio.workflows.workflow_aggregate import steps as aggregate_steps
@@ -87,10 +90,14 @@ from apb_studio.workflows.workflow_proteobench_run import (
     WORKFLOW_COLUMNS as PROTEOBENCH_RUN_COLUMNS,
 )
 from apb_studio.workflows.workflow_proteobench_run import steps as proteobench_run_steps
+from apb_studio.workflows.workflow_proteobench_run_vendor_cont import (
+    steps as proteobench_run_vendor_cont_steps,
+)
 
 
 def dataset() -> Dataset:
     return Dataset(
+        dataset="Repo/vendor",
         input_file="vendor.txt",
         vendor_parameter_file="params.txt",
         module="dia_aif",
@@ -98,11 +105,69 @@ def dataset() -> Dataset:
     )
 
 
+REPOSITORY = Path(__file__).parents[1]
+SEPARATELY_SCORED = frozenset({"dia_plasma", "entrapment_dia_astral"})
+"""Modules with their own scoring workflows rather than workflow_proteobench.csv."""
+
+
+def committed_corpus(name: str | None) -> list[Dataset]:
+    """A committed corpus, or ``all``, resolved through the local fixture manifest.
+
+    Committed corpus files list only keys, so checking a workflow table against their
+    modules and software needs the downloaded store; without it the check is skipped.
+    """
+    manifest = REPOSITORY / "test_data_download" / "downloads.csv"
+    if not manifest.is_file():
+        pytest.skip("needs the fixture manifest; run `fixture download all`")
+    keys = None if name is None else load_corpus(REPOSITORY / "corpuses" / f"{name}.csv")
+    return resolve_corpus(keys, manifest).datasets
+
+
+def write_corpus(path: Path, rows: Collection[Dataset]) -> Path:
+    """A hand-curated corpus file listing ``rows`` by key."""
+    write_rows(path, CORPUS_COLUMNS, [{"dataset": row.dataset, "note": ""} for row in rows])
+    return path
+
+
+def _size(manifest: Path, row: Dataset) -> str:
+    stored = manifest.parent / row.input_file
+    return str(stored.stat().st_size) if stored.is_file() else "1"
+
+
+def write_manifest(path: Path, rows: Collection[Dataset], missing: Collection[str] = ()) -> Path:
+    """A fixture manifest storing ``rows``; keys in ``missing`` are known but not downloaded."""
+    write_rows(
+        path,
+        DOWNLOAD_COLUMNS,
+        [
+            {
+                "dataset": row.dataset,
+                "module": row.module,
+                "repo_name": str(Path(row.dataset).parent),
+                "intermediate_hash": Path(row.dataset).name,
+                "software_name": row.software_name,
+                "software_version": "",
+                "dataset_dir": f"store/{row.dataset}",
+                "input_file_path": "" if row.dataset in missing else row.input_file,
+                "vendor_parameter_file_path": (
+                    "" if row.dataset in missing else row.vendor_parameter_file
+                ),
+                "input_file_size_bytes": "" if row.dataset in missing else _size(path, row),
+                "status": "not_selected" if row.dataset in missing else "ok",
+            }
+            for row in rows
+        ],
+    )
+    return path
+
+
 def test_csv_minimal_schema_and_explicit_joins(tmp_path: Path) -> None:
-    corpus = tmp_path / "corpus.csv"
+    corpus = write_corpus(tmp_path / "corpus.csv", [dataset()])
+    assert load_corpus(corpus) == ["Repo/vendor"]
+    resolved = tmp_path / "datasets.csv"
     row = dataset().model_dump()
-    write_rows(corpus, CORPUS_COLUMNS, [row])
-    assert load_corpus(corpus) == [dataset()]
+    write_rows(resolved, DATASET_COLUMNS, [row])
+    assert load_datasets(resolved) == [dataset()]
     table = tmp_path / "workflow_proteobench.csv"
     write_rows(table, ["module", "fasta"], [{"module": "dia_aif", "fasta": "ref.fasta"}])
     assert join_workflow(row, table, on=["module"])["fasta"] == "ref.fasta"
@@ -113,9 +178,12 @@ def test_csv_minimal_schema_and_explicit_joins(tmp_path: Path) -> None:
     write_rows(table, ["module", "fasta"], [{"module": "dia_aif", "fasta": "x"}] * 2)
     with pytest.raises(ValueError, match="Duplicate workflow"):
         join_workflow(row, table, on=["module"])
-    write_rows(corpus, CORPUS_COLUMNS, [row, row])
-    with pytest.raises(ValueError, match="Duplicate input_file"):
+    write_corpus(corpus, [dataset(), dataset()])
+    with pytest.raises(ValueError, match="Duplicate dataset"):
         load_corpus(corpus)
+    write_rows(resolved, DATASET_COLUMNS, [row, {**row, "dataset": "Repo/other"}])
+    with pytest.raises(ValueError, match="Duplicate input_file"):
+        load_datasets(resolved)
     corpus.write_text("input_file,status\nx,ok\n")
     with pytest.raises(ValueError, match="exactly"):
         load_corpus(corpus)
@@ -150,8 +218,7 @@ def test_a_dataset_without_parameters_refuses_parameter_workflows(
 ) -> None:
     row = Dataset.model_validate({**dataset().model_dump(), "vendor_parameter_file": ""})
     (tmp_path / row.input_file).write_text("data")
-    corpus = tmp_path / "corpus.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump()])
+    corpus = write_corpus(tmp_path / "corpus.csv", [row])
     workflows = tmp_path / "workflows"
     workflows.mkdir()
     (workflows / "__init__.py").write_text("")
@@ -165,6 +232,7 @@ def test_a_dataset_without_parameters_refuses_parameter_workflows(
         workflow="proteobench_run",
         format="hdf5",
         workflow_table=None,
+        downloads=write_manifest(tmp_path / "downloads.csv", [row]),
         tools={"apb2": Path(sys.executable)},
         cores=1,
     )
@@ -217,78 +285,6 @@ def test_download_sizes_join_only_selected_inputs_with_explicit_columns(tmp_path
     )
     with pytest.raises(ValueError, match="Duplicate download join key"):
         join_input_metadata([first], downloads)
-
-
-def test_export_reads_local_pairs_without_download_state(tmp_path: Path) -> None:
-    store = Store(tmp_path / "store")
-    folder = store.submission_dir("repo", "hash")
-    folder.mkdir(parents=True)
-    (folder / "input_file.txt").write_text("data")
-    (folder / "param_0..txt").write_text("params")
-    write_rows(
-        store.catalog_csv,
-        ["repo_name", "intermediate_hash", "module", "software_name"],
-        [
-            {
-                "repo_name": "repo",
-                "intermediate_hash": "hash",
-                "module": "dia_aif",
-                "software_name": "DIA-NN",
-            }
-        ],
-    )
-    store.downloads_csv.write_text("unreadable download history")
-    all_csv = tmp_path / "corpuses" / "all.csv"
-    corpus = export_corpus(store, all_csv, modules={"dia_aif"})
-    assert corpus == all_csv
-    assert load_corpus(corpus)[0].vendor_parameter_file.endswith("param_0..txt")
-    assert load_corpus(export_corpus(store, all_csv, modules={"entrapment_dia_astral"})) == []
-    (folder / "param_0.second").write_text("ambiguous")
-    assert load_corpus(export_corpus(store, all_csv, modules={"dia_aif"})) == []
-
-
-def test_export_corpus_filters_on_one_catalog_strategy(tmp_path: Path) -> None:
-    store = Store(tmp_path / "store")
-    rows = [
-        {
-            "repo_name": "repo",
-            "intermediate_hash": intermediate_hash,
-            "module": "dia_aif",
-            "software_name": software,
-            "smallest_per_module": selected,
-        }
-        for intermediate_hash, software, selected in (
-            ("first", "DIA-NN", "False"),
-            ("second", "Spectronaut", "True"),
-        )
-    ]
-    write_rows(store.catalog_csv, list(rows[0]), rows)
-    for row in rows:
-        folder = store.submission_dir(row["repo_name"], row["intermediate_hash"])
-        folder.mkdir(parents=True)
-        (folder / "input_file.txt").write_text("data", encoding="utf-8")
-        (folder / "param_0.txt").write_text("params", encoding="utf-8")
-
-    target = export_corpus(
-        store,
-        tmp_path / "corpuses" / "routine.csv",
-        modules={"dia_aif"},
-        selection_column="smallest_per_module",
-    )
-
-    assert [row.software_name for row in load_corpus(target)] == ["Spectronaut"]
-
-    rows_without_flag = [
-        {key: value for key, value in row.items() if key != "smallest_per_module"} for row in rows
-    ]
-    write_rows(store.catalog_csv, list(rows_without_flag[0]), rows_without_flag)
-    with pytest.raises(ValueError, match="has no selection column"):
-        export_corpus(store, target, modules={"dia_aif"}, selection_column="smallest_per_module")
-
-    invalid_rows = [{**row, "smallest_per_module": "maybe"} for row in rows]
-    write_rows(store.catalog_csv, list(invalid_rows[0]), invalid_rows)
-    with pytest.raises(ValueError, match="must contain only true/false"):
-        export_corpus(store, target, modules={"dia_aif"}, selection_column="smallest_per_module")
 
 
 def test_runner_streams_and_records_failure_then_skips(
@@ -446,21 +442,13 @@ def test_runner_records_present_output_when_later_publication_fails(tmp_path: Pa
 
 def test_run_snapshots_selected_download_sizes_without_changing_corpus(tmp_path: Path) -> None:
     first = dataset()
-    second = first.model_copy(update={"input_file": "other.txt"})
+    second = first.model_copy(update={"dataset": "Repo/other", "input_file": "other.txt"})
     for row, content in ((first, "data"), (second, "another")):
         (tmp_path / row.input_file).write_text(content)
     (tmp_path / first.vendor_parameter_file).write_text("parameters")
-    corpus = tmp_path / "corpuses" / "all.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [first.model_dump(), second.model_dump()])
-    downloads = tmp_path / "downloads.csv"
-    write_rows(
-        downloads,
-        ["input_file_path", "input_file_size_bytes"],
-        [
-            {"input_file_path": first.input_file, "input_file_size_bytes": "4"},
-            {"input_file_path": second.input_file, "input_file_size_bytes": "7"},
-        ],
-    )
+    corpus = tmp_path / "corpuses" / "routine.csv"
+    write_corpus(corpus, [first, second])
+    downloads = write_manifest(tmp_path / "downloads.csv", [first, second])
     settings = ExecutionSettings(
         corpus_name="routine",
         corpus=corpus,
@@ -476,7 +464,7 @@ def test_run_snapshots_selected_download_sizes_without_changing_corpus(tmp_path:
     root, manifest = prepare_run([second], output_root=tmp_path / "output", settings=settings)
 
     assert manifest.input_metadata == "input_metadata.csv"
-    assert load_corpus(root / manifest.corpus) == [second]
+    assert load_datasets(root / manifest.corpus) == [second]
     settings_json = json.loads((root / "execution_settings.json").read_text())
     assert settings_json["downloads"] == str(downloads)
     assert (root / manifest.input_metadata).read_text().splitlines() == [
@@ -490,8 +478,8 @@ def test_run_snapshots_and_index_validation(tmp_path: Path) -> None:
     row = dataset()
     (tmp_path / row.input_file).write_text("data")
     (tmp_path / row.vendor_parameter_file).write_text("parameters")
-    corpus = tmp_path / "corpuses" / "all.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump()])
+    corpus = tmp_path / "corpuses" / "routine.csv"
+    write_corpus(corpus, [row])
     settings = ExecutionSettings(
         corpus_name="routine",
         corpus=corpus,
@@ -499,6 +487,7 @@ def test_run_snapshots_and_index_validation(tmp_path: Path) -> None:
         workflow="convert",
         format="hdf5",
         workflow_table=None,
+        downloads=write_manifest(tmp_path / "downloads.csv", [row]),
         tools={"apb2": Path(sys.executable)},
         cores=1,
     )
@@ -531,7 +520,7 @@ def test_run_snapshots_and_index_validation(tmp_path: Path) -> None:
     saved = ExecutionSettings.model_validate_json((root / "execution_settings.json").read_text())
     assert saved.corpus == corpus
     assert saved.workflow_table is None
-    assert load_corpus(root / "corpus.csv") == [row]
+    assert load_corpus(root / "corpus.csv") == [row.dataset]
     with pytest.raises(FileNotFoundError):
         publish_index(root, manifest)
     report = DatasetReport(
@@ -571,7 +560,7 @@ def test_dependencies_track_shared_workflow_implementation(
     secondary.write_text("secondary")
     (tmp_path / row.vendor_parameter_file).write_text("parameters")
     corpus = tmp_path / "corpus.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump()])
+    write_corpus(corpus, [row])
     workflows = tmp_path / "workflows"
     workflows.mkdir()
     (workflows / "__init__.py").write_text("")
@@ -588,6 +577,7 @@ def test_dependencies_track_shared_workflow_implementation(
         workflow="convert",
         format="hdf5",
         workflow_table=None,
+        downloads=write_manifest(tmp_path / "downloads.csv", [row]),
         tools={"apb2": Path(sys.executable)},
         cores=1,
     )
@@ -611,7 +601,7 @@ def test_dependencies_track_editable_apb_source_without_importing_apb(
     (tmp_path / row.input_file).write_text("data")
     (tmp_path / row.vendor_parameter_file).write_text("parameters")
     corpus = tmp_path / "corpus.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump()])
+    write_corpus(corpus, [row])
     project = tmp_path / "editable-apb"
     package = project / "src" / "apb2"
     package.mkdir(parents=True)
@@ -635,6 +625,7 @@ def test_dependencies_track_editable_apb_source_without_importing_apb(
         workflow="convert",
         format="hdf5",
         workflow_table=None,
+        downloads=write_manifest(tmp_path / "downloads.csv", [row]),
         tools={"apb2": Path(sys.executable)},
         cores=1,
     )
@@ -732,6 +723,7 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "proteobench_plasma_run",
         "proteobench_pmultiqc",
         "proteobench_run",
+        "proteobench_run_vendor_cont",
     ]
     assert workflow_path("convert").name == "workflow_convert.py"
     assert workflow_path("convert_ion").name == "workflow_convert_ion.py"
@@ -748,58 +740,67 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         select_datasets([row], selection, 0)
 
 
-def test_named_corpuses_come_from_config(
+def test_named_corpuses_are_the_files_in_corpuses(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from apb_studio.corpus import cli
 
     test_data_root = tmp_path / "test_data_download"
-    source = tmp_path / "corpuses.json"
-    source.write_text(
-        json.dumps({"all": "inventories/everything.csv", "routine": "chosen.csv"}),
-        encoding="utf-8",
-    )
+    routine = write_corpus(tmp_path / "corpuses" / "routine.csv", [dataset()]).resolve()
     monkeypatch.setattr(
         cli,
         "load_settings",
         lambda: SimpleNamespace(test_data_root=test_data_root),
     )
 
-    assert cli._options_for_corpus("routine", cli.RunOptions()).corpus == tmp_path / "chosen.csv"
-    assert cli._options_for_corpus("all", cli.RunOptions()).corpus == (
-        tmp_path / "inventories" / "everything.csv"
-    )
+    assert cli._options_for_corpus("routine", cli.RunOptions()).corpus == routine
+    assert cli._options_for_corpus("all", cli.RunOptions()).corpus is None
     with pytest.raises(ValueError, match="available: all, routine"):
         cli._options_for_corpus("missing", cli.RunOptions())
     explicit = tmp_path / "chosen.csv"
     assert cli._options_for_corpus("missing", cli.RunOptions(corpus=explicit)).corpus == explicit
-    with pytest.raises(ValueError, match="must be resolved"):
-        cli._execution_settings("routine", cli.RunOptions())
+    assert corpus_files(tmp_path / "corpuses") == {"routine": routine}
+    write_corpus(tmp_path / "corpuses" / "all.csv", [dataset()])
+    with pytest.raises(ValueError, match="path-safe and not 'all'"):
+        corpus_files(tmp_path / "corpuses")
 
 
-def test_corpus_config_bootstrap_preserves_existing_config(tmp_path: Path) -> None:
-    source = tmp_path / "corpuses.json"
-    ensure_config(source)
-    assert load_corpuses(source) == {
-        "directlfq": tmp_path / "corpuses" / "directlfq.csv",
-        "proteobench": tmp_path / "corpuses" / "proteobench.csv",
-        "proteobench_entrapment": tmp_path / "corpuses" / "proteobench_entrapment.csv",
-        "proteobench_plasma": tmp_path / "corpuses" / "proteobench_plasma.csv",
-        "routine": tmp_path / "corpuses" / "routine.csv",
-    }
-    source.write_text('{"small": "small.csv"}\n', encoding="utf-8")
-    ensure_config(source)
-    assert load_corpuses(source) == {"small": tmp_path / "small.csv"}
-    source.write_text("[]\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="non-empty JSON object"):
-        load_corpuses(source)
-    source.write_text('{"broken": 1}\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="path-safe"):
-        load_corpuses(source)
-    source.write_text('{"../outside": "small.csv"}\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="path-safe"):
-        load_corpuses(source)
+def test_a_corpus_resolves_its_keys_through_the_fixture_manifest(tmp_path: Path) -> None:
+    stored = dataset()
+    absent = dataset().model_copy(update={"dataset": "Repo/absent", "input_file": "absent.txt"})
+    manifest = write_manifest(tmp_path / "downloads.csv", [stored, absent], missing={"Repo/absent"})
+
+    selection = resolve_corpus(["Repo/absent", "Repo/vendor"], manifest)
+
+    assert selection.datasets == [
+        absent.model_copy(update={"input_file": "store/Repo/absent", "vendor_parameter_file": ""}),
+        stored,
+    ]
+    assert selection.not_downloaded == {"Repo/absent"}
+    assert resolve_corpus(None, manifest).datasets == [stored], "all: every downloaded dataset"
+    with pytest.raises(ValueError, match=r"unknown to the fixture manifest .*Repo/typo"):
+        resolve_corpus(["Repo/typo"], manifest)
+    with pytest.raises(ValueError, match="No fixture manifest"):
+        resolve_corpus([], tmp_path / "elsewhere.csv")
+
+
+def test_strict_refuses_a_corpus_with_datasets_not_downloaded(tmp_path: Path) -> None:
+    from apb_studio.corpus import cli
+
+    absent = dataset()
+    options = cli.RunOptions(
+        corpus=write_corpus(tmp_path / "routine.csv", [absent]),
+        downloads=write_manifest(tmp_path / "downloads.csv", [absent], missing={absent.dataset}),
+        data_root=tmp_path,
+        output_root=tmp_path / "output",
+        apb_executable=Path(sys.executable),
+        strict=True,
+    )
+
+    with pytest.raises(ValueError, match=r"Repo/vendor; run `fixture download routine`"):
+        cli._run_corpus("routine", options)
+    assert not (tmp_path / "output").exists()
 
 
 @pytest.mark.parametrize(
@@ -865,7 +866,7 @@ def test_aggregate_table_covers_every_corpus_software_with_explicit_policy() -> 
     # Software whose every rule variant catalogues ion identification confidence.
     confidence_software = {"AlphaPept", "DIA-NN", "MaxQuant", "Spectronaut"}
 
-    for row in load_corpus(root / "corpuses" / "all.csv"):
+    for row in committed_corpus(None):
         workflow = join_workflow(row.model_dump(), table, on=("software_name",))
         assert workflow == {
             "software_name": row.software_name,
@@ -1033,7 +1034,7 @@ def test_no_param_workflow_does_not_depend_on_a_parameter_file(tmp_path: Path) -
     source = tmp_path / "vendor.txt"
     source.write_text("vendor input", encoding="utf-8")
     corpus = tmp_path / "corpus.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [dataset().model_dump()])
+    write_corpus(corpus, [dataset()])
     table = tmp_path / "workflow_no_param.tsv"
     table.write_text("software_name\tsoftware\nDIA-NN\tDIA-NN\n", encoding="utf-8")
     settings = ExecutionSettings(
@@ -1043,7 +1044,7 @@ def test_no_param_workflow_does_not_depend_on_a_parameter_file(tmp_path: Path) -
         workflow="convert_no_param",
         format="hdf5",
         workflow_table=table,
-        downloads=None,
+        downloads=write_manifest(tmp_path / "downloads.csv", [dataset()]),
         tools={"apb2": Path(sys.executable)},
         cores=1,
     )
@@ -1079,12 +1080,10 @@ def test_proteobench_plasma_workflow_exports_the_layer_its_table_names(tmp_path:
 def test_proteobench_plasma_table_covers_the_proteobench_plasma_corpus() -> None:
     root = Path(__file__).parents[1]
     table = root / "workflow_tables" / "workflow_proteobench_plasma.tsv"
-    rows = load_corpus(root / "corpuses" / "proteobench_plasma.csv")
+    rows = committed_corpus("proteobench_plasma")
 
     assert rows
     assert {row.module for row in rows} == {"dia_plasma"}
-    all_rows = {row.input_file: row for row in load_corpus(root / "corpuses" / "all.csv")}
-    assert all(all_rows[row.input_file] == row for row in rows)
     for row in rows:
         workflow = join_workflow(row.model_dump(), table, on=("module", "software_name"))
         assert tuple(workflow) == PROTEOBENCH_PLASMA_COLUMNS
@@ -1095,7 +1094,7 @@ def test_no_param_software_table_covers_proteobench_corpus() -> None:
     root = Path(__file__).parents[1]
     table = root / "workflow_tables" / "workflow_no_param.tsv"
 
-    for row in load_corpus(root / "corpuses" / "proteobench.csv"):
+    for row in committed_corpus("proteobench"):
         mapping = join_workflow(row.model_dump(), table, on=("software_name",))
         assert mapping["software"]
 
@@ -1165,18 +1164,32 @@ def test_convert_ion_workflow_selects_only_ion_and_keeps_timing_artifacts(
     assert step.outputs[2].path == context.output_dir / "converted.timings.json"
 
 
+def _good_bad_and_absent(data_root: Path) -> list[Dataset]:
+    """Two stored inputs, one the fake tool fails on, and one dataset never downloaded."""
+    data_root.mkdir()
+    (data_root / "params.txt").write_text("parameters")
+    rows = []
+    for name in ("good", "bad"):
+        (data_root / f"{name}.txt").write_text(name)
+        rows.append(
+            dataset().model_copy(update={"dataset": f"Repo/{name}", "input_file": f"{name}.txt"})
+        )
+    absent = dataset().model_copy(
+        update={"dataset": "Repo/absent", "input_file": "store/Repo/absent"}
+    )
+    rows.append(absent)
+    write_manifest(data_root / "downloads.csv", rows, missing={absent.dataset})
+    return rows
+
+
 def test_snakemake_settles_and_force_replaces_results(tmp_path: Path) -> None:
     """A tool failure is a completed result, including through the actual scheduler."""
     from apb_studio.corpus import cli
     from apb_studio.corpus.cli import RunOptions
 
     data_root = tmp_path / "vendor files"
-    data_root.mkdir()
-    (data_root / "params.txt").write_text("parameters")
-    rows = []
-    for name in ("good", "bad"):
-        (data_root / f"{name}.txt").write_text(name)
-        rows.append(dataset().model_copy(update={"input_file": f"{name}.txt"}))
+    rows = _good_bad_and_absent(data_root)
+    absent = rows[-1]
     executable = tmp_path / "fake apb"
     executable.write_text(
         f"#!{sys.executable}\n"
@@ -1198,7 +1211,7 @@ def test_snakemake_settles_and_force_replaces_results(tmp_path: Path) -> None:
     )
     executable.chmod(0o755)
     corpus = tmp_path / "corpuses" / "mixed.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump() for row in rows])
+    write_corpus(corpus, rows)
     settings = ExecutionSettings(
         corpus_name="routine",
         corpus=corpus,
@@ -1206,6 +1219,7 @@ def test_snakemake_settles_and_force_replaces_results(tmp_path: Path) -> None:
         workflow="convert",
         format="duckdb",
         workflow_table=None,
+        downloads=data_root / "downloads.csv",
         tools={"apb2": executable},
         cores=2,
     )
@@ -1213,6 +1227,7 @@ def test_snakemake_settles_and_force_replaces_results(tmp_path: Path) -> None:
         rows,
         output_root=tmp_path / "output",
         settings=settings,
+        not_downloaded=frozenset({absent.dataset}),
     )
 
     def invoke(*, cores: int = 2, dry_run: bool = False, force: bool = False) -> None:
@@ -1235,11 +1250,13 @@ def test_snakemake_settles_and_force_replaces_results(tmp_path: Path) -> None:
         DatasetReport.model_validate_json((root / link.path).read_text())
         for link in manifest.reports
     ]
-    assert [report.status for report in reports] == ["succeeded", "failed"]
+    assert [report.status for report in reports] == ["succeeded", "failed", "not_downloaded"]
     assert reports[0].steps[-1].outputs[0].format == "duckdb"
     assert [step.status for step in reports[1].steps] == ["failed"]
+    assert reports[2].steps == []
+    assert manifest.not_downloaded == [absent.dataset]
     index = json.loads((root / "corpus_index.json").read_text())
-    assert len(index["reports"]) == 2
+    assert len(index["reports"]) == 3
     assert all(not Path(link["path"]).is_absolute() for link in index["reports"])
     assert json.loads((root / "operation.json").read_text())["status"] == "succeeded"
     invoke(dry_run=True)
@@ -1271,9 +1288,9 @@ def test_snakemake_settles_and_force_replaces_results(tmp_path: Path) -> None:
 
 def test_stable_run_updates_source_and_selection_snapshots(tmp_path: Path) -> None:
     row = dataset()
-    other = row.model_copy(update={"input_file": "other.txt"})
-    corpus = tmp_path / "corpuses" / "all.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump(), other.model_dump()])
+    other = row.model_copy(update={"dataset": "Repo/other", "input_file": "other.txt"})
+    corpus = tmp_path / "corpuses" / "routine.csv"
+    write_corpus(corpus, [row, other])
     table = tmp_path / "workflow_tables" / "workflow_convert.csv"
     write_rows(
         table,
@@ -1287,12 +1304,13 @@ def test_stable_run_updates_source_and_selection_snapshots(tmp_path: Path) -> No
         workflow="convert",
         format="hdf5",
         workflow_table=table,
+        downloads=write_manifest(tmp_path / "downloads.csv", [row, other]),
         tools={"apb2": Path(sys.executable)},
         cores=2,
     )
     first, manifest = prepare_run([row], output_root=tmp_path / "output", settings=settings)
-    assert load_corpus(first / manifest.corpus) == [row]
-    assert load_corpus(first / "corpus.csv") == [row, other]
+    assert load_datasets(first / manifest.corpus) == [row]
+    assert load_corpus(first / "corpus.csv") == [row.dataset, other.dataset]
     assert (first / table.name).read_text() == table.read_text()
     assert (first / table.name).resolve() in runs.dataset_dependencies(
         first, manifest, row, manifest.reports[0]
@@ -1301,11 +1319,11 @@ def test_stable_run_updates_source_and_selection_snapshots(tmp_path: Path) -> No
     assert snapshot["corpus"] == str(corpus)
     assert snapshot["workflow_table"] == str(table)
     assert snapshot["data_root"] == str(tmp_path / "vendors")
-    write_rows(corpus, CORPUS_COLUMNS, [row.model_dump()])
+    write_corpus(corpus, [row])
     second, another = prepare_run([row], output_root=tmp_path / "output", settings=settings)
     assert another.created_at == manifest.created_at
     assert second == first
-    assert load_corpus(first / "corpus.csv") == [row]
+    assert load_corpus(first / "corpus.csv") == [row.dataset]
     write_record(first / "operation.json", Operation(status="succeeded"))
     publish_catalog(first.parents[2])
     catalog = json.loads((first.parents[2] / "index.json").read_text())
@@ -1329,28 +1347,9 @@ def test_configure_reports_files_and_settings_without_writing(
     settings_file.write_text(settings_source, encoding="utf-8")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    row = dataset().model_dump()
-    (workspace / "corpuses.json").write_text(
-        json.dumps({"all": "corpuses/all.csv", "routine": "corpuses/routine.csv"}),
-        encoding="utf-8",
-    )
-    write_rows(workspace / "corpuses" / "routine.csv", CORPUS_COLUMNS, [row])
-    write_rows(
-        workspace / "corpuses" / "all.csv",
-        CORPUS_COLUMNS,
-        [
-            row,
-            {
-                **row,
-                "input_file": "other.txt",
-            },
-        ],
-    )
-    write_rows(
-        settings.test_data_root / "downloads.csv",
-        ["input_file_path", "input_file_size_bytes"],
-        [{"input_file_path": "vendor.txt", "input_file_size_bytes": "42"}],
-    )
+    write_corpus(workspace / "corpuses" / "routine.csv", [dataset()])
+    write_corpus(workspace / "corpuses" / "problems.csv", [dataset()])
+    write_manifest(settings.test_data_root / "downloads.csv", [dataset()])
     monkeypatch.setattr(cli, "settings_path", lambda: settings_file)
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
 
@@ -1366,12 +1365,12 @@ def test_configure_reports_files_and_settings_without_writing(
         "force": True,
     }
     assert rendered["configuration_files"] == {
-        "corpuses": str(workspace / "corpuses.json"),
+        "corpuses": str(workspace / "corpuses"),
         "downloads": str(settings.test_data_root / "downloads.csv"),
         "workflow_tables": str(workspace / "workflow_tables"),
     }
     assert rendered["corpuses"] == {
-        "all": str(workspace / "corpuses" / "all.csv"),
+        "problems": str(workspace / "corpuses" / "problems.csv"),
         "routine": str(workspace / "corpuses" / "routine.csv"),
     }
     assert "routine_selection" not in rendered["configuration_files"]
@@ -1383,7 +1382,7 @@ def test_aggregate_configuration_discovers_its_exact_workflow_table(tmp_path: Pa
     from apb_studio.corpus import cli
 
     corpus = tmp_path / "corpuses" / "small.csv"
-    write_rows(corpus, CORPUS_COLUMNS, [dataset().model_dump()])
+    write_corpus(corpus, [dataset()])
     settings = cli._execution_settings(
         "routine",
         cli.RunOptions(
@@ -1480,6 +1479,22 @@ def test_one_call_proteobench_declares_every_input_of_the_single_command(tmp_pat
     scores = Path(planned[0].command[planned[0].command.index("--scores") + 1])
     assert scores == context.output_dir / "scores.json"
     assert Artifact(role="proteobench_scores", path=scores) in planned[0].outputs
+    assert "--contaminants" not in planned[0].command, "apb-proteobench's default, apb-fasta"
+
+
+def test_vendor_contaminant_run_differs_only_by_its_contaminant_source(tmp_path: Path) -> None:
+    context = proteobench_context(tmp_path)
+
+    (default,) = proteobench_run_steps(context)
+    (vendor,) = proteobench_run_vendor_cont_steps(context)
+
+    assert workflow_tools("proteobench_run_vendor_cont") == ("apb-proteobench",)
+    assert workflow_table_name("proteobench_run_vendor_cont") == "workflow_proteobench.csv"
+    assert vendor.command[vendor.command.index("--contaminants") + 1] == "vendor"
+    assert [part for part in vendor.command if part not in ("--contaminants", "vendor")] == (
+        default.command
+    )
+    assert vendor.outputs == default.outputs
 
 
 def test_proteobench_plasma_run_scores_the_layer_its_table_names_without_a_report(
@@ -1569,6 +1584,7 @@ def test_both_proteobench_workflows_read_one_shared_resource_table() -> None:
     assert workflow_table_name("proteobench") == "workflow_proteobench.csv"
     assert workflow_table_name("proteobench_pmultiqc") == "workflow_proteobench.csv"
     assert workflow_table_name("proteobench_run") == "workflow_proteobench.csv"
+    assert workflow_table_name("proteobench_run_vendor_cont") == "workflow_proteobench.csv"
     assert workflow_table_name("convert") == "workflow_convert.csv"
     assert workflow_table_name("convert_ion") == "workflow_convert_ion.csv"
 
@@ -1625,7 +1641,7 @@ def test_proteobench_table_covers_every_scoring_corpus_module() -> None:
     root = Path(__file__).parents[1]
     table = root / "workflow_tables" / "workflow_proteobench.csv"
 
-    for row in load_corpus(root / "corpuses" / "proteobench.csv"):
+    for row in committed_corpus("proteobench"):
         workflow = join_workflow(row.model_dump(), table, on=("module",))
         assert workflow["module"] == row.module
         assert workflow["fasta"].startswith("fasta/")
@@ -1640,7 +1656,9 @@ def test_proteobench_table_satisfies_every_proteobench_workflow() -> None:
         assert all(tuple(row) == columns for row in rows)
     config = packaged_config()
     assert sorted((row["module"], row["fasta"]) for row in rows) == sorted(
-        (module, f"fasta/{config.fasta_for_module(module)}") for module in config.modules_in("all")
+        (module, f"fasta/{config.fasta_for_module(module)}")
+        for module in config.module_names
+        if module not in SEPARATELY_SCORED
     ), "each quant module needs one row naming the FASTA config/proteobench.toml fetches"
 
 
@@ -1690,21 +1708,18 @@ def test_entrapment_table_names_what_acquisition_fetches() -> None:
     config = packaged_config()
 
     assert all(tuple(row) == PROTEOBENCH_ENTRAPMENT_COLUMNS for row in rows)
-    assert sorted(row["module"] for row in rows) == sorted(
-        config.modules_in("proteobench_entrapment")
-    )
+    assert [row["module"] for row in rows] == ["entrapment_dia_astral"]
     for row in rows:
         database = Path(config.fasta_for_module(row["module"])).with_suffix(".parquet")
         assert row["fasta"] == f"fasta/{database}", "the protein database acquisition writes"
 
 
 def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
-    root = Path(__file__).parents[1]
-    all_rows = load_corpus(root / "corpuses" / "all.csv")
-    proteobench_rows = load_corpus(root / "corpuses" / "proteobench.csv")
+    all_rows = committed_corpus(None)
+    proteobench_rows = committed_corpus("proteobench")
 
     assert len(proteobench_rows) == 197
-    quant_modules = packaged_config().modules_in("all")
+    quant_modules = set(packaged_config().module_names) - SEPARATELY_SCORED
     expected = {
         row.input_file: row
         for row in all_rows

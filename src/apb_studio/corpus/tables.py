@@ -9,9 +9,12 @@ from pathlib import Path
 
 from apb_studio.corpus.models import Dataset, InputMetadata
 from apb_studio.disk import atomic_write_text
-from apb_studio.table_storage import find_stored_table, stored_table
+from apb_studio.table_storage import stored_table
 
-CORPUS_COLUMNS = ("input_file", "vendor_parameter_file", "module", "software_name")
+CORPUS_COLUMNS = ("dataset", "note")
+"""A hand-curated corpus file: the dataset keys to run; ``note`` is for the reader only."""
+DATASET_COLUMNS = ("dataset", "input_file", "vendor_parameter_file", "module", "software_name")
+"""One resolved dataset, as a run snapshot and each workflow job read it."""
 INPUT_METADATA_COLUMNS = ("input_file", "input_file_size_bytes")
 DOWNLOAD_INPUT_COLUMN = "input_file_path"
 DOWNLOAD_SIZE_COLUMN = "input_file_size_bytes"
@@ -41,31 +44,42 @@ def write_rows(path: Path, columns: Sequence[str], rows: Sequence[Mapping[str, s
     atomic_write_text(path, stream.getvalue())
 
 
-def load_corpus(path: Path) -> list[Dataset]:
-    """Validate the exact corpus schema and unique input-file key."""
+def _require_header(path: Path, columns: Sequence[str]) -> None:
     with path.open(encoding="utf-8", newline="") as stream:
-        if next(csv.reader(stream), []) != list(CORPUS_COLUMNS):
-            raise ValueError(f"{path} must have exactly {','.join(CORPUS_COLUMNS)}")
-    datasets = [Dataset.model_validate(row) for row in read_rows(path)]
-    keys = [row.input_file for row in datasets]
+        if next(csv.reader(stream), []) != list(columns):
+            raise ValueError(f"{path} must have exactly {','.join(columns)}")
+
+
+def load_corpus(path: Path) -> list[str]:
+    """Return the dataset keys of one corpus file, in file order, each exactly once."""
+    _require_header(path, CORPUS_COLUMNS)
+    keys = [row["dataset"] for row in read_rows(path)]
+    if not all(keys):
+        raise ValueError(f"Empty dataset key in {path}")
     if len(set(keys)) != len(keys):
-        raise ValueError(f"Duplicate input_file in {path}")
+        raise ValueError(f"Duplicate dataset in {path}")
+    return keys
+
+
+def load_datasets(path: Path) -> list[Dataset]:
+    """Read resolved datasets, unique by key and by input file."""
+    _require_header(path, DATASET_COLUMNS)
+    datasets = [Dataset.model_validate(row) for row in read_rows(path)]
+    for field in ("dataset", "input_file"):
+        values = [getattr(row, field) for row in datasets]
+        if len(set(values)) != len(values):
+            raise ValueError(f"Duplicate {field} in {path}")
     return datasets
 
 
 def resolve_file(root: Path, value: str) -> Path:
-    """Resolve a file path within the explicit data root; presence is checked at execution.
-
-    Corpus tables name the file a tool wrote; a table the fixture store keeps gzipped
-    resolves to its ``.gz``.
-    """
+    """Resolve a file path within the explicit data root; presence is checked at execution."""
     if not value:
         raise ValueError(f"Empty file path below data root {root}")
     path = (root / value).resolve()
     if not path.is_relative_to(root.resolve()):
         raise ValueError(f"File path escapes data root: {value}")
-    stored = find_stored_table(path.parent, path.name)
-    return path if stored is None else stored.path
+    return path
 
 
 def resolve_secondary_inputs(root: Path, value: str) -> tuple[Path, ...]:

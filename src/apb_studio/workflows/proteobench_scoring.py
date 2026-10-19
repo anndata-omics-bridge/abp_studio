@@ -13,11 +13,16 @@ SCORES_NAME = "scores.json"
 
 
 def run_quant_step(
-    context: WorkflowContext, fasta: str, level: str | None = None, layer: str | None = None
+    context: WorkflowContext,
+    fasta: str,
+    level: str | None = None,
+    layer: str | None = None,
+    contaminants: str | None = None,
 ) -> StepSpec:
     """Score one module in memory; persist the selected APB2 format and the scores JSON.
 
-    ``level`` and ``layer`` default to every compatible level and the APB primary layer.
+    ``level`` and ``layer`` default to every compatible level and the APB primary layer;
+    ``contaminants`` to apb-proteobench's default source, apb-fasta.
     """
     dataset = context.dataset
     source = resolve_file(context.data_root, dataset.input_file)
@@ -32,6 +37,7 @@ def run_quant_step(
     selection = [
         *(["--level", level] if level is not None else []),
         *(["--layer", layer] if layer is not None else []),
+        *(["--contaminants", contaminants] if contaminants is not None else []),
     ]
     return StepSpec(
         name="run",

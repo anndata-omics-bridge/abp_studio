@@ -223,7 +223,8 @@ corpus-app {
   background: var(--warning);
 }
 
-.status-bar [data-status="interrupted"] {
+.status-bar [data-status="interrupted"],
+.status-bar [data-status="not_downloaded"] {
   background: var(--muted);
 }
 

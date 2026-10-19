@@ -1,13 +1,13 @@
 # External datasets
 
-Two Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. The Fixture Manager acquires each into its own corpus; `config/zenodo.toml` lists the records, their datasets and the files each dataset stores.
+Two Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. `config/zenodo.toml` lists the records, their datasets and the files each dataset stores; `fixture download all` acquires both, and `fixture download NAME` the datasets a corpus lists.
 
 | Record | Acquire | Corpus | Workflows |
 | --- | --- | --- | --- |
-| MaxQuant entrapment | `uv run fixture corpus maxquant-entrapment` | none; its folder is a `routine` row | any conversion workflow |
-| directLFQ mirror | `uv run fixture corpus directlfq` | `directlfq` | `convert_no_param` only: no parameter files |
+| MaxQuant entrapment | `uv run fixture download routine` | none; its folder is a `routine` dataset | any conversion workflow |
+| directLFQ mirror | `uv run fixture download directlfq` | `directlfq` | `convert_no_param` only: no parameter files |
 
-Each dataset lands MD5-verified in `test_data_download/zenodo/<record>/<dataset>/`, decompressed or, with `--gzip`, with its tables kept gzipped and only the parameter file decompressed, and gets a `downloads.csv` row keyed by `zenodo/<record>` and the dataset name. A dataset of related tables is one corpus row naming its folder; APB reads the tables inside by their MaxQuant names. A dataset without a parameter file has an empty `vendor_parameter_file`, which workflows reading vendor parameters refuse.
+Each dataset lands MD5-verified in `test_data_download/zenodo/<record>/<dataset>/`, with its tables kept gzipped and only the parameter file decompressed, or, with `--no-gzip`, fully decompressed, and gets a `downloads.csv` row keyed `zenodo/<record>/<dataset>`, the key a corpus file lists. A dataset of related tables names its folder as input; APB reads the tables inside by their MaxQuant names. A dataset without a parameter file has an empty `vendor_parameter_file_path`, which workflows reading vendor parameters refuse.
 
 ## ProteoBench entrapment DIA — MaxQuant 2.8.1.0 related tables
 

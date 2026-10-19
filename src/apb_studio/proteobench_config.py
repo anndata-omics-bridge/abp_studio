@@ -25,7 +25,6 @@ class ModuleConfig(BaseModel):
     name: str = Field(min_length=1, pattern=r"^[a-z0-9_]+$")
     repo_url: str = Field(min_length=1)
     fasta: str = Field(min_length=1)
-    corpus: str = Field(default="all", pattern=r"^[a-z][a-z0-9_-]*$")
 
     @property
     def repo_name(self) -> str:
@@ -62,15 +61,6 @@ class ProteoBenchConfig(BaseModel):
     def fasta_for_module(self, name: str) -> str:
         """Return the extracted FASTA file name one module uses."""
         return self.module(name).fasta
-
-    @property
-    def corpus_names(self) -> tuple[str, ...]:
-        """Return every corpus the modules are exported into, in file order."""
-        return tuple(dict.fromkeys(module.corpus for module in self.modules))
-
-    def modules_in(self, corpus: str) -> frozenset[str]:
-        """Return the names of the modules exported into one corpus."""
-        return frozenset(module.name for module in self.modules if module.corpus == corpus)
 
 
 def load_config(path: Path | None = None) -> ProteoBenchConfig:

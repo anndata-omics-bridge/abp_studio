@@ -1,6 +1,6 @@
 # Adding a workflow
 
-A workflow is one file, `src/apb_studio/workflows/workflow_<name>.py`. It owns the ordered tool calls and their file contract; nothing generic in Studio knows what those calls do. `--workflow <name>` then selects it, and no registry, YAML or `__init__` export needs editing.
+A workflow is one file, `src/apb_studio/workflows/workflow_<name>.py`. It owns the ordered tool calls and their file contract; nothing generic in Studio knows what those calls do. `corpus run CORPUS <name>` then selects it, and no registry, YAML or `__init__` export needs editing.
 
 ## What a workflow file declares
 
@@ -56,52 +56,62 @@ The version-1 JSON contract is `{"format":"apb-tool-timings","format_version":1,
 
 `convert_ion` is the single-tool ion-only counterpart to `convert`: it passes the positional `ion` level to APB2, writes one H5AD in HDF5 mode, and declares the same representation and timing sidecars. No resource CSV is needed. Unsupported ion inputs remain visible as failed datasets rather than being silently removed.
 
-A workflow needs no runner change to become runnable. `--workflow <name>` selects it; the file's presence in `workflows/` is the whole registration. `corpus workflows` lists what is packaged, with the tools and table each one declares.
+A workflow needs no runner change to become runnable. `corpus run CORPUS <name>` selects it; the file's presence in `workflows/` is the whole registration. `corpus workflows` lists what is packaged, with the tools and table each one declares.
 
 | Task | Command |
 | --- | --- |
 | See what is runnable | `uv run corpus workflows` |
 | Inspect configuration | `uv run corpus configure` |
-| Run one workflow, routine fixtures | `uv run corpus run routine --workflow <name>` |
-| Run full regular benchmark corpus | `uv run corpus run proteobench --workflow proteobench_pmultiqc` |
-| Confirm a run settled | `uv run corpus run routine --workflow <name> --no-force --dry-run` |
+| Run one workflow, routine fixtures | `uv run corpus run routine <name>` |
+| Run full regular benchmark corpus | `uv run corpus run proteobench proteobench_pmultiqc` |
+| Confirm a run settled | `uv run corpus run routine <name> --no-force --dry-run` |
 | Inspect results | `uv run corpus view` |
 | Stop the viewer | `uv run corpus view stop` |
 
-`corpus run --help` shows the configured corpus names and their resolved CSV targets, followed by the immediate controls:
+`corpus run --help` shows `all` and every corpus file in `corpuses/`, followed by the immediate controls:
 
-- `CORPUS` — required name from `corpuses.json`
-- `--workflow` — which workflow; default `convert`
+- `CORPUS` — required name: `all` or a corpus file stem
+- `WORKFLOW` — optional second name, which workflow; default `convert`
 - `--format` — requested backend: `hdf5`, `duckdb`, or `parquet`; native exports retain their target format
 - `--cores` — maximum parallel Snakemake jobs, default 3
 - `--force`/`--no-force` — force is enabled by default and replaces the selected combination’s previous generated results without archiving
 - `--dry-run` — nondestructive preview; combine with `--no-force` to confirm existing results are current
+- `--strict` — refuse to run when a selected dataset is not downloaded, instead of reporting it `not_downloaded`
 
-`corpus run <corpus>` resolves the name through the flat `corpuses.json` object and runs one selected workflow. Relative inventory paths are resolved beside that config file, so `routine`, `routine_pb`, and `proteobench` are ordinary editable mappings rather than CLI branches. The `proteobench` inventory contains regular ProteoBench quantification inputs eligible for `proteobench_pmultiqc`; The acquisition inventory `all.csv` additionally includes peptidoform, plasma, entrapment and acquired Zenodo inputs, but has no default execution alias or selected stress run. Corpus inventories and workflow resources remain configured in their CSV/text files, roots live in Studio's settings JSON, and required tools resolve from `PATH`. `corpus configure` reports each exact source file together with the values read from it, including configured corpuses and complete workflow-table rows; it never writes configuration.
+`corpus run <corpus>` reads `corpuses/<corpus>.csv`, resolves its keys through the fixture manifest, and runs one selected workflow, so `routine`, `routine_pb`, and `proteobench` are ordinary hand-curated files rather than CLI branches. The `proteobench` corpus contains regular ProteoBench quantification inputs eligible for `proteobench_pmultiqc`; `all` additionally covers peptidoform, plasma, entrapment and downloaded Zenodo inputs, but no script runs it. Corpus inventories and workflow resources remain configured in their CSV/text files, roots live in Studio's settings JSON, and required tools resolve from `PATH`. `corpus configure` reports each exact source file together with the values read from it, including configured corpuses and complete workflow-table rows; it never writes configuration.
 
 ## Selected combinations
 
-Three Fish scripts select 20 corpus/workflow/format combinations. The routine inventory contains 13 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains the 12 catalogued ProteoBench datasets from that small selection, excluding the Zenodo MaxQuant entrapment folder. It runs the three separate calls: conversion, FASTA peptide verification and ProteoBench quantification scoring. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+`scripts/corpus_runs.fish` lists, one plain command each, the 10 runs we publish, the 12 runs the manuscript figures read, and the two runs comparing contaminant sources against the upstream ProteoBench scores; nothing else. `proteobench_run_vendor_cont` is `proteobench_run` with `--contaminants vendor`: contaminants are the features whose protein IDs contain the module's `Cont_`, as ProteoBench decides, rather than apb-fasta's FASTA contaminants. Published runs go to `apb_publish_output`; the figure scripts in `apb_article/pipeline/scripts` read `apb_outputs`, so the overlapping runs appear in both sections. The routine inventory contains 13 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains its 12 catalogued ProteoBench datasets, excluding the Zenodo MaxQuant entrapment folder, and is scored with the single-call `proteobench_run`. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
 
-| Script | Corpus | Workflow | Format | Output |
+| Section | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
-| routine | routine | convert | hdf5 | `.h5mu` |
-| routine | routine | convert | duckdb | `.duckdb` |
-| routine | routine | convert | parquet | `.parquet` |
-| routine | routine_pb | proteobench | hdf5 | `.h5mu` |
-| routine | routine | aggregate_medpolish | hdf5 | `.h5mu` |
+| published | routine | convert | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
+| published | routine_pb | proteobench_run | hdf5 | `.h5mu` |
+| published | problems | convert | hdf5 | `.h5mu` |
+| published | problems | proteobench_run | hdf5 | `.h5mu` |
+| published, figures | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
+| published, figures | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
+| published, figures | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
+| published, figures | directlfq | convert_no_param | hdf5 | `.h5mu` |
+| figures | routine, problems | convert | hdf5 | `.h5mu` |
+| figures | proteobench | convert_ion | hdf5 | `.h5ad` |
+| figures | proteobench_f3 | convert_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
+| figures | directlfq_large_per_vendor | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
+| contaminant source | proteobench | proteobench_run, proteobench_run_vendor_cont | hdf5 | `.h5ad` |
+
+`scripts/integration_runs.fish` holds the rest, in the same form, into `apb_outputs`:
+
+| Section | Corpus | Workflow | Format | Output |
+| --- | --- | --- | --- | --- |
+| routine | routine | convert | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
+| routine | routine, problems | aggregate_medpolish | hdf5 | `.h5mu` |
+| routine | routine_pb, problems | proteobench_run | hdf5 | `.h5mu` |
 | routine | problems | convert | hdf5 | `.h5mu` |
-| routine | problems | proteobench | hdf5 | `.h5mu` |
-| routine | problems | aggregate_medpolish | hdf5 | `.h5mu` |
-| overview | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
-| overview | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
-| overview | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
-| overview | directlfq | convert_no_param | hdf5 | `.h5mu` |
-| export | routine | export_msmu | hdf5 | `.h5mu` |
-| export | routine | export_prolfqua | hdf5 | `.h5ad` |
-| export | routine | export_proteopy | hdf5 | `.h5ad` |
-| export | routine | export_alphapepttools | hdf5 | `.h5mu` |
-| export | problems | export_msmu, export_prolfqua, export_proteopy, export_alphapepttools | hdf5 | `.h5mu`, `.h5ad` |
+| exports | routine, problems | export_msmu, export_alphapepttools | hdf5 | `.h5mu` |
+| exports | routine, problems | export_prolfqua, export_proteopy | hdf5 | `.h5ad` |
+
+The three-call `proteobench` and the general `aggregate` are in neither file.
 
 The `problems` corpus collects submissions that fail, or convert with questionable results, for a known reason; `corpuses/problems.md` lists them. `export_msmu` passes `--fasta` with the FASTA the ProteoBench workflow table names for the dataset's module, so msmu's contaminant flags include the FASTA's; a module without a row exports with the vendor's own flags only.
 
@@ -109,22 +119,11 @@ APB Parquet outputs are directories. Export workflows write their target’s nat
 
 ProteoBench FASTA checks use the reference prescribed by the module, rather than a submitter-specific search database. Both [plasma](https://proteobench.readthedocs.io/en/latest/modules/dia/dia-ion-plasma/) and [ZenoTOF](https://proteobench.readthedocs.io/en/latest/modules/dia/dia-ion-zenotof/) prescribe `ProteoBenchFASTA_MixedSpecies_HYE.fasta` (verified 8 October 2026). File details displays the persisted FASTA source beside matched/unmatched counts and the I/L-equivalence setting. A mismatch can indicate a searched sequence variant, an absent reference accession, or strict I/L matching; it is not automatically a parser failure.
 
-Plasma acquisition is `fixture corpus proteobench-plasma`; its corpus and report workflow are both named `proteobench_plasma`. `proteobench_plasma_run` exposes the corresponding scores-only workflow. They use the same ProteoBench scoring engine as regular pMultiQC, but their workflow table selects unnormalised `Precursor_Quantity` for DIA-NN and FragPipe rather than primary X. The generic pMultiQC table has no `dia_plasma` row and always selects X, so those workflows are not interchangeable. DirectLFQ conversion uses producer hints because its fixtures have no vendor parameter files.
+Plasma acquisition is `fixture download proteobench_plasma`; its corpus and report workflow are both named `proteobench_plasma`. `proteobench_plasma_run` exposes the corresponding scores-only workflow. They use the same ProteoBench scoring engine as regular pMultiQC, but their workflow table selects unnormalised `Precursor_Quantity` for DIA-NN and FragPipe rather than primary X. The generic pMultiQC table has no `dia_plasma` row and always selects X, so those workflows are not interchangeable. DirectLFQ conversion uses producer hints because its fixtures have no vendor parameter files.
 
-```fish
-fish scripts/routine_corpuses.fish --plan        # print forced commands without changing files
-fish scripts/overview_corpuses.fish --plan       # print forced commands without changing files
-fish scripts/export_corpuses.fish               # force every native routine export
-fish scripts/routine_corpuses.fish              # replace previous results; keep no archives
-fish scripts/routine_corpuses.fish --dry-run    # preview forced jobs; preserve current results
-fish scripts/routine_corpuses.fish --plan --clean # preview deleting all formats per pair
-```
+Each line runs one combination with `--force`; APB failures remain dataset reports, so inspect their statuses even when scheduling succeeds. To check that a saved combination is settled, add `--no-force --dry-run` to its line. Export workflows need `apb-export` on PATH, for example after `uv tool install --editable ../apb-export`.
 
-All three scripts work from any directory, run combinations sequentially and always include `--force`. The routine and overview scripts accept `--cores N` (default 3) and `--plan`; the export script uses 3 cores. An explicit `--force` is harmless and redundant. `--clean` additionally deletes every saved format for each selected corpus/workflow pair, once before that pair’s first run. `--clean` and `--dry-run` cannot be combined; `--plan` previews either without executing it. Script dry-runs pass `--force --dry-run`, which previews a full rerun without deleting results. To check that a saved combination is settled, use the CLI directly with `--no-force --dry-run`. Command failures stop the script; APB failures remain dataset reports, so inspect their statuses even when scheduling succeeds.
-
-`export_corpuses.fish` resolves `apb-export` from PATH first, then the sibling `apb-export/.venv/bin/apb-export`, exposing that environment to its subprocesses.
-
-`aggregate_medpolish` needs no workflow table. It converts every compatible vendor level, then runs only `medpolish --layers primary` on the source level’s X, rolling up to the coarsest reachable identity. A new target uses the median-polish abundance as X; an existing target keeps its vendor X and gains the derived abundance as an additional layer. The general `aggregate` implementation remains available and reads its per-software method table to aggregate every quantitative layer with `--layers all`; it is deferred from the selected scripts. The all conversion stress run is retired; the remaining inventories cover 247 of its 250 input paths, excluding three WOMBAT peptidoform fixtures. Input overlap does not reproduce its full-level conversion coverage because the larger ProteoBench workflows persist ion-only results.
+`aggregate_medpolish` needs no workflow table. It converts every compatible vendor level, then runs only `medpolish --layers primary` on the source level’s X, rolling up to the coarsest reachable identity. A new target uses the median-polish abundance as X; an existing target keeps its vendor X and gains the derived abundance as an additional layer. The general `aggregate` implementation remains available and reads its per-software method table to aggregate every quantitative layer with `--layers all`; it is not in the run list. The all conversion stress run is retired; the remaining inventories cover 247 of its 250 input paths, excluding three WOMBAT peptidoform fixtures. Input overlap does not reproduce its full-level conversion coverage because the larger ProteoBench workflows persist ion-only results.
 
 ## Clearing results
 
@@ -143,9 +142,9 @@ The corpus viewer reads its selector from `index.json`, which runs rewrite when 
 
 ```bash
 make test                                         # unit gate
-uv run corpus run routine --workflow <name> --dry-run
-uv run corpus run routine --workflow <name>
-uv run corpus run routine --workflow <name> --no-force --dry-run  # confirm zero jobs
+uv run corpus run routine <name> --dry-run
+uv run corpus run routine <name>
+uv run corpus run routine <name> --no-force --dry-run  # confirm zero jobs
 uv run corpus view                                # start or restart the viewer
 uv run corpus view stop                           # stop the viewer
 ```

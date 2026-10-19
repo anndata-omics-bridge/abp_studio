@@ -269,7 +269,7 @@ export function counts (rows: DatasetRow[]): Record<string, number> {
 
 export function statusFractions (summary: Record<string, number>, total: number): Record<string, number> {
   return Object.fromEntries(
-    ['succeeded', 'failed', 'running', 'interrupted']
+    ['succeeded', 'failed', 'running', 'interrupted', 'not_downloaded']
       .map(status => [status, total ? (summary[status] ?? 0) / total : 0])
   )
 }

@@ -13,8 +13,7 @@ from pydantic import ValidationError
 
 from apb_studio import fetch, zenodo_fixtures
 from apb_studio import proteobench_fixtures as rawdb
-from apb_studio.corpus.config import DEFAULT_CORPUSES
-from apb_studio.corpus.tables import read_rows, resolve_file, write_rows
+from apb_studio.corpus.tables import CORPUS_COLUMNS, load_corpus, read_rows, write_rows
 from apb_studio.fixture_store import DOWNLOAD_COLUMNS, Store
 from apb_studio.table_storage import GzipTables, PlainTables
 from apb_studio.zenodo_fixtures import ZenodoConfig, ZenodoDataset, ZenodoRecord
@@ -116,10 +115,13 @@ def _serve(
 
 def test_packaged_records_keep_the_multifile_fixture_without_a_standalone_corpus_alias() -> None:
     config = zenodo_fixtures.packaged_config()
+    corpuses = Path(__file__).parents[1] / "corpuses"
 
-    assert "directlfq" in DEFAULT_CORPUSES
-    assert "maxquant_entrapment" not in DEFAULT_CORPUSES
+    assert (corpuses / "directlfq.csv").is_file()
+    assert not (corpuses / "maxquant_entrapment.csv").exists()
     entrapment = config.record("maxquant_entrapment").datasets[0]
+    key = zenodo_fixtures.zenodo_key(config.record("maxquant_entrapment"), entrapment)
+    assert key in load_corpus(corpuses / "routine.csv"), "its folder is a routine dataset"
     assert entrapment.input is None, "the related tables are read together as one folder"
     assert entrapment.parameters == "mqpar.xml"
 
@@ -176,15 +178,13 @@ def test_gzip_acquisition_keeps_tables_gzipped_and_parameters_plain(
     assert (related / "mqpar.xml").read_bytes() == b"<MaxQuantParams/>"
     assert gzip.decompress((single / "report.tsv.gz").read_bytes()) == REPORT
     assert all(zenodo_fixtures.is_present(store, record, dataset) for dataset in record.datasets)
-    rows = zenodo_fixtures.corpus_rows(store, record)
-    assert [row["input_file"] for row in rows] == [
-        related.relative_to(tmp_path).as_posix(),
-        (single / "report.tsv").relative_to(tmp_path).as_posix(),
-    ]
-    assert resolve_file(tmp_path, rows[1]["input_file"]) == (single / "report.tsv.gz").resolve()
-    assert (
-        rows[0]["vendor_parameter_file"] == (related / "mqpar.xml").relative_to(tmp_path).as_posix()
-    )
+    config = ZenodoConfig(schema_version=1, records=(record,))
+    rows = zenodo_fixtures.download_rows(store, config)
+    assert [row["input_file_path"] for row in rows] == [
+        "zenodo/testrecord/related",
+        "zenodo/testrecord/single/report.tsv.gz",
+    ], "the manifest names the stored file"
+    assert rows[0]["vendor_parameter_file_path"] == "zenodo/testrecord/related/mqpar.xml"
     asked.clear()
     zenodo_fixtures.acquire(store, record, GzipTables())
     assert asked == [], "a stored gzipped dataset is not fetched again"
@@ -204,99 +204,96 @@ def test_a_checksum_mismatch_is_refused(tmp_path: Path, monkeypatch: pytest.Monk
     assert not (single / "single__report.tsv.part").exists()
 
 
-def test_corpus_rows_name_a_folder_or_a_table(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    store = Store(root=tmp_path)
-    record = _record()
-    assert zenodo_fixtures.corpus_rows(store, record) == [], "nothing stored, nothing exported"
-    _serve(monkeypatch, _remote())
-    zenodo_fixtures.acquire(store, record, PlainTables())
-
-    assert zenodo_fixtures.corpus_rows(store, record) == [
-        {
-            "input_file": "zenodo/testrecord/related",
-            "vendor_parameter_file": "zenodo/testrecord/related/mqpar.xml",
-            "module": "some_module",
-            "software_name": "MaxQuant",
-        },
-        {
-            "input_file": "zenodo/testrecord/single/report.tsv",
-            "vendor_parameter_file": "",
-            "module": "some_module",
-            "software_name": "Spectronaut",
-        },
-    ]
-
-
-def test_downloads_keep_proteobench_rows_and_refresh_zenodo_rows(
+def test_manifest_rows_name_a_folder_or_a_table_once_stored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = Store(root=tmp_path)
     record = _record()
     config = ZenodoConfig(schema_version=1, records=(record,))
-    monkeypatch.setattr(rawdb, "ZENODO", config)
-    proteobench = dict.fromkeys(DOWNLOAD_COLUMNS, "") | {
-        "module": "dia_aif",
-        "repo_name": "Results_quant_ion_DIA_AIF",
-        "intermediate_hash": "abc",
-        "status": "not_on_server",
-    }
-    stale = dict.fromkeys(DOWNLOAD_COLUMNS, "") | {
-        "repo_name": "zenodo/retired",
-        "intermediate_hash": "gone",
-    }
-    write_rows(store.downloads_csv, DOWNLOAD_COLUMNS, [proteobench, stale])
+    before = zenodo_fixtures.download_rows(store, config)
+    assert [(row["dataset"], row["status"], row["input_file_path"]) for row in before] == [
+        ("zenodo/testrecord/related", "not_selected", ""),
+        ("zenodo/testrecord/single", "not_selected", ""),
+    ]
+    assert before[0]["dataset_dir"] == "zenodo/testrecord/related", "known before download"
     _serve(monkeypatch, _remote())
     zenodo_fixtures.acquire(store, record, PlainTables())
 
-    rawdb._write_zenodo_downloads(store)
+    rows = zenodo_fixtures.download_rows(store, config)
 
-    rows = read_rows(store.downloads_csv)
-    assert rows[0] == proteobench, "a ProteoBench status survives a Zenodo acquisition"
-    assert [(row["repo_name"], row["intermediate_hash"], row["status"]) for row in rows[1:]] == [
-        ("zenodo/testrecord", "related", "ok"),
-        ("zenodo/testrecord", "single", "ok"),
+    assert [tuple(row) for row in rows] == [DOWNLOAD_COLUMNS] * 2
+    assert [
+        (row["input_file_path"], row["vendor_parameter_file_path"], row["software_name"])
+        for row in rows
+    ] == [
+        ("zenodo/testrecord/related", "zenodo/testrecord/related/mqpar.xml", "MaxQuant"),
+        ("zenodo/testrecord/single/report.tsv", "", "Spectronaut"),
     ]
     related = store.zenodo_dataset_dir("testrecord", "related")
-    assert rows[1]["input_file_path"] == "zenodo/testrecord/related"
-    assert int(rows[1]["input_file_size_bytes"]) == sum(
+    assert int(rows[0]["input_file_size_bytes"]) == sum(
         path.stat().st_size for path in related.iterdir()
     )
 
 
-def test_acquiring_a_zenodo_record_refreshes_all_without_losing_proteobench_inputs(
+def test_download_fetches_exactly_what_a_corpus_lists_and_writes_no_corpus(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = Store(tmp_path / "test_data_download")
     record = _record()
     folder = store.submission_dir("Repo", "regular")
     folder.mkdir(parents=True)
-    (folder / "input_file.tsv").write_text("value\n1\n")
+    (folder / "input_file.tsv.gz").write_bytes(gzip.compress(b"value\n1\n"))
     (folder / "param_0..txt").write_text("params")
     write_rows(
         store.catalog_csv,
-        ["repo_name", "intermediate_hash", "module", "software_name"],
+        ["repo_name", "intermediate_hash", "module", "software_name", "software_version"],
         [
             {
                 "repo_name": "Repo",
-                "intermediate_hash": "regular",
+                "intermediate_hash": hash_,
                 "module": "dia_astral",
                 "software_name": "DIA-NN",
+                "software_version": "2.3",
             }
+            for hash_ in ("regular", "other")
+        ],
+    )
+    corpuses = tmp_path / "corpuses"
+    pair = corpuses / "pair.csv"
+    write_rows(
+        pair,
+        CORPUS_COLUMNS,
+        [
+            {"dataset": "Repo/regular", "note": "stored gzipped"},
+            {"dataset": "zenodo/testrecord/single", "note": ""},
         ],
     )
     monkeypatch.setattr(rawdb, "ZENODO", ZenodoConfig(schema_version=1, records=(record,)))
     monkeypatch.setattr(rawdb, "_store", lambda _root: store)
+    monkeypatch.setattr(rawdb, "catalog", lambda *, store: None)
+    monkeypatch.setattr(rawdb, "resources", lambda *, store: None)
     monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
     _serve(monkeypatch, _remote())
 
-    rawdb._acquire_zenodo_corpus(record.name, PlainTables())
+    rawdb.acquire("pair", PlainTables())
 
-    inventories = tmp_path / "corpuses"
-    assert len(read_rows(inventories / "testrecord.csv")) == 2
-    assert [row["input_file"] for row in read_rows(inventories / "all.csv")] == [
-        "submissions/Repo/regular/input_file.tsv",
-        "zenodo/testrecord/related",
-        "zenodo/testrecord/single/report.tsv",
-    ]
+    assert (store.zenodo_dataset_dir("testrecord", "single") / "report.tsv").is_file()
+    assert not store.zenodo_dataset_dir("testrecord", "related").exists(), "not listed"
+    rows = {row["dataset"]: row for row in read_rows(store.downloads_csv)}
+    assert {key: row["status"] for key, row in rows.items()} == {
+        "Repo/regular": "ok",
+        "Repo/other": "not_selected",
+        "zenodo/testrecord/related": "not_selected",
+        "zenodo/testrecord/single": "ok",
+    }
+    assert rows["Repo/regular"]["input_file_path"] == ("submissions/Repo/regular/input_file.tsv.gz")
+    assert rows["Repo/regular"]["vendor_parameter_file_path"] == (
+        "submissions/Repo/regular/param_0..txt"
+    )
+    assert sorted(path.name for path in corpuses.iterdir()) == ["pair.csv"]
+
+    write_rows(pair, CORPUS_COLUMNS, [{"dataset": "Repo/typo", "note": ""}])
+    with pytest.raises(ValueError, match=r"nothing provides: \['Repo/typo'\]"):
+        rawdb.acquire("pair", PlainTables())
+    with pytest.raises(ValueError, match="Unknown corpus 'absent'; available: all, pair"):
+        rawdb.acquire("absent", PlainTables())

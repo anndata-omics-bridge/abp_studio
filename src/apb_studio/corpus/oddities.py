@@ -34,6 +34,7 @@ class Metric(Record):
 
 
 class DatasetOddities(Record):
+    dataset: str
     input_file: str
     software_name: str
     module: str

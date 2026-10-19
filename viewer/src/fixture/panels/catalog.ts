@@ -4,14 +4,6 @@ import type { Submission, TableEvents, TableView } from '../types.js'
 // The submissions table: one row per catalogued submission, joined with what is
 // on disk. Pure: rows in, view descriptor out.
 
-// A tick has no width of its own, so the header decides: no fixed width here either.
-const FLAG: Partial<ColumnDefinition> = {
-  formatter: 'tickCross',
-  formatterParams: { allowEmpty: true },
-  hozAlign: 'center',
-  headerHozAlign: 'center'
-}
-
 function minutes (cell: CellComponent): string {
   const value: unknown = cell.getValue()
   return value ? String(value).slice(0, 16).replace('T', ' ') : ''
@@ -30,7 +22,6 @@ const FILTERED: Partial<ColumnDefinition> = {
   headerFilterParams: { valuesLookup: 'all', clearable: true },
   minWidth: 110
 }
-const SMALLEST = 'Smallest submission per '
 
 const COLUMNS: ColumnDefinition[] = [
   { title: 'Module', field: 'module', ...FILTERED },
@@ -43,9 +34,6 @@ const COLUMNS: ColumnDefinition[] = [
   { title: 'Cols', field: 'columns', hozAlign: 'right' },
   { title: 'Format', field: 'format' },
   { title: 'Downloaded', field: 'downloaded_at', formatter: minutes, headerTooltip: 'When the archive was extracted, UTC' },
-  { title: 'Min/ver', field: 'smallest_per_software_version', ...FLAG, headerTooltip: `${SMALLEST}software version` },
-  { title: 'Min/sw', field: 'smallest_per_software', ...FLAG, headerTooltip: `${SMALLEST}software` },
-  { title: 'Min/mod', field: 'smallest_per_module', ...FLAG, headerTooltip: `${SMALLEST}module` },
   // fitDataFill has to put leftover width somewhere; the hash is the one column that
   // can use it, so it takes the slack instead of Version taking it at random.
   { title: 'Hash', field: 'intermediate_hash', minWidth: 320, widthGrow: 3 }

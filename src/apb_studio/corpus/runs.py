@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
@@ -30,6 +31,7 @@ from apb_studio.corpus.models import (
 from apb_studio.corpus.oddities import publish_oddities
 from apb_studio.corpus.tables import (
     CORPUS_COLUMNS,
+    DATASET_COLUMNS,
     INPUT_METADATA_COLUMNS,
     join_input_metadata,
     resolve_file,
@@ -43,7 +45,7 @@ from apb_studio.disk import atomic_write_text
 def dataset_alias(row: Dataset) -> str:
     """Keep the established software/hash aliases used by named routine selections."""
     software = re.sub(r"[^a-z0-9]", "", row.software_name.lower())
-    return f"{software}-{Path(row.input_file).parent.name[:8]}"
+    return f"{software}-{Path(row.dataset).name[:8]}"
 
 
 def _named_datasets(rows: list[Dataset], selection: Path) -> list[Dataset]:
@@ -53,10 +55,11 @@ def _named_datasets(rows: list[Dataset], selection: Path) -> list[Dataset]:
     for row in rows:
         alias = dataset_alias(row)
         candidates = {
+            row.dataset,
             row.input_file,
             alias,
             f"{row.module}/{alias}",
-            f"{Path(row.input_file).parent.parent.name}/{alias}",
+            f"{Path(row.dataset).parent.name}/{alias}",
         }
         if names & candidates:
             selected.append(row)
@@ -178,8 +181,13 @@ def prepare_run(
     *,
     output_root: Path,
     settings: ExecutionSettings,
+    not_downloaded: frozenset[str] = frozenset(),
 ) -> tuple[Path, RunManifest]:
-    """Update one stable corpus/workflow/format workspace before scheduling."""
+    """Update one stable corpus/workflow/format workspace before scheduling.
+
+    ``not_downloaded`` names the selected datasets the fixture has not stored; they get a
+    report but no tool runs.
+    """
     source = workflow_path(settings.workflow)
     tools = dict(sorted(settings.tools.items()))
     tool_versions = {tool: _tool_version(path) for tool, path in tools.items()}
@@ -198,33 +206,38 @@ def prepare_run(
         if manifest_path.is_file()
         else utc_now()
     )
-    write_rows(root / "selected_corpus.csv", CORPUS_COLUMNS, [row.model_dump() for row in rows])
+    missing = sorted(row.dataset for row in rows if row.dataset in not_downloaded)
+    write_rows(root / "selected_corpus.csv", DATASET_COLUMNS, [row.model_dump() for row in rows])
     write_viewer_inputs(root, rows, settings.data_root)
-    metadata_file: str | None = None
-    if settings.downloads is not None:
-        metadata = join_input_metadata(rows, settings.downloads)
-        metadata_file = "input_metadata.csv"
-        write_rows(
-            root / metadata_file,
-            INPUT_METADATA_COLUMNS,
-            [
-                {
-                    "input_file": item.input_file,
-                    "input_file_size_bytes": str(item.input_file_size_bytes),
-                }
-                for item in metadata
-            ],
-        )
-    atomic_write_text(root / "corpus.csv", settings.corpus.read_text())
+    metadata = join_input_metadata(
+        [row for row in rows if row.dataset not in not_downloaded], settings.downloads
+    )
+    metadata_file = "input_metadata.csv"
+    write_rows(
+        root / metadata_file,
+        INPUT_METADATA_COLUMNS,
+        [
+            {
+                "input_file": item.input_file,
+                "input_file_size_bytes": str(item.input_file_size_bytes),
+            }
+            for item in metadata
+        ],
+    )
+    if settings.corpus is not None:
+        atomic_write_text(root / "corpus.csv", settings.corpus.read_text())
+    else:
+        listed = [{"dataset": row.dataset, "note": ""} for row in rows]
+        write_rows(root / "corpus.csv", CORPUS_COLUMNS, listed)
     write_record(root / "execution_settings.json", settings)
     atomic_write_text(root / source.name, source.read_text())
     if settings.workflow_table is not None:
         atomic_write_text(root / settings.workflow_table.name, settings.workflow_table.read_text())
     links = []
     for row in rows:
-        key = hashlib.sha256(row.input_file.encode()).hexdigest()[:16]
+        key = hashlib.sha256(row.dataset.encode()).hexdigest()[:16]
         dataset_file = f"datasets/{key}.csv"
-        write_rows(root / dataset_file, CORPUS_COLUMNS, [row.model_dump()])
+        write_rows(root / dataset_file, DATASET_COLUMNS, [row.model_dump()])
         links.append(
             ReportLink(
                 input_file=row.input_file,
@@ -253,6 +266,7 @@ def prepare_run(
         if settings.workflow_table is not None
         else None,
         reports=links,
+        not_downloaded=missing,
     )
     write_record(manifest_path, manifest)
     return root, manifest
@@ -285,6 +299,55 @@ def dataset_dependencies(
     if manifest.workflow_table is not None:
         dependencies.append(root / manifest.workflow_table)
     return tuple(dict.fromkeys(path.resolve() for path in dependencies))
+
+
+@dataclass(frozen=True, slots=True)
+class ToolJob:
+    """A downloaded dataset: its workflow runs and writes the report."""
+
+    dependencies: tuple[Path, ...]
+    command: list[str]
+
+    def run(self) -> None:
+        """Run the workflow CLI for this dataset."""
+        subprocess.run(self.command, check=True)
+
+
+@dataclass(frozen=True, slots=True)
+class NotDownloadedJob:
+    """A dataset the fixture has not stored: no tool runs, the report says so."""
+
+    dependencies: tuple[Path, ...]
+    report: Path
+    record: DatasetReport
+
+    def run(self) -> None:
+        """Write the final ``not_downloaded`` report."""
+        self.report.parent.mkdir(parents=True, exist_ok=True)
+        write_record(self.report, self.record.model_copy(update={"finished_at": utc_now()}))
+
+
+type DatasetJob = ToolJob | NotDownloadedJob
+
+
+def dataset_job(root: Path, manifest: RunManifest, row: Dataset, link: ReportLink) -> DatasetJob:
+    """Return what Snakemake does for one dataset, decided by the prepared run manifest."""
+    if row.dataset in manifest.not_downloaded:
+        return NotDownloadedJob(
+            dependencies=((root / link.dataset).resolve(),),
+            report=root / link.path,
+            record=DatasetReport(
+                run_id=manifest.run_id,
+                workflow=manifest.workflow,
+                format=manifest.format,
+                dataset=row,
+                status="not_downloaded",
+            ),
+        )
+    return ToolJob(
+        dependencies=dataset_dependencies(root, manifest, row, link),
+        command=command_for(root, manifest, link),
+    )
 
 
 def publish_catalog(root: Path) -> None:
@@ -333,7 +396,7 @@ def publish_index(root: Path, manifest: RunManifest) -> None:
             or report.workflow != manifest.workflow
             or report.format != manifest.format
             or report.dataset.input_file != link.input_file
-            or report.status not in {"succeeded", "failed"}
+            or report.status not in {"succeeded", "failed", "not_downloaded"}
             or any(step.status in {"pending", "running"} for step in report.steps)
         ):
             raise ValueError(f"Mismatched or unfinished dataset report: {link.path}")

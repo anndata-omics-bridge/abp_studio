@@ -331,7 +331,7 @@ export class CorpusApp extends LitElement {
 
   /** Persistent panel hosts keep tables and scientific renderers mounted while filters change. */
   render (): TemplateResult {
-    const statuses = ['succeeded', 'failed', 'running', 'interrupted']
+    const statuses = ['succeeded', 'failed', 'running', 'interrupted', 'not_downloaded']
     const runs = this.sortedRunChoices
     return html`
       <header class="bar">

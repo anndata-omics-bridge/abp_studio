@@ -20,7 +20,7 @@ from apb_studio.corpus.models import (
     StorageFormat,
 )
 from apb_studio.corpus.runner import run_steps
-from apb_studio.corpus.tables import load_corpus
+from apb_studio.corpus.tables import load_datasets
 
 
 class WorkflowContext(Record):
@@ -79,7 +79,7 @@ def main(name: str, steps: Callable[[WorkflowContext], list[StepSpec]]) -> None:
     parser.add_argument("--format", choices=("hdf5", "duckdb", "parquet"), default="hdf5")
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, _interrupt)
-    rows = [row for row in load_corpus(Path(args.corpus)) if row.input_file == args.input_file]
+    rows = [row for row in load_datasets(Path(args.corpus)) if row.input_file == args.input_file]
     if len(rows) != 1:
         raise ValueError(f"Expected one corpus row for {args.input_file}")
     context = WorkflowContext(
