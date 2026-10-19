@@ -7,7 +7,7 @@ Two Zenodo records hold search-engine outputs that ProteoBench submissions do no
 | MaxQuant entrapment | `uv run fixture corpus maxquant-entrapment` | none; its folder is a `routine` row | any conversion workflow |
 | directLFQ mirror | `uv run fixture corpus directlfq` | `directlfq` | `convert_no_param` only: no parameter files |
 
-Each dataset lands decompressed and MD5-verified in `test_data_download/zenodo/<record>/<dataset>/`, and gets a `downloads.csv` row keyed by `zenodo/<record>` and the dataset name. A dataset of related tables is one corpus row naming its folder; APB reads the tables inside by their MaxQuant names. A dataset without a parameter file has an empty `vendor_parameter_file`, which workflows reading vendor parameters refuse.
+Each dataset lands MD5-verified in `test_data_download/zenodo/<record>/<dataset>/`, decompressed or, with `--gzip`, with its tables kept gzipped and only the parameter file decompressed, and gets a `downloads.csv` row keyed by `zenodo/<record>` and the dataset name. A dataset of related tables is one corpus row naming its folder; APB reads the tables inside by their MaxQuant names. A dataset without a parameter file has an empty `vendor_parameter_file`, which workflows reading vendor parameters refuse.
 
 ## ProteoBench entrapment DIA — MaxQuant 2.8.1.0 related tables
 

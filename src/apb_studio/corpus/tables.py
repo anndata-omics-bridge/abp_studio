@@ -9,6 +9,7 @@ from pathlib import Path
 
 from apb_studio.corpus.models import Dataset, InputMetadata
 from apb_studio.disk import atomic_write_text
+from apb_studio.table_storage import find_stored_table, stored_table
 
 CORPUS_COLUMNS = ("input_file", "vendor_parameter_file", "module", "software_name")
 INPUT_METADATA_COLUMNS = ("input_file", "input_file_size_bytes")
@@ -53,13 +54,18 @@ def load_corpus(path: Path) -> list[Dataset]:
 
 
 def resolve_file(root: Path, value: str) -> Path:
-    """Resolve a file path within the explicit data root; presence is checked at execution."""
+    """Resolve a file path within the explicit data root; presence is checked at execution.
+
+    Corpus tables name the file a tool wrote; a table the fixture store keeps gzipped
+    resolves to its ``.gz``.
+    """
     if not value:
         raise ValueError(f"Empty file path below data root {root}")
     path = (root / value).resolve()
     if not path.is_relative_to(root.resolve()):
         raise ValueError(f"File path escapes data root: {value}")
-    return path
+    stored = find_stored_table(path.parent, path.name)
+    return path if stored is None else stored.path
 
 
 def resolve_secondary_inputs(root: Path, value: str) -> tuple[Path, ...]:
@@ -70,10 +76,9 @@ def resolve_secondary_inputs(root: Path, value: str) -> tuple[Path, ...]:
     primary = resolve_file(root, value)
     if primary.is_dir():
         return ()
+    stem = Path(stored_table(primary).name).stem
     return tuple(
-        path.resolve()
-        for path in sorted(primary.parent.glob(f"{primary.stem}_*"))
-        if path.is_file()
+        path.resolve() for path in sorted(primary.parent.glob(f"{stem}_*")) if path.is_file()
     )
 
 

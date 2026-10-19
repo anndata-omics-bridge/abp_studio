@@ -2,15 +2,14 @@
 
 The records, their files and the corpus rows they become are facts about published data,
 so they live in ``config/zenodo.toml`` and are validated here. Every dataset is fetched
-with checksum verification and stored decompressed under its own folder, so a corpus row
-can name either one vendor table or the folder of related tables APB reads together.
+with checksum verification and stored under its own folder, decompressed or, with
+``GzipTables``, with its tables gzipped, so a corpus row can name either one vendor table or
+the folder of related tables APB reads together.
 """
 
 from __future__ import annotations
 
-import gzip
 import hashlib
-import shutil
 import tomllib
 from functools import lru_cache, partial
 from pathlib import Path
@@ -23,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from apb_studio.corpus.config import CORPUS_NAME_PATTERN
 from apb_studio.fetch import REQUEST_TIMEOUT, fetch_file
 from apb_studio.fixture_store import Store
+from apb_studio.table_storage import TableStorage, find_stored_table
 
 PACKAGED = Path(__file__).parent / "config" / "zenodo.toml"
 RECORDS_API = "https://zenodo.org/api/records/"
@@ -115,13 +115,13 @@ def packaged_config() -> ZenodoConfig:
 def dataset_input(store: Store, record: ZenodoRecord, dataset: ZenodoDataset) -> Path:
     """Return what a corpus row points at: the named vendor table, or the dataset folder."""
     folder = store.zenodo_dataset_dir(record.name, dataset.name)
-    return folder / dataset.input if dataset.input is not None else folder
+    return folder if dataset.input is None else folder / dataset.input
 
 
 def is_present(store: Store, record: ZenodoRecord, dataset: ZenodoDataset) -> bool:
-    """Say whether every file of one dataset is stored."""
+    """Say whether every file of one dataset is stored, plain or gzipped."""
     folder = store.zenodo_dataset_dir(record.name, dataset.name)
-    return all((folder / stored).is_file() for stored in dataset.files)
+    return all(find_stored_table(folder, stored) is not None for stored in dataset.files)
 
 
 def _check_md5(expected: str, part: Path) -> None:
@@ -148,24 +148,12 @@ def _record_files(record: ZenodoRecord) -> dict[str, tuple[str, str]]:
     return files
 
 
-def _store_file(source: Path, target: Path) -> None:
-    """Decompress a gzipped download into place, or move a plain one; drop the download."""
-    if source.suffix != ".gz":
-        source.replace(target)
-        return
-    partial_target = target.with_name(target.name + ".part")
-    with gzip.open(source, "rb") as compressed, partial_target.open("wb") as plain:
-        shutil.copyfileobj(compressed, plain, 1 << 20)
-    partial_target.replace(target)
-    source.unlink()
-
-
-def acquire(store: Store, record: ZenodoRecord) -> None:
+def acquire(store: Store, record: ZenodoRecord, tables: TableStorage) -> None:
     """Fetch every dataset of one record that is not yet completely stored.
 
-    Each record file is checked against the record's MD5 before it is decompressed, and a
+    Each record file is checked against the record's MD5 before ``tables`` stores it, and a
     stored file is written under a temporary name first, so an interrupted run leaves no
-    file that looks finished.
+    file that looks finished. The parameter file is never a table: APB reads it as text.
     """
     remote: dict[str, tuple[str, str]] | None = None
     for dataset in record.datasets:
@@ -177,14 +165,13 @@ def acquire(store: Store, record: ZenodoRecord) -> None:
         folder = store.zenodo_dataset_dir(record.name, dataset.name)
         folder.mkdir(parents=True, exist_ok=True)
         for stored, key in dataset.files.items():
-            target = folder / stored
-            if target.is_file():
+            if find_stored_table(folder, stored) is not None:
                 continue
             if key not in remote:
                 raise ValueError(f"record {record.record_id} has no file {key!r}")
             url, md5 = remote[key]
             downloaded = fetch_file(url, folder / key, partial(_check_md5, md5))
-            _store_file(downloaded, target)
+            tables.keep_download(downloaded, folder / stored, table=stored != dataset.parameters)
         logger.info("[{}] stored {}", record.name, folder)
 
 
@@ -209,9 +196,10 @@ def corpus_rows(store: Store, record: ZenodoRecord) -> list[dict[str, str]]:
 
 
 def _size(path: Path) -> int:
-    """Return a file's size, or the summed size of the files directly inside a folder."""
-    if path.is_file():
-        return path.stat().st_size
+    """Return a stored file's size, or the summed size of the files directly inside a folder."""
+    stored = find_stored_table(path.parent, path.name)
+    if stored is not None:
+        return stored.path.stat().st_size
     return sum(child.stat().st_size for child in path.iterdir() if child.is_file())
 
 

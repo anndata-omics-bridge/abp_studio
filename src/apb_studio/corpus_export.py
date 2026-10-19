@@ -5,6 +5,7 @@ from pathlib import Path
 
 from apb_studio.corpus.tables import CORPUS_COLUMNS, read_rows, write_rows
 from apb_studio.fixture_store import Store
+from apb_studio.table_storage import stored_table
 from apb_studio.zenodo_fixtures import ZenodoRecord, corpus_rows
 
 
@@ -18,7 +19,7 @@ def _local_inputs(store: Store, entries: Iterable[dict[str, str]]) -> list[dict[
         if len(inputs) != 1 or len(parameters) > 1:
             continue
         rows.append({
-            "input_file": inputs[0].relative_to(store.root).as_posix(),
+            "input_file": stored_table(inputs[0]).written_path.relative_to(store.root).as_posix(),
             "vendor_parameter_file": (
                 parameters[0].relative_to(store.root).as_posix() if parameters else ""
             ),

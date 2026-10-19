@@ -25,6 +25,7 @@ from apb_studio import fetch, zenodo_fixtures
 from apb_studio import proteobench_fixtures as rawdb
 from apb_studio.fixture_store import Store
 from apb_studio.settings import StudioSettings
+from apb_studio.table_storage import GzipTables, PlainTables, TableStorage
 
 
 class _Response:
@@ -627,23 +628,56 @@ def test_corpus_commands_expose_all_selection_strategies(
         "_acquire_corpus",
         lambda *arguments: calls.append(arguments),
     )
+    zenodo_calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        rawdb,
+        "_acquire_zenodo_corpus",
+        lambda *arguments: zenodo_calls.append(arguments),
+    )
 
     commands = {
-        "all": (None, "all.csv"),
+        "all": (None, "all.csv", PlainTables()),
         "proteobench-entrapment": (
             None,
             "proteobench_entrapment.csv",
+            PlainTables(),
             "proteobench_entrapment",
         ),
-        "proteobench-plasma": (None, "proteobench_plasma.csv", "proteobench_plasma"),
-        "smallest-per-module": ("smallest_per_module", "routine.csv"),
-        "smallest-per-software": ("smallest_per_software", "routine.csv"),
-        "smallest-per-software-version": ("smallest_per_software_version", "routine.csv"),
+        "proteobench-plasma": (
+            None,
+            "proteobench_plasma.csv",
+            PlainTables(),
+            "proteobench_plasma",
+        ),
+        "smallest-per-module": ("smallest_per_module", "routine.csv", PlainTables()),
+        "smallest-per-software": ("smallest_per_software", "routine.csv", PlainTables()),
+        "smallest-per-software-version": (
+            "smallest_per_software_version",
+            "routine.csv",
+            PlainTables(),
+        ),
     }
     for command in commands:
         rawdb.app(["corpus", command], exit_on_error=False, result_action="return_value")
-
     assert calls == list(commands.values())
+    assert zenodo_calls == [(record.name, PlainTables()) for record in rawdb.ZENODO.records]
+
+    zenodo_calls.clear()
+    for record in rawdb.ZENODO.records:
+        rawdb.app(
+            ["corpus", record.name.replace("_", "-"), "--gzip"],
+            exit_on_error=False,
+            result_action="return_value",
+        )
+    assert zenodo_calls == [(record.name, GzipTables()) for record in rawdb.ZENODO.records]
+
+    calls.clear()
+    rawdb.app(
+        ["corpus", "smallest-per-module", "--gzip"],
+        exit_on_error=False,
+        result_action="return_value",
+    )
+    assert calls == [("smallest_per_module", "routine.csv", GzipTables())]
 
 
 def test_acquire_corpus_materializes_the_selected_strategy(
@@ -666,6 +700,7 @@ def test_acquire_corpus_materializes_the_selected_strategy(
         _target: Store,
         selected: pd.DataFrame,
         _catalog: pd.DataFrame,
+        _tables: TableStorage,
     ) -> None:
         selected_hashes.extend(selected["intermediate_hash"].tolist())
 
@@ -686,7 +721,7 @@ def test_acquire_corpus_materializes_the_selected_strategy(
     workflow_table.parent.mkdir()
     workflow_table.write_text("module,fasta,level\ndda_qexactive,fasta/a.fasta,ion\n")
 
-    rawdb._acquire_corpus("smallest_per_module", "routine.csv")
+    rawdb._acquire_corpus("smallest_per_module", "routine.csv", PlainTables())
 
     assert workflow_table.read_text() == "module,fasta,level\ndda_qexactive,fasta/a.fasta,ion\n"
     assert [path.name for path in workflow_table.parent.iterdir()] == [workflow_table.name]
@@ -743,9 +778,11 @@ def test_acquiring_all_downloads_every_proteobench_module_and_keeps_local_zenodo
     selected_modules: list[str] = []
     download = rawdb._download
 
-    def download_selected(target: Store, selected: pd.DataFrame, catalog: pd.DataFrame) -> None:
+    def download_selected(
+        target: Store, selected: pd.DataFrame, catalog: pd.DataFrame, tables: TableStorage
+    ) -> None:
         selected_modules.extend(selected["module"].tolist())
-        download(target, selected, catalog)
+        download(target, selected, catalog, tables)
 
     def no_zenodo_acquisition(*_args: object) -> None:
         pytest.fail("acquiring all must not download missing Zenodo datasets")
@@ -765,7 +802,7 @@ def test_acquiring_all_downloads_every_proteobench_module_and_keeps_local_zenodo
     monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
     monkeypatch.setattr(zenodo_fixtures, "acquire", no_zenodo_acquisition)
 
-    rawdb._acquire_corpus(None, "all.csv")
+    rawdb._acquire_corpus(None, "all.csv", PlainTables())
 
     assert selected_modules == ["dda_qexactive", "dia_plasma", "entrapment_dia_astral"]
     inventories = tmp_path / "corpuses"

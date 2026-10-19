@@ -14,8 +14,9 @@ from pydantic import ValidationError
 from apb_studio import fetch, zenodo_fixtures
 from apb_studio import proteobench_fixtures as rawdb
 from apb_studio.corpus.config import DEFAULT_CORPUSES
-from apb_studio.corpus.tables import read_rows, write_rows
+from apb_studio.corpus.tables import read_rows, resolve_file, write_rows
 from apb_studio.fixture_store import DOWNLOAD_COLUMNS, Store
+from apb_studio.table_storage import GzipTables, PlainTables
 from apb_studio.zenodo_fixtures import ZenodoConfig, ZenodoDataset, ZenodoRecord
 
 
@@ -139,7 +140,7 @@ def test_acquire_stores_verified_decompressed_files_once(
     record = _record()
     asked = _serve(monkeypatch, _remote())
 
-    zenodo_fixtures.acquire(store, record)
+    zenodo_fixtures.acquire(store, record, PlainTables())
 
     related = store.zenodo_dataset_dir("testrecord", "related")
     assert {path.name for path in related.iterdir()} == {
@@ -151,8 +152,42 @@ def test_acquire_stores_verified_decompressed_files_once(
     assert (store.zenodo_dataset_dir("testrecord", "single") / "report.tsv").read_bytes() == REPORT
 
     asked.clear()
-    zenodo_fixtures.acquire(store, record)
+    zenodo_fixtures.acquire(store, record, PlainTables())
     assert asked == [], "a stored dataset is not fetched again"
+
+
+def test_gzip_acquisition_keeps_tables_gzipped_and_parameters_plain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = Store(root=tmp_path)
+    record = _record()
+    asked = _serve(monkeypatch, _remote())
+
+    zenodo_fixtures.acquire(store, record, GzipTables())
+
+    related = store.zenodo_dataset_dir("testrecord", "related")
+    single = store.zenodo_dataset_dir("testrecord", "single")
+    assert {path.name for path in related.iterdir()} == {
+        "evidence.txt.gz",
+        "peptides.txt.gz",
+        "mqpar.xml",
+    }
+    assert gzip.decompress((related / "evidence.txt.gz").read_bytes()) == TABLES["evidence.txt"]
+    assert (related / "mqpar.xml").read_bytes() == b"<MaxQuantParams/>"
+    assert gzip.decompress((single / "report.tsv.gz").read_bytes()) == REPORT
+    assert all(zenodo_fixtures.is_present(store, record, dataset) for dataset in record.datasets)
+    rows = zenodo_fixtures.corpus_rows(store, record)
+    assert [row["input_file"] for row in rows] == [
+        related.relative_to(tmp_path).as_posix(),
+        (single / "report.tsv").relative_to(tmp_path).as_posix(),
+    ]
+    assert resolve_file(tmp_path, rows[1]["input_file"]) == (single / "report.tsv.gz").resolve()
+    assert (
+        rows[0]["vendor_parameter_file"] == (related / "mqpar.xml").relative_to(tmp_path).as_posix()
+    )
+    asked.clear()
+    zenodo_fixtures.acquire(store, record, GzipTables())
+    assert asked == [], "a stored gzipped dataset is not fetched again"
 
 
 def test_a_checksum_mismatch_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,7 +198,7 @@ def test_a_checksum_mismatch_is_refused(tmp_path: Path, monkeypatch: pytest.Monk
     _serve(monkeypatch, remote, md5s=md5s)
 
     with pytest.raises(OSError, match="MD5 mismatch"):
-        zenodo_fixtures.acquire(store, _record())
+        zenodo_fixtures.acquire(store, _record(), PlainTables())
     single = store.zenodo_dataset_dir("testrecord", "single")
     assert not (single / "report.tsv").exists(), "no unverified file looks finished"
     assert not (single / "single__report.tsv.part").exists()
@@ -176,7 +211,7 @@ def test_corpus_rows_name_a_folder_or_a_table(
     record = _record()
     assert zenodo_fixtures.corpus_rows(store, record) == [], "nothing stored, nothing exported"
     _serve(monkeypatch, _remote())
-    zenodo_fixtures.acquire(store, record)
+    zenodo_fixtures.acquire(store, record, PlainTables())
 
     assert zenodo_fixtures.corpus_rows(store, record) == [
         {
@@ -213,7 +248,7 @@ def test_downloads_keep_proteobench_rows_and_refresh_zenodo_rows(
     }
     write_rows(store.downloads_csv, DOWNLOAD_COLUMNS, [proteobench, stale])
     _serve(monkeypatch, _remote())
-    zenodo_fixtures.acquire(store, record)
+    zenodo_fixtures.acquire(store, record, PlainTables())
 
     rawdb._write_zenodo_downloads(store)
 
@@ -256,7 +291,7 @@ def test_acquiring_a_zenodo_record_refreshes_all_without_losing_proteobench_inpu
     monkeypatch.setattr(rawdb.fixture_index, "write", lambda _store: None)
     _serve(monkeypatch, _remote())
 
-    rawdb._acquire_zenodo_corpus(record.name)
+    rawdb._acquire_zenodo_corpus(record.name, PlainTables())
 
     inventories = tmp_path / "corpuses"
     assert len(read_rows(inventories / "testrecord.csv")) == 2

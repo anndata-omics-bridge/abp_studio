@@ -22,7 +22,7 @@ The corpus viewer is at http://127.0.0.1:8766/. `uv run corpus view` starts it o
 
 ## Inputs
 
-The `fixture` entry point owns acquisition, corpus construction, and the fixture viewer. `fixture corpus all` downloads every catalogued ProteoBench submission, including plasma and entrapment, and publishes `all.csv` with every acquired ProteoBench and configured Zenodo dataset. The bounded alternatives download the smallest submission by feature count for each module, module/software pair, or module/software/version tuple and write that selection to `routine.csv`:
+The `fixture` entry point owns acquisition, corpus construction, and the fixture viewer. `fixture corpus all` downloads every catalogued ProteoBench submission, including plasma and entrapment, plus every configured Zenodo record, and publishes `all.csv` with every acquired ProteoBench and configured Zenodo dataset. The bounded alternatives download the smallest submission by feature count for each module, module/software pair, or module/software/version tuple and write that selection to `routine.csv`:
 
 ```bash
 uv run fixture corpus all
@@ -35,6 +35,8 @@ uv run fixture corpus proteobench-plasma
 uv run fixture corpus proteobench-entrapment
 uv run fixture view
 ```
+
+Every `fixture corpus` command and `fixture download` accept `--gzip`: text vendor tables are then stored gzipped (`input_file.tsv.gz`, `evidence.txt.gz`), roughly a third of their plain size, while parameter files, summaries and Parquet tables stay as written. apb2 reads either form, so a gzipped store needs its own `test_data_root` in the settings JSON; the corpus CSVs it writes name the `.gz` files. Recorded input sizes are then the compressed sizes.
 
 `maxquant-entrapment` and `directlfq` download the Zenodo records described in [docs/datasets.md](docs/datasets.md), write their source inventories, and refresh `all.csv`. MaxQuant entrapment has no standalone execution-corpus alias; its multifile fixture remains in routine and the acquisition inventory.
 

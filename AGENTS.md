@@ -24,8 +24,9 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 | Task | Command |
 | --- | --- |
 | Install | `uv sync --frozen --extra dev --group docs` |
-| Acquire all ProteoBench fixtures; publish all acquired inputs | `uv run fixture corpus all` |
+| Acquire all ProteoBench fixtures and Zenodo records; publish all acquired inputs | `uv run fixture corpus all` |
 | Acquire routine corpus | `uv run fixture corpus smallest-per-module` |
+| Acquire with gzipped text tables | add `--gzip` to any `fixture corpus` command |
 | Acquire ProteoBench entrapment corpus | `uv run fixture corpus proteobench-entrapment` |
 | Acquire plasma corpus | `uv run fixture corpus proteobench-plasma` |
 | Acquire Zenodo MaxQuant entrapment corpus | `uv run fixture corpus maxquant-entrapment` |

@@ -22,13 +22,13 @@ from contextlib import chdir
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
 import pandas as pd
 import pyarrow.parquet as pq
 import requests
 from bs4 import BeautifulSoup
-from cyclopts import App
+from cyclopts import App, Parameter
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -42,6 +42,7 @@ from apb_studio.fixture_store import DOWNLOAD_COLUMNS, INDEX_NAME, TABLE_NAMES, 
 from apb_studio.fixture_viewer.server import run as serve_store
 from apb_studio.proteobench_config import packaged_config
 from apb_studio.settings import load_settings
+from apb_studio.table_storage import TableStorage, stored_table, tables_for
 
 # The modules, their results repositories, their settings URLs and the reference FASTAs are
 # ProteoBench's facts and live in config/proteobench.toml; see proteobench_config.py.
@@ -416,7 +417,9 @@ def _write_downloads(target: Store, catalog_df: pd.DataFrame, requested: pd.Data
         inputs = sorted(extract_dir.glob("input_file.*")) if extract_dir.is_dir() else []
         if inputs:
             record |= {
-                "input_file_path": inputs[0].relative_to(target.root).as_posix(),
+                "input_file_path": (
+                    stored_table(inputs[0]).written_path.relative_to(target.root).as_posix()
+                ),
                 "input_file_size_bytes": inputs[0].stat().st_size,
                 "status": "ok",
             }
@@ -446,7 +449,9 @@ def _write_downloads(target: Store, catalog_df: pd.DataFrame, requested: pd.Data
     logger.info("written to {}", target.downloads_csv)
 
 
-def _download(target: Store, selected: pd.DataFrame, catalog_df: pd.DataFrame) -> None:
+def _download(
+    target: Store, selected: pd.DataFrame, catalog_df: pd.DataFrame, tables: TableStorage
+) -> None:
     """Fetch selected catalog rows and refresh the complete on-disk status table."""
     for repo_name, group in selected.groupby("repo_name"):
         if not isinstance(repo_name, str):
@@ -463,7 +468,7 @@ def _download(target: Store, selected: pd.DataFrame, catalog_df: pd.DataFrame) -
             present |= get_raw_data(
                 to_download,
                 output_directory=repo_dir,
-                on_extracted=partial(write_submission_summary, target, repo_name),
+                on_extracted=partial(_store_submission, target, repo_name, tables),
             )
         else:
             logger.info("[{}] all {} dataset(s) already present", repo_name, len(group))
@@ -488,18 +493,27 @@ def _corpus_dir(target: Store) -> Path:
     return target.root.parent / "corpuses"
 
 
-def download(*, store: Path | None = None, module: ModuleKey | None = None) -> None:
+type GzipOption = Annotated[
+    bool,
+    Parameter(name="--gzip", help="Store text vendor tables gzipped; parameter files stay plain"),
+]
+
+
+def download(
+    *, store: Path | None = None, module: ModuleKey | None = None, gzip: GzipOption = False
+) -> None:
     """Download every catalogued submission's vendor table and parameter file.
 
     Args:
         store: The store root; defaults to Studio's configured test-data root.
         module: Restrict the download to one ProteoBench module.
+        gzip: Store text vendor tables gzipped; parameter files stay plain.
     """
     target = _store(store)
     _require(target.catalog_csv, "catalog")
     catalog_df = pd.read_csv(target.catalog_csv)
     selected = catalog_df if module is None else catalog_df[catalog_df["module"] == module]
-    _download(target, selected, catalog_df)
+    _download(target, selected, catalog_df, tables_for(gzip))
 
 
 def resources(*, store: Path | None = None) -> None:
@@ -554,7 +568,7 @@ def summarize_table(path: Path) -> dict[str, Any]:
             "columns": len(names),
             "column_names": "|".join(names),
         }
-    with path.open(encoding="utf-8", errors="replace", newline="") as stream:
+    with stored_table(path).open_text() as stream:
         header = stream.readline().rstrip("\r\n")
         rows = sum(1 for _ in stream)
     delimiter = _delimiter(header)
@@ -567,6 +581,14 @@ def summarize_table(path: Path) -> dict[str, Any]:
         "columns": len(names),
         "column_names": "|".join(names),
     }
+
+
+def _store_submission(
+    target: Store, repo_name: str, tables: TableStorage, intermediate_hash: str
+) -> None:
+    """Keep one landed submission's tables as ``tables`` stores them, then describe it."""
+    tables.keep_extracted(target.submission_dir(repo_name, intermediate_hash))
+    write_submission_summary(target, repo_name, intermediate_hash)
 
 
 def write_submission_summary(target: Store, repo_name: str, intermediate_hash: str) -> Path | None:
@@ -673,14 +695,16 @@ def clean(
         logger.info("removed {}", path)
 
 
-def _acquire_corpus(selection: str | None, destination_name: str, corpus: str = "all") -> None:
+def _acquire_corpus(
+    selection: str | None, destination_name: str, tables: TableStorage, corpus: str = "all"
+) -> None:
     """Acquire one corpus selection and publish its runner-facing CSVs."""
     target = _store(None)
     catalog(store=target.root)
     catalog_df = pd.read_csv(target.catalog_csv)
     modules = CONFIG.module_names if destination_name == "all.csv" else CONFIG.modules_in(corpus)
     selected = _selected_catalog(catalog_df[catalog_df["module"].isin(modules)], selection)
-    _download(target, selected, catalog_df)
+    _download(target, selected, catalog_df, tables)
     resources(store=target.root)
     corpus_path = _corpus_dir(target) / destination_name
     if selection is not None:
@@ -691,39 +715,30 @@ def _acquire_corpus(selection: str | None, destination_name: str, corpus: str = 
 
 
 @corpus_app.command(name="all")
-def corpus_all() -> None:
-    """Download every ProteoBench fixture and include all acquired sources in corpuses/all.csv."""
-    _acquire_corpus(None, "all.csv")
-
-
-@corpus_app.command(name="proteobench-entrapment")
-def corpus_proteobench_entrapment() -> None:
-    """Download every entrapment fixture and write corpuses/proteobench_entrapment.csv."""
-    _acquire_corpus(None, "proteobench_entrapment.csv", "proteobench_entrapment")
-
-
-@corpus_app.command(name="proteobench-plasma")
-def corpus_proteobench_plasma() -> None:
-    """Download every plasma fixture and write corpuses/proteobench_plasma.csv."""
-    _acquire_corpus(None, "proteobench_plasma.csv", "proteobench_plasma")
+def corpus_all(*, gzip: GzipOption = False) -> None:
+    """Download every ProteoBench fixture and Zenodo record; list them all in corpuses/all.csv."""
+    tables = tables_for(gzip)
+    _acquire_corpus(None, "all.csv", tables)
+    for record in ZENODO.records:
+        _acquire_zenodo_corpus(record.name, tables)
 
 
 @corpus_app.command(name="smallest-per-module")
-def corpus_smallest_per_module() -> None:
+def corpus_smallest_per_module(*, gzip: GzipOption = False) -> None:
     """Download the smallest fixture per module and write corpuses/routine.csv."""
-    _acquire_corpus("smallest_per_module", "routine.csv")
+    _acquire_corpus("smallest_per_module", "routine.csv", tables_for(gzip))
 
 
 @corpus_app.command(name="smallest-per-software")
-def corpus_smallest_per_software() -> None:
+def corpus_smallest_per_software(*, gzip: GzipOption = False) -> None:
     """Download the smallest fixture per module/software and write corpuses/routine.csv."""
-    _acquire_corpus("smallest_per_software", "routine.csv")
+    _acquire_corpus("smallest_per_software", "routine.csv", tables_for(gzip))
 
 
 @corpus_app.command(name="smallest-per-software-version")
-def corpus_smallest_per_software_version() -> None:
+def corpus_smallest_per_software_version(*, gzip: GzipOption = False) -> None:
     """Download the smallest fixture per module/software/version into corpuses/routine.csv."""
-    _acquire_corpus("smallest_per_software_version", "routine.csv")
+    _acquire_corpus("smallest_per_software_version", "routine.csv", tables_for(gzip))
 
 
 def _write_zenodo_downloads(target: Store) -> None:
@@ -742,11 +757,11 @@ def _write_zenodo_downloads(target: Store) -> None:
     logger.info("written to {}", target.downloads_csv)
 
 
-def _acquire_zenodo_corpus(name: str) -> None:
+def _acquire_zenodo_corpus(name: str, tables: TableStorage) -> None:
     """Acquire one Zenodo record and publish its runner-facing CSVs."""
     target = _store(None)
     record = ZENODO.record(name)
-    zenodo_fixtures.acquire(target, record)
+    zenodo_fixtures.acquire(target, record, tables)
     corpus_path = _corpus_dir(target) / f"{record.name}.csv"
     write_rows(corpus_path, CORPUS_COLUMNS, zenodo_fixtures.corpus_rows(target, record))
     _write_zenodo_downloads(target)
@@ -756,16 +771,37 @@ def _acquire_zenodo_corpus(name: str) -> None:
     fixture_index.write(target)
 
 
-@corpus_app.command(name="maxquant-entrapment")
-def corpus_maxquant_entrapment() -> None:
-    """Download the related MaxQuant entrapment tables from Zenodo; write its corpus CSV."""
-    _acquire_zenodo_corpus("maxquant_entrapment")
+def _proteobench_corpus_command(corpus: str) -> Callable[..., None]:
+    """One command acquiring the ProteoBench modules proteobench.toml puts in ``corpus``."""
+
+    def command(*, gzip: GzipOption = False) -> None:
+        _acquire_corpus(None, f"{corpus}.csv", tables_for(gzip), corpus)
+
+    modules = ", ".join(sorted(CONFIG.modules_in(corpus)))
+    command.__doc__ = f"Download every {modules} fixture and write corpuses/{corpus}.csv."
+    return command
 
 
-@corpus_app.command(name="directlfq")
-def corpus_directlfq() -> None:
-    """Download the directLFQ benchmark mirror from Zenodo and write corpuses/directlfq.csv."""
-    _acquire_zenodo_corpus("directlfq")
+def _zenodo_corpus_command(record: zenodo_fixtures.ZenodoRecord) -> Callable[..., None]:
+    """One command acquiring a Zenodo record that zenodo.toml configures."""
+
+    def command(*, gzip: GzipOption = False) -> None:
+        _acquire_zenodo_corpus(record.name, tables_for(gzip))
+
+    count = len(record.datasets)
+    command.__doc__ = (
+        f"Download Zenodo record {record.record_id} ({count} dataset{'' if count == 1 else 's'})"
+        f" and write corpuses/{record.name}.csv."
+    )
+    return command
+
+
+# One command per configured corpus, so `fixture corpus --help` lists exactly what the
+# packaged proteobench.toml and zenodo.toml define.
+for _corpus in sorted({module.corpus for module in CONFIG.modules} - {"all"}):
+    corpus_app.command(_proteobench_corpus_command(_corpus), name=_corpus.replace("_", "-"))
+for _record in ZENODO.records:
+    corpus_app.command(_zenodo_corpus_command(_record), name=_record.name.replace("_", "-"))
 
 
 @app.command
