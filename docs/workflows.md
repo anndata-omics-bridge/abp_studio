@@ -82,7 +82,7 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 
 ## Selected combinations
 
-`scripts/corpus_runs.fish` lists every run we serve, one plain command each, all into the configured output root `apb_outputs`; the manuscript figure scripts in `apb_article/pipeline/scripts` read the same runs, and its last line, `corpus publish apb_publish_site`, copies every run of that root. `proteobench_run_vendor_cont` is `proteobench_run` with `--contaminants vendor`: contaminants are the features whose protein IDs contain the module's `Cont_`, as ProteoBench decides, rather than apb-fasta's FASTA contaminants. The routine inventory contains 13 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains its 12 catalogued ProteoBench datasets, excluding the Zenodo MaxQuant entrapment folder, and is scored with the single-call `proteobench_run`. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+`scripts/corpus_runs.fish` lists every run we serve, one plain command each, all into the configured output root `apb_outputs`; the manuscript figure scripts in `apb_article/pipeline/scripts` read the same runs, and its last line, `corpus publish apb_publish_site`, copies every run of that root. `proteobench_run_vendor` is `proteobench_run` with `--proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides, rather than from the FASTA proteins containing the peptide. The routine inventory contains 13 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains its 12 catalogued ProteoBench datasets, excluding the Zenodo MaxQuant entrapment folder, and is scored with the single-call `proteobench_run`. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
 
 | Section | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 | scoring | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
 | scoring | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
 | scoring | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
-| contaminant source | proteobench | proteobench_run, proteobench_run_vendor_cont | hdf5 | `.h5ad` |
+| deciding proteins | proteobench | proteobench_run, proteobench_run_vendor | hdf5 | `.h5ad` |
 | manuscript F3 | proteobench_f3 | convert_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
 | manuscript F3 | directlfq_large_per_vendor | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
 

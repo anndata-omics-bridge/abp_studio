@@ -90,8 +90,8 @@ from apb_studio.workflows.workflow_proteobench_run import (
     WORKFLOW_COLUMNS as PROTEOBENCH_RUN_COLUMNS,
 )
 from apb_studio.workflows.workflow_proteobench_run import steps as proteobench_run_steps
-from apb_studio.workflows.workflow_proteobench_run_vendor_cont import (
-    steps as proteobench_run_vendor_cont_steps,
+from apb_studio.workflows.workflow_proteobench_run_vendor import (
+    steps as proteobench_run_vendor_steps,
 )
 
 
@@ -723,7 +723,7 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "proteobench_plasma_run",
         "proteobench_pmultiqc",
         "proteobench_run",
-        "proteobench_run_vendor_cont",
+        "proteobench_run_vendor",
     ]
     assert workflow_path("convert").name == "workflow_convert.py"
     assert workflow_path("convert_ion").name == "workflow_convert_ion.py"
@@ -1479,19 +1479,19 @@ def test_one_call_proteobench_declares_every_input_of_the_single_command(tmp_pat
     scores = Path(planned[0].command[planned[0].command.index("--scores") + 1])
     assert scores == context.output_dir / "scores.json"
     assert Artifact(role="proteobench_scores", path=scores) in planned[0].outputs
-    assert "--contaminants" not in planned[0].command, "apb-proteobench's default, apb-fasta"
+    assert "--proteins" not in planned[0].command, "apb-proteobench's default, matched"
 
 
-def test_vendor_contaminant_run_differs_only_by_its_contaminant_source(tmp_path: Path) -> None:
+def test_vendor_run_differs_only_by_its_proteins(tmp_path: Path) -> None:
     context = proteobench_context(tmp_path)
 
     (default,) = proteobench_run_steps(context)
-    (vendor,) = proteobench_run_vendor_cont_steps(context)
+    (vendor,) = proteobench_run_vendor_steps(context)
 
-    assert workflow_tools("proteobench_run_vendor_cont") == ("apb-proteobench",)
-    assert workflow_table_name("proteobench_run_vendor_cont") == "workflow_proteobench.csv"
-    assert vendor.command[vendor.command.index("--contaminants") + 1] == "vendor"
-    assert [part for part in vendor.command if part not in ("--contaminants", "vendor")] == (
+    assert workflow_tools("proteobench_run_vendor") == ("apb-proteobench",)
+    assert workflow_table_name("proteobench_run_vendor") == "workflow_proteobench.csv"
+    assert vendor.command[vendor.command.index("--proteins") + 1] == "vendor"
+    assert [part for part in vendor.command if part not in ("--proteins", "vendor")] == (
         default.command
     )
     assert vendor.outputs == default.outputs
@@ -1584,7 +1584,7 @@ def test_both_proteobench_workflows_read_one_shared_resource_table() -> None:
     assert workflow_table_name("proteobench") == "workflow_proteobench.csv"
     assert workflow_table_name("proteobench_pmultiqc") == "workflow_proteobench.csv"
     assert workflow_table_name("proteobench_run") == "workflow_proteobench.csv"
-    assert workflow_table_name("proteobench_run_vendor_cont") == "workflow_proteobench.csv"
+    assert workflow_table_name("proteobench_run_vendor") == "workflow_proteobench.csv"
     assert workflow_table_name("convert") == "workflow_convert.csv"
     assert workflow_table_name("convert_ion") == "workflow_convert_ion.csv"
 

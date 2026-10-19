@@ -18,10 +18,10 @@ uv run corpus run proteobench proteobench_pmultiqc --strict
 uv run corpus run proteobench_plasma proteobench_plasma --strict
 uv run corpus run proteobench_entrapment proteobench_entrapment --strict
 
-# contaminant source: apb-fasta (default) and vendor protein IDs (Cont_), each compared
+# deciding proteins: FASTA matches (default) and the vendor's proteins, each compared
 # with the upstream ProteoBench scores in the corpus viewer
 uv run corpus run proteobench proteobench_run --strict
-uv run corpus run proteobench proteobench_run_vendor_cont --strict
+uv run corpus run proteobench proteobench_run_vendor --strict
 
 # manuscript F3: one dataset at a time
 uv run corpus run proteobench_f3 convert_ion --cores 1 --strict
