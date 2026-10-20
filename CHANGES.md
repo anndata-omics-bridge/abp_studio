@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-20: Workflow `proteobench_run_vendor`, replacing `proteobench_run_vendor_cont`, scores as `proteobench_run` does with `apb-proteobench --proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides them. `run_quant_step` takes `proteins`. `scripts/corpus_runs.fish` runs the `proteobench` corpus through both workflows, and the corpus viewer compares each with the upstream datapoints.
+
 - 2026-10-08: **Breaking:** `oddities.json` version 2 lists every producer summary entry of the displayed representation, root and levels; dataset state, counts and the Oddities tabs follow entry status. The viewer reads APB2 representation version 5: FASTA and score records under `result`, and an h5ad's root part beside its level part.
 
 - 2026-10-08: The FASTA check tab shows "I/L-only matched", apb-fasta's `il_only_matched_feature_count`, in place of the removed "I/L equivalent" setting; results without the count show "Not recorded".
