@@ -61,6 +61,16 @@ def test_a_parquet_submission_table_stays_as_written(tmp_path: Path) -> None:
     assert [path.name for path in tmp_path.iterdir()] == ["input_file.parquet"]
 
 
+def test_a_workbook_named_like_a_text_table_stays_as_written(tmp_path: Path) -> None:
+    """ProlineStudio and MSAngel submit .xlsx workbooks as input_file.txt."""
+    workbook = tmp_path / "input_file.txt"
+    workbook.write_bytes(b"PK\x03\x04 rest of an xlsx archive")
+
+    GzipTables().keep_extracted(tmp_path)
+
+    assert [path.name for path in tmp_path.iterdir()] == ["input_file.txt"]
+
+
 def test_a_stored_table_reads_the_same_plain_or_gzipped(tmp_path: Path) -> None:
     (tmp_path / "evidence.txt").write_text("id\n1\n", encoding="utf-8")
     (tmp_path / "peptides.txt.gz").write_bytes(gzip.compress(b"id\n2\n"))

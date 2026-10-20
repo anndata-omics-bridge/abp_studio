@@ -17,6 +17,7 @@ from typing import TextIO
 
 GZIP_SUFFIX = ".gz"
 _TEXT_TABLES = frozenset({".tsv", ".txt", ".csv"})
+_ZIP_SIGNATURE = b"PK\x03\x04"
 _SUBMISSION_TABLES = "input_file*"
 """ProteoBench submission tables: ``input_file.<ext>`` and companions such as
 ``input_file_secondary.tsv``."""
@@ -49,9 +50,9 @@ class GzipTables:
     """Store text vendor tables gzipped, as ``<name>.gz``; everything else stays plain."""
 
     def keep_extracted(self, folder: Path) -> None:
-        """Gzip an extracted submission's text tables in place."""
+        """Gzip an extracted submission's text tables in place; a workbook stays plain."""
         for path in sorted(folder.glob(_SUBMISSION_TABLES)):
-            if path.is_file() and path.suffix.lower() in _TEXT_TABLES:
+            if path.is_file() and path.suffix.lower() in _TEXT_TABLES and not _is_workbook(path):
                 _gzip(path)
 
     def keep_download(self, download: Path, target: Path, *, table: bool) -> None:
@@ -71,6 +72,16 @@ type TableStorage = PlainTables | GzipTables
 def tables_for(gzip_tables: bool) -> TableStorage:
     """Select how one acquisition stores its vendor tables."""
     return GzipTables() if gzip_tables else PlainTables()
+
+
+def _is_workbook(path: Path) -> bool:
+    """Say whether a file is an Excel workbook, which some submissions name ``.txt``.
+
+    An ``.xlsx`` is a ZIP archive, so it starts with the ZIP signature whatever its name;
+    gzipping one gains nothing, and apb2 reads a ``.gz`` only as delimited text.
+    """
+    with path.open("rb") as stream:
+        return stream.read(len(_ZIP_SIGNATURE)) == _ZIP_SIGNATURE
 
 
 def _gzip(path: Path) -> None:
