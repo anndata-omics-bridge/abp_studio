@@ -11,7 +11,7 @@ from apb_studio.corpus.tables import join_workflow
 from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.proteobench_scoring import run_quant_step
 
-WORKFLOW_COLUMNS = ("module", "fasta", "level")
+WORKFLOW_COLUMNS = ("module", "fasta", "level", "sdrf")
 WORKFLOW_TABLE = "workflow_proteobench.csv"
 TOOLS = ("apb-proteobench",)
 

@@ -8,7 +8,7 @@ from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.artifacts import representation, result_path
 from apb_studio.workflows.software import parameter_software
 
-WORKFLOW_COLUMNS = ("module", "fasta", "level")
+WORKFLOW_COLUMNS = ("module", "fasta", "level", "sdrf")
 TOOLS = ("apb2", "apb-fasta", "apb-proteobench")
 
 

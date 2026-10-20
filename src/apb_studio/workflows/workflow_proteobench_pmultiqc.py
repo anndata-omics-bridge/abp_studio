@@ -8,7 +8,7 @@ from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.proteobench_export import export_and_report_steps
 
 TOOLS = ("apb-proteobench", "multiqc")
-WORKFLOW_COLUMNS = ("module", "fasta", "level")
+WORKFLOW_COLUMNS = ("module", "fasta", "level", "sdrf")
 WORKFLOW_TABLE = "workflow_proteobench.csv"
 
 

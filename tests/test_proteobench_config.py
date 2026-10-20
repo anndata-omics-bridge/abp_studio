@@ -13,6 +13,7 @@ MINIMAL = """
 schema_version = 1
 datasets_base_url = "https://example.invalid/datasets/"
 fasta_urls = ["https://example.invalid/one.zip"]
+sdrf_base_url = "https://example.invalid/modules/"
 
 [[modules]]
 name = "dda_qexactive"
@@ -49,6 +50,9 @@ def test_an_override_file_replaces_the_packaged_one(tmp_path: Path) -> None:
     config = load_config(path)
     assert config.module_names == ("dda_qexactive",)
     assert config.fasta_for_module("dda_qexactive") == "mix.fasta"
+    assert (
+        config.sdrf_url("dda_qexactive") == "https://example.invalid/modules/dda_qexactive.sdrf.tsv"
+    )
 
 
 def test_a_malformed_configuration_is_refused(tmp_path: Path) -> None:

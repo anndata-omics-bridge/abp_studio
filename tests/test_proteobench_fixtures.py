@@ -509,8 +509,10 @@ def test_resources_fetch_fastas_and_write_their_databases(
 
     monkeypatch.setattr(rawdb.requests, "get", get)
     rawdb.resources(store=tmp_path)
-    assert requested == ["https://server/fasta.zip"], "module definitions are not fetched"
+    sdrf = one_module.sdrf_url("dda_qexactive")
+    assert requested == ["https://server/fasta.zip", sdrf], "of each module, only its SDRF"
     assert (store.fasta_dir / "reference.fasta").exists()
+    assert (store.sdrf_dir / "dda_qexactive.sdrf.tsv").read_bytes() == archive
     database = pq.read_table(store.fasta_dir / "reference.parquet", columns=["id", "sequence"])
     assert database.to_pylist() == [{"id": "P1", "sequence": "AAAA"}], "parsed by protein-fasta"
     assert not (store.fasta_dir / "__MACOSX").exists()
@@ -584,7 +586,8 @@ def test_resource_summary_covers_every_module(tmp_path: Path) -> None:
 
     resources = pd.read_csv(store.resources_csv).set_index("module")
     assert len(resources) == len(rawdb.CONFIG.modules)
-    assert list(resources.columns) == ["fasta", "fasta_present"]
+    assert list(resources.columns) == ["fasta", "fasta_present", "sdrf", "sdrf_present"]
+    assert resources.loc["dda_qexactive", "sdrf"] == "sdrf/dda_qexactive.sdrf.tsv"
     assert bool(resources.loc["dda_qexactive", "fasta_present"]) is False
     assert str(resources.loc["dia_singlecell", "fasta"]).endswith("noecoli.fasta")
 

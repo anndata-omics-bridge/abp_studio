@@ -40,6 +40,7 @@ class ProteoBenchConfig(BaseModel):
     schema_version: int
     datasets_base_url: str = Field(min_length=1)
     fasta_urls: tuple[str, ...] = Field(min_length=1)
+    sdrf_base_url: str = Field(min_length=1)
     modules: tuple[ModuleConfig, ...] = Field(min_length=1)
 
     @property
@@ -61,6 +62,14 @@ class ProteoBenchConfig(BaseModel):
     def fasta_for_module(self, name: str) -> str:
         """Return the extracted FASTA file name one module uses."""
         return self.module(name).fasta
+
+    def sdrf_for_module(self, name: str) -> str:
+        """Return the file name of one module's SDRF, as stored and as apb-proteobench names it."""
+        return f"{self.module(name).name}.sdrf.tsv"
+
+    def sdrf_url(self, name: str) -> str:
+        """Return where one module's SDRF is fetched from."""
+        return f"{self.sdrf_base_url}{self.sdrf_for_module(name)}"
 
 
 def load_config(path: Path | None = None) -> ProteoBenchConfig:

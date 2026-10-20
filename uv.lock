@@ -92,6 +92,7 @@ version = "0.1.1"
 source = { editable = "../apb-catalog" }
 dependencies = [
     { name = "apb2" },
+    { name = "cyclopts" },
     { name = "polars" },
     { name = "pydantic" },
 ]
@@ -99,6 +100,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "apb2", editable = "../apb2" },
+    { name = "cyclopts", specifier = ">=4,<5" },
     { name = "polars", specifier = ">=1.43,<2" },
     { name = "pydantic", specifier = ">=2.10" },
 ]

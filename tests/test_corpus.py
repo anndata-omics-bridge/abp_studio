@@ -1007,6 +1007,29 @@ def test_msmu_export_checks_the_module_fasta_the_table_names(tmp_path: Path) -> 
     assert "--fasta" not in export_msmu_steps(elsewhere)[0].command, "no row, no FASTA check"
 
 
+    table = tmp_path / "workflow_proteobench.csv"
+    table.write_text(
+        "module,fasta,level,sdrf\ndia_aif,fasta/hye.fasta,ion,sdrf/dia_aif.sdrf.tsv\n",
+        encoding="utf-8",
+    )
+    context = WorkflowContext(
+        corpus=tmp_path / "corpus.csv",
+        data_root=tmp_path,
+        dataset=dataset(),
+        workflow_table=table,
+        output_dir=tmp_path / "outputs",
+        report=tmp_path / "report.json",
+        tools={"apb-export": tmp_path / "apb-export"},
+    )
+
+    fasta = resolve_file(tmp_path, "fasta/hye.fasta")
+    sdrf = resolve_file(tmp_path, "sdrf/dia_aif.sdrf.tsv")
+    assert step.command[step.command.index("--fasta") + 1] == str(fasta)
+    assert step.command[step.command.index("--sdrf") + 1] == str(sdrf)
+    assert Artifact(role="fasta", path=fasta) in step.inputs
+    assert Artifact(role="sdrf", path=sdrf) in step.inputs
+
+
 def test_no_param_workflow_uses_tsv_software_mapping_without_parameter_file(tmp_path: Path) -> None:
     table = tmp_path / "workflow_no_param.tsv"
     table.write_text("software_name\tsoftware\nFragPipe (DIA-NN quant)\tDIA-NN\n", encoding="utf-8")
@@ -1408,12 +1431,13 @@ def proteobench_context(
     table = tmp_path / "workflow_proteobench.csv"
     write_rows(
         table,
-        ["module", "fasta", "level"],
+        ["module", "fasta", "level", "sdrf"],
         [
             {
                 "module": "dia_aif",
                 "fasta": "fasta/HYE.fasta",
                 "level": level,
+                "sdrf": "sdrf/dia_aif.sdrf.tsv",
             }
         ],
     )
@@ -1655,11 +1679,15 @@ def test_proteobench_table_satisfies_every_proteobench_workflow() -> None:
     for columns in (PROTEOBENCH_COLUMNS, PROTEOBENCH_RUN_COLUMNS, PROTEOBENCH_PMULTIQC_COLUMNS):
         assert all(tuple(row) == columns for row in rows)
     config = packaged_config()
-    assert sorted((row["module"], row["fasta"]) for row in rows) == sorted(
-        (module, f"fasta/{config.fasta_for_module(module)}")
+    assert sorted((row["module"], row["fasta"], row["sdrf"]) for row in rows) == sorted(
+        (
+            module,
+            f"fasta/{config.fasta_for_module(module)}",
+            f"sdrf/{config.sdrf_for_module(module)}",
+        )
         for module in config.module_names
         if module not in SEPARATELY_SCORED
-    ), "each quant module needs one row naming the FASTA config/proteobench.toml fetches"
+    ), "each quant module needs one row naming the FASTA and SDRF config/proteobench.toml fetches"
 
 
 def test_entrapment_workflow_runs_the_entrapment_command_on_the_protein_database(

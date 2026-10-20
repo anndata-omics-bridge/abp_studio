@@ -80,8 +80,13 @@ class Store:
         return self.root / "fasta"
 
     @property
+    def sdrf_dir(self) -> Path:
+        """Each ProteoBench module's SDRF, as apb-proteobench packages it."""
+        return self.root / "sdrf"
+
+    @property
     def resources_csv(self) -> Path:
-        """Which FASTA each module uses, and whether it is present."""
+        """Which FASTA and SDRF each module uses, and whether each is present."""
         return self.root / RESOURCES_NAME
 
     @property

@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-20: The Fixture Manager keeps an Excel workbook that a submission names `.txt` plain instead of gzipping it, recognised by its ZIP signature; apb2 reads a `.gz` only as delimited text, which broke the MSAngel and ProlineStudio submissions.
+
 - 2026-10-20: Workflow `proteobench_run_vendor`, replacing `proteobench_run_vendor_cont`, scores as `proteobench_run` does with `apb-proteobench --proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides them. `run_quant_step` takes `proteins`. `scripts/corpus_runs.fish` runs the `proteobench` corpus through both workflows, and the corpus viewer compares each with the upstream datapoints.
 
 - 2026-10-08: **Breaking:** `oddities.json` version 2 lists every producer summary entry of the displayed representation, root and levels; dataset state, counts and the Oddities tabs follow entry status. The viewer reads APB2 representation version 5: FASTA and score records under `result`, and an h5ad's root part beside its level part.

@@ -24,18 +24,33 @@ EXTENSIONS = {
 """The file each target's tool opens, as apb-export's export rules declare it."""
 
 
-def module_fasta(context: WorkflowContext) -> Path | None:
-    """The FASTA the workflow table names for the dataset's module; none is no FASTA check."""
+def _module_file(context: WorkflowContext, column: str) -> Path | None:
+    """The file the workflow table names in ``column`` for the dataset's module, if any."""
     if context.workflow_table is None:
         return None
     for row in read_rows(context.workflow_table):
         if row["module"] == context.dataset.module:
-            return resolve_file(context.data_root, row["fasta"])
+            return resolve_file(context.data_root, row[column])
     return None
 
 
-def export_step(context: WorkflowContext, target: str, fasta: Path | None = None) -> StepSpec:
-    """Convert the vendor files, FASTA-check them if given one, write ``target``'s file."""
+def module_fasta(context: WorkflowContext) -> Path | None:
+    """The FASTA the workflow table names for the dataset's module; none is no FASTA check."""
+    return _module_file(context, "fasta")
+
+
+def module_sdrf(context: WorkflowContext) -> Path | None:
+    """The SDRF the workflow table names for the dataset's module; none is no sample design."""
+    return _module_file(context, "sdrf")
+
+
+def export_step(
+    context: WorkflowContext,
+    target: str,
+    fasta: Path | None = None,
+    sdrf: Path | None = None,
+) -> StepSpec:
+    """Convert the vendor files, FASTA-check and annotate them if given, write ``target``'s file."""
     dataset = context.dataset
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
@@ -54,12 +69,14 @@ def export_step(context: WorkflowContext, target: str, fasta: Path | None = None
             "--software",
             parameter_software(dataset.software_name),
             *(["--fasta", str(fasta)] if fasta is not None else []),
+            *(["--sdrf", str(sdrf)] if sdrf is not None else []),
         ],
         inputs=[
             Artifact(role="vendor_table", path=source),
             *[Artifact(role="vendor_secondary", path=secondary) for secondary in secondary_inputs],
             Artifact(role="vendor_parameter_file", path=parameters),
             *([Artifact(role="fasta", path=fasta)] if fasta is not None else []),
+            *([Artifact(role="sdrf", path=sdrf)] if sdrf is not None else []),
         ],
         outputs=[Artifact(role="export", path=output), representation(output)],
     )

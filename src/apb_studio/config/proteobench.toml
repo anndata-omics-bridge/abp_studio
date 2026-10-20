@@ -2,9 +2,8 @@
 #
 # These change when ProteoBench adds a module or moves a results repository; they are not
 # a property of this code, which is why they live here rather than in
-# proteobench_fixtures.py. Adding a module is one [[modules]] block. Module definitions
-# (sample design and scoring settings) are not fetched: workflows name apb-proteobench's
-# packaged modules.
+# proteobench_fixtures.py. Adding a module is one [[modules]] block. Module definitions are
+# not fetched: scoring workflows name apb-proteobench's packaged modules. Only each module's
 
 schema_version = 1
 datasets_base_url = "https://proteobench.cubimed.rub.de/datasets/"
@@ -16,6 +15,10 @@ fasta_urls = [
   "https://proteobench.cubimed.rub.de/fasta/ProteoBenchFASTA_Entrapment_Human_with_contaminants_entrapment_pep.zip",
   "https://proteobench.cubimed.rub.de/fasta/uniprotkb_proteome_UP000005640_2026_01_plus_contaminants-entrap.zip",
 ]
+
+# Each module's SDRF, as apb-proteobench packages it: `<sdrf_base_url><name>.sdrf.tsv`,
+# stored in `sdrf/`.
+sdrf_base_url = "https://raw.githubusercontent.com/anndata-omics-bridge/apb-proteobench/main/src/apb_proteobench/data/modules/"
 
 # One block per ProteoBench module.
 #

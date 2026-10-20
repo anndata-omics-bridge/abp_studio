@@ -430,9 +430,10 @@ type GzipOption = Annotated[
 
 
 def resources(*, store: Path | None = None) -> None:
-    """Download every reference FASTA and write its protein-fasta database.
+    """Download every reference FASTA, write its protein-fasta database, and fetch each SDRF.
 
     Module definitions are not fixtures: workflows name apb-proteobench's packaged modules.
+    Only each module's SDRF is stored, for exports that carry the sample design.
 
     Args:
         store: The store root; defaults to Studio's configured test-data root.
@@ -450,6 +451,14 @@ def resources(*, store: Path | None = None) -> None:
         shutil.rmtree(macos_metadata)
     logger.info("extracted FASTAs to {}", target.fasta_dir)
     _write_protein_databases(target)
+    target.sdrf_dir.mkdir(parents=True, exist_ok=True)
+    for module in CONFIG.module_names:
+        url = CONFIG.sdrf_url(module)
+        logger.info("downloading {}", url)
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        (target.sdrf_dir / CONFIG.sdrf_for_module(module)).write_bytes(response.content)
+    logger.info("stored SDRFs in {}", target.sdrf_dir)
 
     _write_resource_summary(target)
     fixture_index.write(target)
@@ -554,14 +563,17 @@ def databases(*, store: Path | None = None) -> None:
 
 
 def _write_resource_summary(target: Store) -> None:
-    """Say which FASTA each module uses, and whether it is there."""
+    """Say which FASTA and SDRF each module uses, and whether each is there."""
     resource_rows = []
     for module in CONFIG.module_names:
         fasta = target.fasta_dir / CONFIG.fasta_for_module(module)
+        sdrf = target.sdrf_dir / CONFIG.sdrf_for_module(module)
         resource_rows.append({
             "module": module,
             "fasta": fasta.relative_to(target.root).as_posix(),
             "fasta_present": fasta.is_file(),
+            "sdrf": sdrf.relative_to(target.root).as_posix(),
+            "sdrf_present": sdrf.is_file(),
         })
     pd.DataFrame(resource_rows).to_csv(target.resources_csv, index=False)
     logger.info("written to {}", target.resources_csv)
