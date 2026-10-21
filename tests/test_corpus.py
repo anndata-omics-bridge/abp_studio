@@ -1056,12 +1056,10 @@ def test_no_param_workflow_does_not_depend_on_a_parameter_file(tmp_path: Path) -
     assert (tmp_path / "params.txt").resolve() not in dependencies
 
 
-def test_proteobench_plasma_workflow_exports_the_layer_its_table_names(tmp_path: Path) -> None:
+def test_proteobench_plasma_workflow_exports_the_modules_layer(tmp_path: Path) -> None:
+    """The module, not the table, picks the un-normalised layer: ``--layer X``."""
     table = tmp_path / "workflow_proteobench_plasma.tsv"
-    table.write_text(
-        "module\tsoftware_name\tfasta\tlevel\tlayer\n"
-        "dia_aif\tDIA-NN\tfasta/HYE.fasta\tion\tPrecursor_Quantity\n"
-    )
+    table.write_text("module\tsoftware_name\tfasta\tlevel\ndia_aif\tDIA-NN\tfasta/HYE.fasta\tion\n")
     context = proteobench_context(tmp_path).model_copy(
         update={
             "workflow_table": table,
@@ -1072,7 +1070,7 @@ def test_proteobench_plasma_workflow_exports_the_layer_its_table_names(tmp_path:
     export, report = proteobench_plasma_steps(context)
 
     assert workflow_table_name("proteobench_plasma") == "workflow_proteobench_plasma.tsv"
-    assert export.command[export.command.index("--layer") + 1] == "Precursor_Quantity"
+    assert export.command[export.command.index("--layer") + 1] == "X"
     assert export.command[export.command.index("--module") + 1] == "dia_aif"
     assert report.name == "pmultiqc"
 
@@ -1087,7 +1085,6 @@ def test_proteobench_plasma_table_covers_the_proteobench_plasma_corpus() -> None
     for row in rows:
         workflow = join_workflow(row.model_dump(), table, on=("module", "software_name"))
         assert tuple(workflow) == PROTEOBENCH_PLASMA_COLUMNS
-        assert workflow["layer"]
 
 
 def test_no_param_software_table_covers_proteobench_corpus() -> None:
@@ -1498,14 +1495,11 @@ def test_vendor_run_differs_only_by_its_proteins(tmp_path: Path) -> None:
     assert vendor.outputs == default.outputs
 
 
-def test_proteobench_plasma_run_scores_the_layer_its_table_names_without_a_report(
+def test_proteobench_plasma_run_scores_the_modules_layer_without_a_report(
     tmp_path: Path,
 ) -> None:
     table = tmp_path / "workflow_proteobench_plasma.tsv"
-    table.write_text(
-        "module\tsoftware_name\tfasta\tlevel\tlayer\n"
-        "dia_aif\tDIA-NN\tfasta/HYE.fasta\tion\tPrecursor_Quantity\n"
-    )
+    table.write_text("module\tsoftware_name\tfasta\tlevel\ndia_aif\tDIA-NN\tfasta/HYE.fasta\tion\n")
     context = proteobench_context(tmp_path).model_copy(update={"workflow_table": table})
 
     (run,) = proteobench_plasma_run_steps(context)
@@ -1513,7 +1507,7 @@ def test_proteobench_plasma_run_scores_the_layer_its_table_names_without_a_repor
     assert workflow_tools("proteobench_plasma_run") == ("apb-proteobench",)
     assert workflow_table_name("proteobench_plasma_run") == "workflow_proteobench_plasma.tsv"
     assert run.command[1:3] == ["run", "quant"]
-    assert run.command[run.command.index("--layer") + 1] == "Precursor_Quantity"
+    assert "--layer" not in run.command, "the module picks the layer"
     assert run.command[run.command.index("--level") + 1] == "ion"
     assert run.outputs[0].path.name == "scored.h5ad", "one level"
     assert "--scores" in run.command

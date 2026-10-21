@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-21: `workflow_proteobench_plasma.tsv` loses its `layer` column. `proteobench_plasma` passes `--layer X` and `proteobench_plasma_run` no `--layer`; apb-proteobench's `dia_plasma` module now picks each software's un-normalised layer through apb-catalog's `abundance` set, `Precursor_Quantity` for DIA-NN and FragPipe (DIA-NN quant) as before. AlphaDIA and PEAKS still score their primary layer, now with an `abundance_normalisation` summary entry needing attention, which the oddities count.
+
 - 2026-10-21: `zenodo/directlfq/diann_charite_dataset` leaves the `directlfq`, `directlfq_large_per_vendor` and `proteobench_f3` corpora, and its `zenodo.toml` entry is marked as not native DIA-NN output: every missing cell holds the text `NA` and `File.Name` only the run name, so APB read a fake protein group `NA` and flagged 80,831 gene-level cells. The Fixture Manager still downloads it, so the `all` corpus still includes it. `directlfq_large_per_vendor` now selects MaxQuant and Spectronaut only.
 
 - 2026-10-21: Run overview gains a Search settings subtab: per software, the share of datasets whose result records a parameter file that recovered each of the article Figure S1's 12 settings, coloured with its ramp, with the datasets left out and why. The index job writes `search_settings.json` version 1 from apb2's `root.apb.parse.provenance.search_parameters` in the displayed representation; Studio never parses a parameter file. The viewer no longer decodes `search_parameters` as embedded JSON, since apb2 stores it as an object.
