@@ -324,6 +324,7 @@ dependencies = [
     { name = "python-calamine" },
     { name = "pyyaml" },
     { name = "scipy" },
+    { name = "typing-extensions" },
 ]
 
 [package.metadata]
@@ -339,10 +340,11 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2" },
     { name = "polars", specifier = ">=1.43,<2" },
     { name = "pyarrow", specifier = ">=15" },
-    { name = "pydantic", specifier = ">=2.10" },
+    { name = "pydantic", specifier = ">=2.12" },
     { name = "python-calamine", specifier = ">=0.5,<1" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "scipy", specifier = ">=1.15,<2" },
+    { name = "typing-extensions", specifier = ">=4.13" },
 ]
 
 [package.metadata.requires-dev]
@@ -351,6 +353,7 @@ dev = [
     { name = "deptry", specifier = ">=0.24,<1" },
     { name = "grimp", specifier = ">=3,<4" },
     { name = "import-linter", specifier = ">=2,<3" },
+    { name = "jsonschema", specifier = ">=4.23,<5" },
     { name = "pandas-stubs", specifier = ">=3.0.5.260730" },
     { name = "pre-commit", specifier = ">=4,<5" },
     { name = "pyright", specifier = "==1.1.414" },
