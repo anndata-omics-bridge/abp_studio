@@ -111,6 +111,7 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 
 The three-call `proteobench` and the general `aggregate` are in neither file.
 
+The `problems` corpus collects submissions that fail, or convert with questionable results, for a known reason; `corpuses/problems.md` lists them. `export_msmu` passes `--fasta` with the FASTA the ProteoBench workflow table names for the dataset's module, so msmu's contaminant flags include the FASTA's; a module without a row exports with the vendor's own flags only.
 
 APB Parquet outputs are directories. Export workflows write their target’s native H5AD/H5MU artifact independently of the backend label, so running each native export once covers its output contract.
 

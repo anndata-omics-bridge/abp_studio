@@ -4,6 +4,7 @@
 # a property of this code, which is why they live here rather than in
 # proteobench_fixtures.py. Adding a module is one [[modules]] block. Module definitions are
 # not fetched: scoring workflows name apb-proteobench's packaged modules. Only each module's
+# SDRF is, for exports that carry the sample design.
 
 schema_version = 1
 datasets_base_url = "https://proteobench.cubimed.rub.de/datasets/"

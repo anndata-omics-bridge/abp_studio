@@ -1007,29 +1007,6 @@ def test_msmu_export_checks_the_module_fasta_the_table_names(tmp_path: Path) -> 
     assert "--fasta" not in export_msmu_steps(elsewhere)[0].command, "no row, no FASTA check"
 
 
-    table = tmp_path / "workflow_proteobench.csv"
-    table.write_text(
-        "module,fasta,level,sdrf\ndia_aif,fasta/hye.fasta,ion,sdrf/dia_aif.sdrf.tsv\n",
-        encoding="utf-8",
-    )
-    context = WorkflowContext(
-        corpus=tmp_path / "corpus.csv",
-        data_root=tmp_path,
-        dataset=dataset(),
-        workflow_table=table,
-        output_dir=tmp_path / "outputs",
-        report=tmp_path / "report.json",
-        tools={"apb-export": tmp_path / "apb-export"},
-    )
-
-    fasta = resolve_file(tmp_path, "fasta/hye.fasta")
-    sdrf = resolve_file(tmp_path, "sdrf/dia_aif.sdrf.tsv")
-    assert step.command[step.command.index("--fasta") + 1] == str(fasta)
-    assert step.command[step.command.index("--sdrf") + 1] == str(sdrf)
-    assert Artifact(role="fasta", path=fasta) in step.inputs
-    assert Artifact(role="sdrf", path=sdrf) in step.inputs
-
-
 def test_no_param_workflow_uses_tsv_software_mapping_without_parameter_file(tmp_path: Path) -> None:
     table = tmp_path / "workflow_no_param.tsv"
     table.write_text("software_name\tsoftware\nFragPipe (DIA-NN quant)\tDIA-NN\n", encoding="utf-8")

@@ -1,6 +1,7 @@
 # Changes
 
 - 2026-10-20: The Fixture Manager keeps an Excel workbook that a submission names `.txt` plain instead of gzipping it, recognised by its ZIP signature; apb2 reads a `.gz` only as delimited text, which broke the MSAngel and ProlineStudio submissions.
+- 2026-10-20: `workflow_proteobench.csv` gains an `sdrf` column, so `proteobench`, `proteobench_run`, `proteobench_run_vendor` and `proteobench_pmultiqc` accept `module,fasta,level,sdrf`. `fixture download` fetches each module's SDRF from apb-proteobench into `sdrf/` (`sdrf_base_url` in `config/proteobench.toml`), and `resources.csv` and the fixture viewer show it; this partly reverses 2026-10-02, which stopped fetching module files: the SDRF only, no TOML.
 
 - 2026-10-20: Workflow `proteobench_run_vendor`, replacing `proteobench_run_vendor_cont`, scores as `proteobench_run` does with `apb-proteobench --proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides them. `run_quant_step` takes `proteins`. `scripts/corpus_runs.fish` runs the `proteobench` corpus through both workflows, and the corpus viewer compares each with the upstream datapoints.
 

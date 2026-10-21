@@ -39,18 +39,12 @@ def module_fasta(context: WorkflowContext) -> Path | None:
     return _module_file(context, "fasta")
 
 
-def module_sdrf(context: WorkflowContext) -> Path | None:
-    """The SDRF the workflow table names for the dataset's module; none is no sample design."""
-    return _module_file(context, "sdrf")
-
-
 def export_step(
     context: WorkflowContext,
     target: str,
     fasta: Path | None = None,
-    sdrf: Path | None = None,
 ) -> StepSpec:
-    """Convert the vendor files, FASTA-check and annotate them if given, write ``target``'s file."""
+    """Convert the vendor files, FASTA-check them if given, write ``target``'s file."""
     dataset = context.dataset
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
@@ -69,14 +63,12 @@ def export_step(
             "--software",
             parameter_software(dataset.software_name),
             *(["--fasta", str(fasta)] if fasta is not None else []),
-            *(["--sdrf", str(sdrf)] if sdrf is not None else []),
         ],
         inputs=[
             Artifact(role="vendor_table", path=source),
             *[Artifact(role="vendor_secondary", path=secondary) for secondary in secondary_inputs],
             Artifact(role="vendor_parameter_file", path=parameters),
             *([Artifact(role="fasta", path=fasta)] if fasta is not None else []),
-            *([Artifact(role="sdrf", path=sdrf)] if sdrf is not None else []),
         ],
         outputs=[Artifact(role="export", path=output), representation(output)],
     )
