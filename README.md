@@ -70,6 +70,8 @@ File details adds a FASTA check subtab when peptide verification was recorded: t
 
 Oddities lists every summary entry the producers recorded in the displayed result, root and levels, with its status, value and unit, attention first. The dataset table counts entries needing attention and offers an Oddities filter; an entry recorded as not checked marks partial coverage. Run overview counts affected datasets once per software and producer metric. The final index job writes `oddities.json` version 2 from the displayed scientific output's representation; after a later workflow failure, the summary identifies its earlier successful source.
 
+Search settings shows, per software, which search settings APB recovered from the parameter files, as in the article's Figure S1: each cell is the percentage of that software's datasets whose result records a parameter file (n in the row label) where the setting was recovered, printed below 100. A setting counts unless it is null, empty or an empty list, and acquisition counts unless `unknown`, so an automatic tolerance counts and modifications count when one is listed. Datasets without a recorded parameter file, such as parameter-free inputs or failed conversions, are listed below the table and left out of n. The index job writes `search_settings.json` from the displayed representation's `root.apb.parse.provenance.search_parameters`.
+
 The Structure tab depicts physical AnnData ownership using representation version 5. Every result keeps a root part and one part per level, never merged: H5AD shows one AnnData with its root part in `uns["apb"]` and its level part in `uns[level]["apb"]`; H5MU provides a MuData-container subtab and one subtab per embedded AnnData, including annotation modalities. MuData stores common `provenance` under each tool once, while each AnnData stores its own rules, roles, results and summaries. ProteoBench keeps `result.scoring[quantity_name]`; FASTA keeps each level's verification result. There are no shared/level wrappers or client-side ownership reconstruction. The viewer shows actual trees, scalar values and object paths, with primary quantity names such as `Intensity · X`. Root metadata and cross-modality relations appear only in the container subtab. The physical reconstruction descriptor is explicitly noted as omitted, never displayed as a fabricated value. Older representation versions are rejected; existing saved artifacts are not migrated.
 
 ## Run
@@ -134,6 +136,7 @@ Bare `clean` deletes every current or legacy run directory under the configured 
 | `reports/<key>.json` | Complete dataset result with full stdout and stderr |
 | `corpus_index.json` | Final validated index pointing to all dataset reports |
 | `oddities.json` | Versioned producer summary entries, source provenance and affected-dataset counts |
+| `search_settings.json` | Versioned recorded parameter file per dataset and, per software, datasets recovering each setting |
 | `snakemake.log` | Scheduler output |
 | `artifacts/**/*.apb.json` | Compact APB scientific representations for final and intermediate results |
 

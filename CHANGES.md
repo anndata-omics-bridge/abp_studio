@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-10-21: Run overview gains a Search settings subtab: per software, the share of datasets whose result records a parameter file that recovered each of the article Figure S1's 12 settings, coloured with its ramp, with the datasets left out and why. The index job writes `search_settings.json` version 1 from apb2's `root.apb.parse.provenance.search_parameters` in the displayed representation; Studio never parses a parameter file. The viewer no longer decodes `search_parameters` as embedded JSON, since apb2 stores it as an object.
+
 - 2026-10-20: The Fixture Manager keeps an Excel workbook that a submission names `.txt` plain instead of gzipping it, recognised by its ZIP signature; apb2 reads a `.gz` only as delimited text, which broke the MSAngel and ProlineStudio submissions.
 - 2026-10-20: `workflow_proteobench.csv` gains an `sdrf` column, so `proteobench`, `proteobench_run`, `proteobench_run_vendor` and `proteobench_pmultiqc` accept `module,fasta,level,sdrf`. `fixture download` fetches each module's SDRF from apb-proteobench into `sdrf/` (`sdrf_base_url` in `config/proteobench.toml`), and `resources.csv` and the fixture viewer show it; this partly reverses 2026-10-02, which stopped fetching module files: the SDRF only, no TOML.
 

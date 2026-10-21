@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from apb_studio.corpus import oddities
+from apb_studio.corpus import oddities, search_settings
 from apb_studio.corpus.models import RunManifest
 from apb_studio.corpus.runs import command_for, dataset_job, publish_index
 from apb_studio.corpus.tables import load_datasets
@@ -21,6 +21,7 @@ rule all:
     input:
         index=str(ROOT / "corpus_index.json"),
         oddities=str(ROOT / "oddities.json"),
+        search_settings=str(ROOT / "search_settings.json"),
 
 
 rule dataset:
@@ -40,8 +41,10 @@ rule index:
     input:
         reports=[str(ROOT / link.path) for link in RUN.reports],
         projection=str(Path(oddities.__file__)),
+        search_projection=str(Path(search_settings.__file__)),
     output:
         index=str(ROOT / "corpus_index.json"),
         oddities=str(ROOT / "oddities.json"),
+        search_settings=str(ROOT / "search_settings.json"),
     run:
         publish_index(ROOT, RUN)

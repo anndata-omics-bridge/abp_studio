@@ -3,9 +3,7 @@ import type { AnnDataDiagram, AnnDataStructure, ApbMetadata, DatasetReport, Data
 // Pure projections of the versioned APB scientific representation.
 export const REPRESENTATION_FORMAT = 'apb2-result-representation'
 export const REPRESENTATION_VERSION = '5'
-const EMBEDDED_JSON_FIELDS = new Set([
-  'rule_json', 'plan_json', 'search_parameters'
-])
+const EMBEDDED_JSON_FIELDS = new Set(['rule_json', 'plan_json'])
 
 /** Pair each recorded level check with the source provenance on its owning result. */
 export function fastaChecks (representation: Representation): FastaCheck[] {

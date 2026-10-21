@@ -14,6 +14,8 @@ import { createScoresPanel } from './panels/scores.js'
 import { representationScores } from './scores.js'
 import { validatedOddities, withOddities } from './oddities.js'
 import { renderOdditiesSummary } from './render/oddities.js'
+import { validatedSearchSettings } from './search-settings.js'
+import { renderSearchSettings } from './render/search-settings.js'
 import type { RepresentationSummary } from './scores.js'
 import { createSettingsPanel } from './panels/settings.js'
 import { createVisualizationPanel } from './panels/visualizations.js'
@@ -26,7 +28,7 @@ import './app.css'
 import './representation.css'
 import './json-viewer.css'
 import type { ColumnDefinition, Tabulator } from '../shared/tabulator.js'
-import type { Artifact, CatalogRun, CsvRows, DatasetReport, DatasetRow, InputKind, Operation, RunChoice, RunManifest, RunOddities, ToolTimings } from './types.js'
+import type { Artifact, CatalogRun, CsvRows, DatasetReport, DatasetRow, InputKind, Operation, RunChoice, RunManifest, RunOddities, RunSearchSettings, ToolTimings } from './types.js'
 import type { ExecutionSettings } from './panels/settings.js'
 
 type DetailPanel = ReturnType<typeof createDetailPanel>
@@ -50,6 +52,8 @@ interface ViewerState {
   representationFiles: Map<string, RepresentationSummary | null>
   oddities: RunOddities | null
   odditiesStamp: string
+  searchSettings: RunSearchSettings | null
+  searchSettingsStamp: string
   table: Tabulator | null
 }
 interface ArtifactEntry { row: DatasetRow; artifact: Artifact }
@@ -74,6 +78,8 @@ const state: ViewerState = {
   representationFiles: new Map(),
   oddities: null,
   odditiesStamp: '',
+  searchSettings: null,
+  searchSettingsStamp: '',
   table: null
 }
 
@@ -138,6 +144,8 @@ async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsP
   state.representationFiles.clear()
   state.oddities = null
   state.odditiesStamp = ''
+  state.searchSettings = null
+  state.searchSettingsStamp = ''
   state.operationStamp = ''
   const manifest = choice.manifest
   app.hasProteobench = Boolean(manifest.tools?.['apb-proteobench'])
@@ -185,6 +193,7 @@ function renderSelection (app: CorpusApp, detail: DetailPanel, visualizations: V
     await visualizations.render(chartViews(rows, state.timingFiles, ionDimensions()))
     await scores.render(state.run, rows, state.representationFiles, [...new Set(state.rows.map(row => row.software_name))].sort())
     renderOdditiesSummary(host(app, 'oddities'), state.oddities)
+    renderSearchSettings(host(app, 'search-settings'), state.searchSettings)
   })
   return selectionRender
 }
@@ -235,6 +244,14 @@ async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: 
   if (odditiesStamp !== state.odditiesStamp) {
     state.oddities = odditiesDocument ? validatedOddities(odditiesDocument, state.manifest.run_id) : null
     state.odditiesStamp = odditiesStamp
+  }
+  const searchSettingsDocument = await readStoreJson(`${state.run}/search_settings.json`)
+  const searchSettingsStamp = JSON.stringify(searchSettingsDocument)
+  if (searchSettingsStamp !== state.searchSettingsStamp) {
+    state.searchSettings = searchSettingsDocument
+      ? validatedSearchSettings(searchSettingsDocument, state.manifest.run_id)
+      : null
+    state.searchSettingsStamp = searchSettingsStamp
   }
   if (state.operationStamp !== (operation?.updated_at ?? '')) {
     state.reports.clear()
@@ -332,6 +349,8 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
       state.representationFiles.clear()
       state.oddities = null
       state.odditiesStamp = ''
+      state.searchSettings = null
+      state.searchSettingsStamp = ''
       destroyTables()
       detail.reset()
       settings.clear()
@@ -341,6 +360,7 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
       await visualizations.render(chartViews([]))
       await scores.render('', [], new Map(), [])
       renderOdditiesSummary(host(app, 'oddities'), null)
+      renderSearchSettings(host(app, 'search-settings'), null)
     }
     app.error = ''
   } catch (error) {

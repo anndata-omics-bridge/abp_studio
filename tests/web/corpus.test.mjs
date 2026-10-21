@@ -208,8 +208,7 @@ test('representation display expands known embedded JSON and keeps native aggreg
     artifact: { name: 'result.h5ad' }, annotation_tables: [], feature_relations: [],
     levels: [{ apb: { parse: {
       rule_json: nestedRule,
-      plan_json: JSON.stringify({ level: 'ion' }),
-      search_parameters: JSON.stringify({ enzyme: 'Trypsin/P', allowed_miscleavages: 1 })
+      plan_json: JSON.stringify({ level: 'ion' })
     },
       aggregate: [{
         source_level: 'ion', target_level: 'protein', method: 'mean'
@@ -223,9 +222,6 @@ test('representation display expands known embedded JSON and keeps native aggreg
     schema_version: '0.3', software_name: 'Sage'
   })
   assert.deepEqual(displayed.levels[0].apb.parse.plan_json, { level: 'ion' })
-  assert.deepEqual(displayed.levels[0].apb.parse.search_parameters, {
-    enzyme: 'Trypsin/P', allowed_miscleavages: 1
-  })
   assert.deepEqual(displayed.levels[0].apb.aggregate, [{
     source_level: 'ion', target_level: 'protein', method: 'mean'
   }])
@@ -236,7 +232,6 @@ test('embedded JSON display preserves malformed, scalar and unrelated strings', 
   const source = {
     rule_json: '{not valid JSON',
     plan_json: '42',
-    search_parameters: 'null',
     note: '{"looks":"like JSON"}',
     existing: { rule_json: ['already', { plan_json: '{"level":"protein"}' }] }
   }
@@ -244,7 +239,6 @@ test('embedded JSON display preserves malformed, scalar and unrelated strings', 
   assert.deepEqual(expandEmbeddedJsonForDisplay(source), {
     rule_json: '{not valid JSON',
     plan_json: '42',
-    search_parameters: 'null',
     note: '{"looks":"like JSON"}',
     existing: { rule_json: ['already', { plan_json: { level: 'protein' } }] }
   })

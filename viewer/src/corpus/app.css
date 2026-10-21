@@ -821,3 +821,38 @@ section.view .workspace-sidebar h2 {
 #oddities {
   overflow-x: auto;
 }
+#search-settings {
+  overflow-x: auto;
+}
+
+.search-settings-heatmap {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 12px;
+}
+
+.search-settings-heatmap th {
+  color: var(--muted);
+  font-weight: 600;
+  padding: 2px 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.search-settings-heatmap tr:first-child th {
+  text-align: center;
+  vertical-align: bottom;
+  white-space: normal;
+  width: 64px;
+}
+
+.search-settings-heatmap td {
+  color: var(--ink);
+  height: 26px;
+  min-width: 64px;
+  text-align: center;
+}
+
+.search-settings-heatmap td.inverse {
+  color: #ffffff;
+}

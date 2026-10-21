@@ -7,6 +7,7 @@ import * as filters from '../../viewer/src/corpus/filters.ts'
 import * as representation from '../../viewer/src/corpus/representation.ts'
 import { representationScores } from '../../viewer/src/corpus/scores.ts'
 import * as oddities from '../../viewer/src/corpus/oddities.ts'
+import { validatedSearchSettings } from '../../viewer/src/corpus/search-settings.ts'
 
 function deferred () {
   let resolve
@@ -75,6 +76,7 @@ function controller (options = {}) {
   const context = {
     ...model, ...filters, ...representation, ...oddities, representationScores,
     renderOdditiesSummary: () => {},
+    validatedSearchSettings, renderSearchSettings: () => {},
     emptyCsv: () => [],
     readCatalog: options.readCatalog ?? (async () => ({ runs: [] })),
     readInputKinds: options.readInputKinds ?? (async () => ({})),

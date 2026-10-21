@@ -29,6 +29,7 @@ from apb_studio.corpus.models import (
     write_record,
 )
 from apb_studio.corpus.oddities import publish_oddities
+from apb_studio.corpus.search_settings import publish_search_settings
 from apb_studio.corpus.tables import (
     CORPUS_COLUMNS,
     DATASET_COLUMNS,
@@ -402,6 +403,7 @@ def publish_index(root: Path, manifest: RunManifest) -> None:
             raise ValueError(f"Mismatched or unfinished dataset report: {link.path}")
         reports.append(report)
     publish_oddities(root, manifest, reports)
+    publish_search_settings(root, manifest, reports)
     write_record(
         root / "corpus_index.json",
         CorpusIndex(

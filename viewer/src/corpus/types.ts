@@ -125,6 +125,28 @@ export interface RunOddities {
     affected: AffectedDatasets[]
   }[]
 }
+export interface DatasetSearchSettings {
+  input_file: string
+  software_name: string
+  module: string
+  status: string
+  source_path: string
+  parameters: { file_name: string; sha256: string; recovered: string[] } | null
+  notes: string[]
+}
+export interface RunSearchSettings {
+  format: 'apb-studio-search-settings'
+  format_version: 1
+  run_id: string
+  settings: { name: string; label: string }[]
+  datasets: DatasetSearchSettings[]
+  software: {
+    software_name: string
+    dataset_count: number
+    recorded_count: number
+    recovered: Record<string, number>
+  }[]
+}
 export interface DirectedArtifact extends Artifact { direction: 'Input' | 'Output'; step: string }
 export interface StepArtifact extends Artifact { step: string }
 export interface ToolTimings {

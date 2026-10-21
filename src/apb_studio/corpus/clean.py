@@ -59,6 +59,7 @@ def clear_results(root: Path) -> Path:
             "artifacts",
             "corpus_index.json",
             "oddities.json",
+            "search_settings.json",
             "operation.json",
             "snakemake.log",
             "dry-run.log",

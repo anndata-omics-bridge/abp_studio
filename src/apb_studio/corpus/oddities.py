@@ -12,7 +12,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
-from apb_studio.corpus.models import DatasetReport, Record, RunManifest, write_record
+from apb_studio.corpus.models import (
+    Artifact,
+    DatasetReport,
+    Record,
+    RunManifest,
+    StepResult,
+    write_record,
+)
 
 SCIENTIFIC_ROLES = frozenset({"result", "converted", "aggregated", "export", "fasta_verified"})
 _RECORD_FIELDS = frozenset({"schema_version", "provenance", "result", "summary", "details"})
@@ -119,12 +126,8 @@ def _record_metrics(scope: str, path: str, record: dict[str, JsonValue]) -> list
     ]
 
 
-def dataset_oddities(report: DatasetReport) -> DatasetOddities:
-    """Select the displayed scientific output, falling back to available earlier evidence."""
-    result = DatasetOddities(
-        **report.dataset.model_dump(exclude={"vendor_parameter_file"}),
-        status=report.status,
-    )
+def representation_candidates(report: DatasetReport) -> list[tuple[StepResult, Artifact]]:
+    """Representation sidecars, the displayed scientific output's first, then latest first."""
     outputs = [
         artifact
         for step in report.steps
@@ -140,7 +143,16 @@ def dataset_oddities(report: DatasetReport) -> DatasetOddities:
         if artifact.role == "representation" and artifact.size_bytes is not None
     ][::-1]
     candidates.sort(key=lambda candidate: str(candidate[1].path) != preferred)
-    for step, artifact in candidates:
+    return candidates
+
+
+def dataset_oddities(report: DatasetReport) -> DatasetOddities:
+    """Select the displayed scientific output, falling back to available earlier evidence."""
+    result = DatasetOddities(
+        **report.dataset.model_dump(exclude={"vendor_parameter_file"}),
+        status=report.status,
+    )
+    for step, artifact in representation_candidates(report):
         try:
             representation = RepresentationEvidence.model_validate_json(artifact.path.read_text())
             result.metrics = representation_metrics(representation)
