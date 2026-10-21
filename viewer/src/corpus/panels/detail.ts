@@ -20,6 +20,8 @@ import { renderTabs } from '../render/tabs.js'
 import { renderWorkflowFiles } from '../render/workflow-files.js'
 import { renderOdditiesDetail } from '../render/oddities.js'
 import { oddityCountLabel } from '../oddities.js'
+import { searchParametersRecord } from '../search-settings.js'
+import { renderSearchParameters } from '../render/search-settings.js'
 import {
   renderAnnData,
   renderAnnotationAnnData,
@@ -252,6 +254,16 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
             renderFastaChecks(host, preferred.representation)
           })
       }
+      const parameters = searchParametersRecord(preferred.representation)
+      if (parameters) {
+        const panel = document.createElement('section')
+        panel.className = 'detail-panel'
+        panel.hidden = true
+        element('detail').append(panel)
+        registerTab('search-parameters', 'Search parameters', panel, host => renderSearchParameters(
+          host, parameters, row.vendor_parameter_file ? sourceUrl(row.vendor_parameter_file) : ''
+        ))
+      }
       const views = representationViews(preferred.representation)
       const objects = views.filter(view => ['level', 'annotation'].includes(view.kind))
       if (objects.length) {
@@ -292,7 +304,7 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
       defaultTab = objects.length ? 'anndata'
         : views.some(view => view.kind === 'anndata-structure') ? 'scientific-anndata-structure' : 'io'
     }
-    const scientificTabs = ['anndata', 'scientific-anndata-structure'].map(key =>
+    const scientificTabs = ['anndata', 'scientific-anndata-structure', 'search-parameters'].map(key =>
       [...tabs.querySelectorAll<HTMLButtonElement>('[data-detail-tab]')].find(button => button.dataset.detailTab === key)
     ).filter((button): button is HTMLButtonElement => Boolean(button))
     tabs.prepend(...scientificTabs)
@@ -320,6 +332,19 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
   return {
     reset,
     show,
+
+    /** The opened dataset and its first-level tab, for a shared link. */
+    opened () {
+      return { dataset: selected, tab: selectedTab }
+    },
+
+    /** Open a shared link's dataset and tab; a dataset this run lacks stays unopened. */
+    async open (inputFile: string, tab: string) {
+      const row = currentRows.get(inputFile)
+      if (!row) return
+      await show(row, true)
+      if (tab) openTab(tab)
+    },
 
     /** Turn frozen workflow fields into dataset-table columns. */
     columns (workflowRows: CsvRows): ColumnDefinition[] {

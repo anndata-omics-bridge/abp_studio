@@ -1,5 +1,9 @@
 # Changes
 
+- 2026-10-21: File details gains a Search parameters tab, right after AnnData and Structure, for every result that records a parameter file: the stored file, linked, its SHA-256, one row per apb2 `Parameters` field with tolerances, modifications and booleans as text, and the complete record. It reads `root.apb.parse.provenance.search_parameters` from the displayed representation.
+
+- 2026-10-21: Share view, beside Change run, shows a pre-selected link to the current view and copies it where the browser allows (localhost and https). The link's fragment names the run, its main tab, the Run overview or Settings & inputs subtab, and in File details the dataset and its first-level tab; opening it restores that view after the run loads, then clears the address bar. Nested File details tabs, filters, chart choices and scroll position are not part of a link.
+
 - 2026-10-21: `workflow_proteobench_plasma.tsv` loses its `layer` column. `proteobench_plasma` passes `--layer X` and `proteobench_plasma_run` no `--layer`; apb-proteobench's `dia_plasma` module now picks each software's un-normalised layer through apb-catalog's `abundance` set, `Precursor_Quantity` for DIA-NN and FragPipe (DIA-NN quant) as before. AlphaDIA and PEAKS still score their primary layer, now with an `abundance_normalisation` summary entry needing attention, which the oddities count.
 
 - 2026-10-21: `zenodo/directlfq/diann_charite_dataset` leaves the `directlfq`, `directlfq_large_per_vendor` and `proteobench_f3` corpora, and its `zenodo.toml` entry is marked as not native DIA-NN output: every missing cell holds the text `NA` and `File.Name` only the run name, so APB read a fake protein group `NA` and flagged 80,831 gene-level cells. The Fixture Manager still downloads it, so the `all` corpus still includes it. `directlfq_large_per_vendor` now selects MaxQuant and Spectronaut only.

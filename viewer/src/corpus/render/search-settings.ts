@@ -1,6 +1,7 @@
-import type { RunSearchSettings } from '../types.js'
-import { searchSettingsRows } from '../search-settings.js'
-import { dataTable, node } from './dom.js'
+import type { RunSearchSettings, SearchParametersRecord } from '../types.js'
+import { parameterRows, searchSettingsRows } from '../search-settings.js'
+import { dataTable, jsonTree, node } from './dom.js'
+import { fileLink } from './links.js'
 
 /** Settings recovered per software, as in the article's Figure S1, then the datasets left out. */
 export function renderSearchSettings (host: HTMLElement, summary: RunSearchSettings | null): void {
@@ -40,4 +41,22 @@ export function renderSearchSettings (host: HTMLElement, summary: RunSearchSetti
     missing.map(dataset => [dataset.software_name, dataset.input_file, dataset.status, dataset.notes.join(' ')])
   ))
   host.append(details)
+}
+
+/** One result's recorded parameter file: where it came from, each field, then the whole record. */
+export function renderSearchParameters (host: HTMLElement, record: SearchParametersRecord, href: string): void {
+  const source = node('p', 'Parameter file: ', 'empty-note')
+  source.append(
+    href ? fileLink(href, record.file_name) : node('span', record.file_name),
+    node('span', ` · SHA-256 ${record.sha256.slice(0, 12)}…`)
+  )
+  source.title = record.sha256
+  host.replaceChildren(
+    node('h3', 'Search parameters'),
+    source,
+    dataTable(['Setting', 'Value'], parameterRows(record.parameters))
+  )
+  const full = document.createElement('details')
+  full.append(node('summary', 'Complete search-parameter record'), jsonTree(record))
+  host.append(full)
 }

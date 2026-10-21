@@ -5,6 +5,7 @@ import { isolatedSource } from './source.mjs'
 import * as model from '../../viewer/src/corpus/model.ts'
 import * as representation from '../../viewer/src/corpus/representation.ts'
 import * as oddities from '../../viewer/src/corpus/oddities.ts'
+import * as searchSettings from '../../viewer/src/corpus/search-settings.ts'
 import { workflowFlow } from '../../viewer/src/corpus/workflow-flow.ts'
 
 class Element extends EventTarget {
@@ -95,7 +96,7 @@ function controller (read = async () => scientific()) {
     return element
   }
   const context = {
-    document, ...model, ...representation, ...oddities, workflowFlow, node,
+    document, ...model, ...representation, ...oddities, ...searchSettings, workflowFlow, node,
     columnTitle: field => field,
     fileUrl: path => path,
     sourceUrl: (run, path) => `${run}/${path}`,
@@ -118,6 +119,10 @@ function controller (read = async () => scientific()) {
   context.renderOdditiesDetail = runInNewContext(
     `${isolatedSource('viewer/src/corpus/render/dom.ts')}\n${isolatedSource('viewer/src/corpus/render/oddities.ts')}\nrenderOdditiesDetail`,
     { document, ...oddities }
+  )
+  context.renderSearchParameters = runInNewContext(
+    `${isolatedSource('viewer/src/corpus/render/dom.ts')}\n${isolatedSource('viewer/src/corpus/render/search-settings.ts')}\nrenderSearchParameters`,
+    { document, ...searchSettings, fileLink: context.fileLink, jsonTree: context.jsonTree }
   )
   const tabs = isolatedSource('viewer/src/corpus/render/tabs.ts')
   const files = isolatedSource('viewer/src/corpus/render/workflow-files.ts')
@@ -209,6 +214,32 @@ test('FASTA check tab shows the recorded reference beside counts and keeps unrec
   assert.deepEqual(unknownTable.children[1].children[0].children.map(cell => cell.textContent), [
     'ion', 'Not recorded', '0', '2', 'Not recorded'
   ])
+})
+
+test('Search parameters tab lists the recorded file and its fields; a result without one has no tab', async () => {
+  const result = scientific(['ion'])
+  result.root.apb.parse = { provenance: { search_parameters: {
+    file_name: 'params.json', sha256: 'abcdef0123456789'.repeat(4),
+    parameters: { enzyme: 'Trypsin/P', fixed_mods: [], ident_fdr_psm: 0.01 }
+  } } }
+  const { panel, hosts } = controller(async () => result)
+  await panel.refresh([{ ...row('Sage'), vendor_parameter_file: 'submissions/hash/params.json' }])
+  assert.deepEqual(hosts['detail-tabs'].children.map(button => button.dataset.detailTab).slice(0, 3), [
+    'anndata', 'scientific-anndata-structure', 'search-parameters'
+  ], 'parameters sit right after the scientific views')
+  hosts['detail-tabs'].children.find(button => button.textContent === 'Search parameters').click()
+  await settle()
+  const source = hosts.detail.querySelector('.empty-note')
+  assert.equal(source.children[0].tag, 'a', 'the stored parameter file is linked')
+  assert.equal(source.children[0].textContent, 'params.json')
+  const table = hosts.detail.querySelector('.scientific-table')
+  assert.deepEqual(table.children[1].children.map(line => line.children.map(cell => cell.textContent)), [
+    ['Enzyme', 'Trypsin/P'], ['Fixed mods', 'None listed'], ['Ident FDR PSM', '0.01']
+  ])
+
+  const free = controller(async () => scientific(['ion']))
+  await free.panel.refresh([row('Free')])
+  assert.ok(!free.hosts['detail-tabs'].children.some(button => button.textContent === 'Search parameters'))
 })
 
 test('chooser shows software, actual file or folder type and size without repeated paths or status lines', async () => {

@@ -856,3 +856,19 @@ section.view .workspace-sidebar h2 {
 .search-settings-heatmap td.inverse {
   color: #ffffff;
 }
+
+.share-view > .run-select {
+  display: grid;
+  gap: 5px;
+  width: min(640px, 90vw);
+}
+
+.share-view > .run-select input {
+  width: 100%;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.share-note {
+  color: var(--muted);
+  font-size: 12px;
+}

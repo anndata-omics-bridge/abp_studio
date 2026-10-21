@@ -159,6 +159,29 @@ test('file details can open before a dataset is selected and settings retain the
   assert.equal(app.insightTab, 'settings')
 })
 
+test('a shared view opens its tabs and keeps the current tab for names the viewer lacks', () => {
+  const app = createShell()
+  app.applyView({ tab: 'insights', insight: 'search-settings', settings: 'nonsense' })
+  assert.equal(app.tab, 'insights')
+  assert.equal(app.insightTab, 'search-settings')
+  assert.equal(app.settingsTab, 'execution-settings')
+  app.applyView({ tab: 'elsewhere', insight: 'scores', settings: 'workflow-source' })
+  assert.equal(app.tab, 'insights')
+  assert.equal(app.insightTab, 'search-settings', 'score comparison needs a ProteoBench run')
+  assert.equal(app.settingsTab, 'workflow-source')
+})
+
+test('the share field shows the link app.ts computed, beside the run selector', () => {
+  const app = createShell()
+  assert.doesNotMatch(markup(app.render()), /Share view/, 'the run catalog has no view to share')
+  app.select('insights')
+  app.shareLink = 'http://127.0.0.1:8766/#run=corpus%2Froutine'
+  const rendered = markup(app.render())
+  assert.match(rendered, /<summary>Share view<\/summary>/)
+  assert.match(rendered, /id="share-link"[^>]*readonly/)
+  assert.ok(templates(app.render()).some(template => template.values.includes(app.shareLink)))
+})
+
 test('workspace and insight tabs support wrapping arrows, Home and End with matching focus', () => {
   const app = createShell()
   const mainKey = keyboard(app, 'data-main-tab')

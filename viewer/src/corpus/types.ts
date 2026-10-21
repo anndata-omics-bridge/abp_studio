@@ -246,8 +246,18 @@ export interface FastaVerificationProvenance {
 export interface FastaCheck extends PeptideVerification, FastaVerificationProvenance {
   level: string
 }
+export interface SearchedModification { name: string; target?: string | null; position?: string | null }
+export interface MassTolerance { mode: 'absolute' | 'automatic'; value?: number | null; unit?: string | null }
+export type ParameterValue = string | number | boolean | null | MassTolerance | SearchedModification[]
+/** apb2's record of the parameter file a result was converted with. */
+export interface SearchParametersRecord {
+  file_name: string
+  sha256: string
+  parameters: Record<string, ParameterValue>
+}
 export interface ApbMetadata extends Record<string, unknown> {
   hierarchy?: { identities?: [string, string][] }
+  parse?: { provenance?: { search_parameters?: SearchParametersRecord } }
   fasta?: {
     provenance?: { peptide_verification?: FastaVerificationProvenance }
     result?: { peptide_verification?: PeptideVerification }

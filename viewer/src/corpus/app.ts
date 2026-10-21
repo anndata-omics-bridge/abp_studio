@@ -16,6 +16,8 @@ import { validatedOddities, withOddities } from './oddities.js'
 import { renderOdditiesSummary } from './render/oddities.js'
 import { validatedSearchSettings } from './search-settings.js'
 import { renderSearchSettings } from './render/search-settings.js'
+import { parsedViewLink, viewLinkUrl } from './view-link.js'
+import type { ViewLink } from './view-link.js'
 import type { RepresentationSummary } from './scores.js'
 import { createSettingsPanel } from './panels/settings.js'
 import { createVisualizationPanel } from './panels/visualizations.js'
@@ -84,6 +86,7 @@ const state: ViewerState = {
 }
 
 let selectionRender = Promise.resolve()
+let pendingView: ViewLink | null = null
 let refreshing = false
 let refreshPending = false
 let refreshTimer: number | undefined
@@ -308,6 +311,16 @@ async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: 
   }
 }
 
+/** Open a shared link's view once a run has loaded; a run the catalog lacks leaves Runs open. */
+async function applyPendingView (app: CorpusApp, detail: DetailPanel) {
+  const view = pendingView
+  if (!view || !state.manifest) return
+  pendingView = null
+  if (state.run !== view.run) return
+  app.applyView(view)
+  if (view.tab === 'files' && view.dataset) await detail.open(view.dataset, view.detail)
+}
+
 async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsPanel, visualizations: VisualizationPanel, scores: ScoresPanel) {
   if (refreshing) {
     refreshPending = true
@@ -362,6 +375,7 @@ async function refresh (app: CorpusApp, detail: DetailPanel, settings: SettingsP
       renderOdditiesSummary(host(app, 'oddities'), null)
       renderSearchSettings(host(app, 'search-settings'), null)
     }
+    await applyPendingView(app, detail)
     app.error = ''
   } catch (error) {
     app.error = String(error)
@@ -387,6 +401,35 @@ async function main () {
   const scores = createScoresPanel(host(app, 'scores'), readProteobenchReferences)
   const detail = createDetailPanel(app, readRepresentation, () => state.run)
   const settings = createSettingsPanel(app)
+  // A link's fragment is read once and then cleared, so the address bar never shows a stale view.
+  const followLink = () => {
+    pendingView = parsedViewLink(window.location.hash)
+    if (!pendingView) return
+    state.requested = `${pendingView.run}/run.json`
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+  }
+  followLink()
+  window.addEventListener('hashchange', () => {
+    followLink()
+    void refresh(app, detail, settings, visualizations, scores)
+  })
+  app.addEventListener('share-view', () => {
+    const opened = detail.opened()
+    const link = viewLinkUrl(window.location.href, {
+      run: state.run,
+      tab: app.tab,
+      insight: app.insightTab,
+      settings: app.settingsTab,
+      dataset: opened.dataset,
+      detail: opened.tab
+    })
+    app.shareLink = link
+    app.shareNote = 'Select the link and copy it.'
+    if (window.isSecureContext && navigator.clipboard) {
+      navigator.clipboard.writeText(link).then(() => { app.shareNote = 'Copied to the clipboard.' }, () => {})
+    }
+    void app.updateComplete.then(() => app.querySelector<HTMLInputElement>('#share-link')?.select())
+  })
   app.addEventListener('run-change', event => {
     if (event instanceof CustomEvent && typeof event.detail?.value === 'string') {
       state.requested = event.detail.value

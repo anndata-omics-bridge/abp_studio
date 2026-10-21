@@ -62,7 +62,9 @@ export class CorpusApp extends LitElement {
     fractions: { type: Object },
     runValue: { type: String },
     runDisabled: { type: Boolean },
-    hasProteobench: { type: Boolean }
+    hasProteobench: { type: Boolean },
+    shareLink: { type: String },
+    shareNote: { type: String }
   }
 
   tab: MainTab = 'runs'
@@ -82,6 +84,8 @@ export class CorpusApp extends LitElement {
   runValue = ''
   runDisabled = true
   hasProteobench = false
+  shareLink = ''
+  shareNote = ''
   private headerObserver: ResizeObserver | null = null
 
   /** Use light DOM so the shared table styles apply to each panel. */
@@ -158,6 +162,16 @@ export class CorpusApp extends LitElement {
     this.selectInsight('results')
     this.select('insights')
     this.dispatchEvent(new CustomEvent('run-change', { detail: { value }, bubbles: true }))
+  }
+
+  /** Open the tabs a shared link names; a name this viewer lacks keeps the current tab. */
+  applyView (view: { tab: string; insight: string; settings: string }) {
+    const settings = SETTINGS_TABS.find(([id]) => id === view.settings)?.[0]
+    if (settings) this.selectSettings(settings)
+    const insight = this.insightTabs.find(([id]) => id === view.insight)?.[0]
+    if (insight) this.selectInsight(insight)
+    const tab = MAIN_TABS.find(([id]) => id === view.tab)?.[0]
+    if (tab) this.select(tab)
   }
 
   get filteredRunChoices (): RunChoice[] {
@@ -330,6 +344,28 @@ export class CorpusApp extends LitElement {
     `
   }
 
+  /** Opening asks app.ts for a link to the current view; the field works where the clipboard does not. */
+  private renderShareView (): TemplateResult {
+    return html`
+      <details class="run-switcher share-view" @toggle=${(event: Event) => {
+        const details = event.currentTarget
+        if (details instanceof HTMLDetailsElement && details.open) {
+          this.dispatchEvent(new CustomEvent('share-view', { bubbles: true }))
+        }
+      }}>
+        <summary>Share view</summary>
+        <label class="run-select">Link to this view
+          <input id="share-link" type="text" readonly .value=${this.shareLink}
+            @focus=${(event: Event) => {
+              const input = event.currentTarget
+              if (input instanceof HTMLInputElement) input.select()
+            }}>
+          <span class="share-note">${this.shareNote}</span>
+        </label>
+      </details>
+    `
+  }
+
   /** Persistent panel hosts keep tables and scientific renderers mounted while filters change. */
   render (): TemplateResult {
     const statuses = ['succeeded', 'failed', 'running', 'interrupted', 'not_downloaded']
@@ -340,6 +376,7 @@ export class CorpusApp extends LitElement {
         ${this.tab === 'runs' ? html`<strong class="catalog-title">Saved runs</strong>` : html`
           ${this.renderRunBanner()}
           ${this.renderRunSelector()}
+          ${this.renderShareView()}
         `}
         ${this.error || this.tab !== 'runs' ? html`
           <span class="status ${this.error ? 'error' : ''}" role="status">${this.error || this.status}</span>
