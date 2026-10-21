@@ -74,7 +74,9 @@ def _record(**changes: Any) -> dict[str, Any]:
 
 
 def test_the_article_rule_decides_what_counts_as_recovered(tmp_path: Path) -> None:
-    result = dataset_search_settings(_report("a", "Synthetic", _converted(tmp_path, "a", _record())))
+    result = dataset_search_settings(
+        _report("a", "Synthetic", _converted(tmp_path, "a", _record()))
+    )
 
     assert result.parameters is not None
     assert result.parameters.file_name == "params.txt"
@@ -119,7 +121,9 @@ def test_software_rows_count_each_recorded_dataset_once(tmp_path: Path) -> None:
 
     summary = RunSearchSettings.model_validate_json((tmp_path / "search_settings.json").read_text())
     assert [setting.name for setting in summary.settings] == list(SETTINGS)
-    assert [(row.software_name, row.dataset_count, row.recorded_count) for row in summary.software] == [
+    assert [
+        (row.software_name, row.dataset_count, row.recorded_count) for row in summary.software
+    ] == [
         ("Free", 1, 0),
         ("Synthetic", 3, 2),
     ]

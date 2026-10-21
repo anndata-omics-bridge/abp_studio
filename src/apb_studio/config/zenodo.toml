@@ -84,6 +84,10 @@ software_name = "DIA-NN"
 input = "report.tsv"
 files = { "report.tsv" = "Spectronaut_LargeFC__re_run_DIANN__report.tsv.gz" }
 
+# NOT NATIVE DIA-NN OUTPUT. This table was rewritten after DIA-NN: every missing cell holds the
+# text NA (409,887 cells, none empty) and File.Name holds only the run name. APB therefore reads
+# a fake protein group "NA" and flags the gene columns as unreadable. Native 1.7.16, 1.8 and 1.8.1
+# reports leave missing cells empty. Listed in no corpus; kept only because the mirror holds it.
 [[records.datasets]]
 name = "diann_charite_dataset"
 module = "directlfq"
