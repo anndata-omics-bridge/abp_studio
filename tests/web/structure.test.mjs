@@ -25,7 +25,7 @@ const annotation = {
   columns: [{ name: 'id', dtype: 'String', null_count: 0 }], metadata: { source: 'ref.fasta' }
 }
 const relation = {
-  name: 'peptide_protein', annotation_table: annotation.name, target_level: 'ion',
+  name: 'peptide_protein', blocks: [{ source: annotation.name, target: 'ion', links: 72 }],
   coordinates: { row_count: 72 }, metadata: { matching: 'sequence' }
 }
 
@@ -53,7 +53,7 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
       ...provenance,
       hierarchy: { name: 'lfq', identities: [['ion', 'ion'], ['protein', 'protein']] },
       annotation_tables: { 'fasta proteins': { key_columns: ['id'], metadata: annotation.metadata } },
-      feature_relations: { peptide_protein: { annotation_table: annotation.name, target_level: 'ion', metadata: relation.metadata } }
+      feature_relations: { peptide_protein: { metadata: relation.metadata } }
     } }, levels: [protein, ion],
     annotation_tables: [annotation], feature_relations: [relation]
   }
@@ -66,7 +66,7 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
     'fasta proteins': { key_columns: ['id'], metadata: annotation.metadata }
   })
   assert.deepEqual(root.uns.feature_relations, {
-    peptide_protein: { annotation_table: annotation.name, target_level: 'ion', metadata: relation.metadata }
+    peptide_protein: { metadata: relation.metadata }
   })
   assert.deepEqual(apbMetadataScopes(representation)[0].value.uns.apb, root.uns)
   assert.equal(ions.objectPath, 'mdata.mod["ion"]')

@@ -35,7 +35,7 @@ def _sidecar(path: Path, record: dict[str, Any] | None) -> Artifact:
     sidecar.write_text(
         json.dumps({
             "format": "apb2-result-representation",
-            "format_version": "6",
+            "format_version": "7",
             "root": {"apb": {"parse": {"provenance": provenance}}},
             "levels": [{"name": "ion", "apb": {}}],
         })

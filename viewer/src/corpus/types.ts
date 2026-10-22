@@ -279,16 +279,20 @@ export interface Level {
     items: { index: number; label: string; key?: Record<string, unknown> }[]
   }
 }
+export interface RelationBlock {
+  source: string
+  target: string
+  links: number
+}
 export interface FeatureRelation {
   name: string
-  annotation_table: string
-  target_level: string
+  blocks: RelationBlock[]
   coordinates: TableDescription
   metadata?: Record<string, unknown>
 }
 export interface Representation {
   format: 'apb2-result-representation'
-  format_version: '6'
+  format_version: '7'
   artifact: { name: string; physical_format: string; size_bytes?: number } | null
   root?: { apb?: ApbMetadata } | null
   levels: Level[]

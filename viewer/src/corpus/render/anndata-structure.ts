@@ -248,9 +248,9 @@ function muDataSection (host: HTMLElement, view: MuDataStructure): void {
     unsSlot([{ uns: view.uns, unsKey: 'uns["apb"]', hasStorage: view.hasStorage }], view.objectPath),
     slot('varp', 'varp · feature relations', `${count(view.relations.length)} relations`,
       view.relations.length
-        ? dataTable(['Relation', 'Annotation table', 'Target AnnData', 'Coordinates'], view.relations.map(relation => [
-            relation.name, relation.annotation_table, relation.target_level, count(relation.coordinates?.row_count)
-          ]))
+        ? dataTable(['Relation', 'From', 'To', 'Links'], view.relations.flatMap(relation =>
+            relation.blocks.map(block => [relation.name, block.source, block.target, count(block.links)])
+          ))
         : node('p', 'No cross-modality feature relations.', 'structure-empty')),
     node('p', 'The representation describes modality axes. MuData’s merged root axes and alignment maps are not included.', 'structure-intro')
   )

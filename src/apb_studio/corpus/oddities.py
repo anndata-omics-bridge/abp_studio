@@ -93,7 +93,7 @@ class RepresentationEvidence(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
     format: Literal["apb2-result-representation"]
-    format_version: Literal["6"]
+    format_version: Literal["7"]
     root: PartEvidence | None = None
     levels: list[LevelEvidence]
 

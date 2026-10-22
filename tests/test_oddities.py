@@ -35,7 +35,7 @@ def entry(name: str, value: Any, status: str, **extra: Any) -> dict[str, Any]:
 def test_metrics_are_collected_from_root_level_and_named_records() -> None:
     representation = RepresentationEvidence.model_validate({
         "format": "apb2-result-representation",
-        "format_version": "6",
+        "format_version": "7",
         "root": {"apb": {"fasta": {"schema_version": "4", "provenance": {}}}},
         "levels": [
             {
@@ -101,7 +101,7 @@ def _representation(path: Path, **parse: Any) -> Path:
     sidecar.write_text(
         json.dumps({
             "format": "apb2-result-representation",
-            "format_version": "6",
+            "format_version": "7",
             "root": {"apb": {"parse": {}}},
             "levels": [{"name": "ion", "apb": {"parse": record}}],
         })

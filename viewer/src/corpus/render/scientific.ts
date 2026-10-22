@@ -319,8 +319,10 @@ export async function renderAnnotationAnnData (
       ['Shape', `${observationCount} observations × ${annotationTable.row_count} variables`]
     ])
   )
-  const relations = (representation.feature_relations ?? [])
-    .filter(relation => relation.annotation_table === annotationTable.name)
+  const relations = (representation.feature_relations ?? []).flatMap(relation =>
+    relation.blocks
+      .filter(block => block.source === annotationTable.name)
+      .map(block => ({ name: relation.name, ...block })))
   host.append(article)
   await renderNestedTabs(article, `${annotationTable.name} annotation AnnData sections`, [
     {
@@ -341,12 +343,8 @@ export async function renderAnnotationAnnData (
       render: panel => {
         if (relations.length) {
           panel.append(dataTable(
-            ['Name', 'Target level', 'Coordinates'],
-            relations.map(relation => [
-              relation.name,
-              relation.target_level,
-              relation.coordinates.row_count
-            ])
+            ['Name', 'Target', 'Links'],
+            relations.map(relation => [relation.name, relation.target, relation.links])
           ))
         } else {
           panel.append(
