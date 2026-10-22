@@ -106,7 +106,7 @@ class SearchParameterEvidence(_Evidence):
     """Validate just the path to the root parse record, leaving the rest of the sidecar."""
 
     format: Literal["apb2-result-representation"]
-    format_version: Literal["5"]
+    format_version: Literal["6"]
     root: RootPart = Field(default_factory=RootPart)
 
 

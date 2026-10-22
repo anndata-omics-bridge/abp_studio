@@ -288,7 +288,7 @@ export interface FeatureRelation {
 }
 export interface Representation {
   format: 'apb2-result-representation'
-  format_version: '5'
+  format_version: '6'
   artifact: { name: string; physical_format: string; size_bytes?: number } | null
   root?: { apb?: ApbMetadata } | null
   levels: Level[]
