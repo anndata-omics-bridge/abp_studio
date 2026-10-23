@@ -44,7 +44,7 @@ Sibling workflows that need identical resources declare `WORKFLOW_TABLE` instead
 
 When vendor parameters exist, conversion commands pass `--params` and `--software` using the dataset's parameter-file software. A `FragPipe (DIA-NN quant)` dataset therefore passes `fragpipe`; APB2 reads its parameters and limits result-rule candidates to FragPipe and the declared DIA-NN quantifier. The full-level `convert`, `aggregate`, and `aggregate_medpolish` workflows accept parameter-free rows and then use the result producer as their software hint; the parameter file is a dependency only when provided. Studio does not detect result formats itself.
 
-`convert_no_param` instead passes the TSV's result-producer software to APB2 without `--params`; `FragPipe (DIA-NN quant)` maps to `DIA-NN`. Its step and Snakemake dependency list omit the vendor parameter file. APB2 owns column-based rule identification, and unresolved evidence appears as a failed dataset report.
+`convert_no_param` instead passes the TSV's result-producer software to APB2 without `--params`; `FragPipe (DIA-NN quant)` maps to `DIA-NN`. ProteoBench's `WOMBAT` reaches APB2 as `WOMBAT-P` (slug `wombatp`) in every workflow. Its step and Snakemake dependency list omit the vendor parameter file. APB2 owns column-based rule identification, and unresolved evidence appears as a failed dataset report.
 
 ## Optional tool timings
 

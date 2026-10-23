@@ -93,6 +93,17 @@ def test_parameter_free_compound_software_uses_the_result_producer(tmp_path: Pat
     assert with_parameters.command[with_parameters.command.index("--software") + 1] == "fragpipe"
 
 
+def test_proteobench_wombat_is_passed_as_wombat_p(tmp_path: Path) -> None:
+    row = _dataset("input_file.csv", software="WOMBAT")
+    without_parameters = convert_steps(_context(tmp_path, row, "hdf5"))[0]
+    with_parameters = convert_steps(
+        _context(tmp_path, row.model_copy(update={"vendor_parameter_file": "param.yml"}), "hdf5")
+    )[0]
+
+    for step in (without_parameters, with_parameters):
+        assert step.command[step.command.index("--software") + 1] == "wombatp"
+
+
 @pytest.mark.parametrize("storage_format", ["hdf5", "parquet", "duckdb"])
 def test_parameter_free_aggregation_keeps_general_layers_and_primary_medpolish_distinct(
     tmp_path: Path, storage_format: StorageFormat
