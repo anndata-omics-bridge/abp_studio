@@ -37,6 +37,7 @@ Contents:
 
 - MaxQuant `evidence.txt`, `peptides.txt` and `proteinGroups.txt`: BoxCar (PXD006109), Kuster 200 HeLa replicates (PXD015087), yeast interactome (1,622 timsTOF runs)
 - MaxQuant `evidence.txt` and `peptides.txt` only: Kuster tissue (PXD010154); its archive has no protein table
+- Not fetched since 23 October 2026: the yeast interactome. Its timsTOF `evidence.txt` leaves `Modified sequence` empty on all 8,568,474 match-between-runs rows, so apb2 refuses it
 - Spectronaut / DIA-NN reports: LargeFC (main, SN15 re-run, DIA-NN re-run), Charité DIA-NN, iq long-format example
 - `quicktests`: three shortened DIA-NN, MaxQuant and Spectronaut inputs
 

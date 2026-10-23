@@ -58,12 +58,6 @@ input = "peptides.txt"
 files = { "peptides.txt" = "kuster_tissue_data__peptides.txt.gz" }
 
 [[records.datasets]]
-name = "maxquant_yeast_interactome"
-module = "directlfq"
-software_name = "MaxQuant"
-files = { "evidence.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__evidence.txt.gz", "peptides.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__peptides.txt.gz", "proteinGroups.txt" = "maxquant_yeast_interactome__1_Final_run_5x_1800_files__r1__proteinGroups.txt.gz" }
-
-[[records.datasets]]
 name = "Spectronaut_LargeFC"
 module = "directlfq"
 software_name = "Spectronaut"
