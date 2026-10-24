@@ -4,7 +4,7 @@ APB Studio tests the [AnnData Proteomics Bridge](https://anndata-omics-bridge.gi
 
 **Browse the published runs: <https://fgcz-ms.uzh.ch/public/apb-studio/>**
 
-- **Fixture Manager** downloads ProteoBench submissions and Zenodo datasets (the directLFQ benchmark and MaxQuant entrapment tables) into a local fixture store
+- **Fixture Manager** downloads ProteoBench submissions and Zenodo datasets (the directLFQ benchmark, MaxQuant entrapment tables and MSstats+ DIA reports) into a local fixture store
 - **Corpus Runner** runs one workflow over a named corpus with Snakemake: conversion, FASTA checks, ProteoBench scoring, pMultiQC reports, aggregation and exports; each dataset's steps, runtime, memory and outputs are recorded
 - **Corpus viewer** browses runs, datasets, APB metadata and APB-versus-ProteoBench scores; it reads only files, so a published copy runs on a plain file server
 
@@ -41,7 +41,7 @@ Results_quant_ion_DDA/00e2f863939301a2a71178652972dad895b27520,MaxQuant · dda_q
 zenodo/maxquant_entrapment/maxquant_v2.8.1.0,MaxQuant · entrapment_dia_astral
 ```
 
-Every corpus in `corpuses/` is curated by hand, and its name is its file stem; `all` is reserved and means every downloaded dataset. `proteobench.csv` holds the regular ion-level inputs for the ProteoBench and pMultiQC workflows, `proteobench_plasma.csv` and `proteobench_entrapment.csv` the inputs of their scoring workflows, and `directlfq.csv` the parameter-free Zenodo directLFQ mirror. `routine.csv` holds 13 bounded datasets, including the multifile MaxQuant entrapment folder, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.15.0-beta.2 and AlphaDIA 1.12.1 and 2.1.0; `routine_pb.csv` holds its 12 ProteoBench datasets for three-call quantification scoring. [problems.csv](corpuses/problems.csv) collects submissions that fail for a known reason, explained in [problems.md](corpuses/problems.md).
+Every corpus in `corpuses/` is curated by hand, and its name is its file stem; `all` is reserved and means every downloaded dataset. `proteobench.csv` holds the regular ion-level inputs for the ProteoBench and pMultiQC workflows, `proteobench_plasma.csv` and `proteobench_entrapment.csv` the inputs of their scoring workflows, `directlfq.csv` the parameter-free Zenodo directLFQ mirror, and `msstats_plus.csv` the six largest inputs, the MSstats+ Spectronaut and DIA-NN reports of 7 to 27 GB each, also parameter-free. `routine.csv` holds 13 bounded datasets, including the multifile MaxQuant entrapment folder, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.15.0-beta.2 and AlphaDIA 1.12.1 and 2.1.0; `routine_pb.csv` holds its 12 ProteoBench datasets for three-call quantification scoring. [problems.csv](corpuses/problems.csv) collects submissions that fail for a known reason, explained in [problems.md](corpuses/problems.md).
 
 A run joins each key to the manifest under the `test_data_root` in Studio's settings JSON, which supplies module, software and paths. A key the manifest does not know is an error. A known dataset that is not downloaded is reported with status `not_downloaded` while the rest runs; `corpus run NAME --strict` refuses instead and names the `fixture download` command that fetches it.
 

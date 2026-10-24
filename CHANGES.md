@@ -1,5 +1,11 @@
 # Changes
 
+- 2026-10-24: Zenodo record `msstats_plus` (10.5281/zenodo.23615038) and its corpus `msstats_plus`: the MSstats+ paper's Spectronaut 19 and DIA-NN reports, mirrored from MassIVE RMSV000000701. Six parameter-free datasets of up to 27 GB and 33 million rows (K562 and CSF dilutions in both tools, a three-species mixture, the 1,236-run TPCPA atlas) for `convert_no_param`; see [datasets](docs/datasets.md).
+
+- 2026-10-24: `fixture download` keeps a Parquet record file as written instead of gzipping it, which apb2 refuses; only `.tsv`, `.txt` and `.csv` tables are gzipped, as for ProteoBench submissions.
+
+- 2026-10-23: ProteoBench's `WOMBAT` reaches apb2 as `WOMBAT-P` (`--software wombatp`), the name apb2's rule uses; `parameter_software` maps it, so every workflow passes the new slug.
+
 - 2026-10-21: File details gains a Search parameters tab, right after AnnData and Structure, for every result that records a parameter file: the stored file, linked, its SHA-256, one row per apb2 `Parameters` field with tolerances, modifications and booleans as text, and the complete record. It reads `root.apb.parse.provenance.search_parameters` from the displayed representation.
 
 - 2026-10-21: Share view, beside Change run, shows a pre-selected link to the current view and copies it where the browser allows (localhost and https). The link's fragment names the run, its main tab, the Run overview or Settings & inputs subtab, and in File details the dataset and its first-level tab; opening it restores that view after the run loads, then clears the address bar. Nested File details tabs, filters, chart choices and scroll position are not part of a link.

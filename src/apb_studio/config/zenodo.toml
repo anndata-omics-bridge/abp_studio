@@ -116,3 +116,57 @@ module = "directlfq"
 software_name = "Spectronaut"
 input = "shortened_input.tsv"
 files = { "shortened_input.tsv" = "quicktests__spectronaut__shortened_input.tsv.gz" }
+
+# MSstats+ paper (Kohler et al., Nat Commun 2026): its Spectronaut and DIA-NN reports, mirrored
+# from MassIVE reanalysis RMSV000000701. The largest inputs Studio has (7–27 GB per table, up to
+# 33 million rows), with no parameter files, so `convert_no_param` only.
+[[records]]
+name = "msstats_plus"
+record_id = 23615038
+
+[[records.datasets]]
+name = "K562_Spectronaut"
+module = "msstats_plus"
+software_name = "Spectronaut"
+software_version = "19"
+input = "20250108_163028_K562_dilutions_Jan_2025_PGT_no_normalization_Report.tsv"
+files = { "20250108_163028_K562_dilutions_Jan_2025_PGT_no_normalization_Report.tsv" = "K562_Spectronaut__20250108_163028_K562_dilutions_Jan_2025_PGT_no_normalization_Report.tsv.gz", "K562_annotation.csv" = "K562_Spectronaut__K562_annotation.csv.gz" }
+
+[[records.datasets]]
+name = "CSF_Spectronaut"
+module = "msstats_plus"
+software_name = "Spectronaut"
+software_version = "19"
+input = "20250130_163144_CSF_dilutions_Jan_2025_no_normalization_Report.tsv"
+files = { "20250130_163144_CSF_dilutions_Jan_2025_no_normalization_Report.tsv" = "CSF_Spectronaut__20250130_163144_CSF_dilutions_Jan_2025_no_normalization_Report.tsv.gz", "CSF_annotation.csv" = "CSF_Spectronaut__CSF_annotation.csv.gz" }
+
+[[records.datasets]]
+name = "K562_DIANN"
+module = "msstats_plus"
+software_name = "DIA-NN"
+input = "report.parquet"
+files = { "report.parquet" = "K562_DIANN__report.parquet", "report.pg_matrix.tsv" = "K562_DIANN__report.pg_matrix.tsv.gz", "K562_annotation.csv" = "K562_DIANN__K562_annotation.csv.gz" }
+
+[[records.datasets]]
+name = "CSF_DIANN"
+module = "msstats_plus"
+software_name = "DIA-NN"
+input = "report.parquet"
+files = { "report.parquet" = "CSF_DIANN__report.parquet", "report.pg_matrix.tsv" = "CSF_DIANN__report.pg_matrix.tsv.gz", "CSF_annotation.csv" = "CSF_DIANN__CSF_annotation.csv.gz" }
+
+[[records.datasets]]
+name = "Mix_of_Proteome"
+module = "msstats_plus"
+software_name = "Spectronaut"
+software_version = "19"
+input = "20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv"
+files = { "20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv" = "Mix_of_Proteome__20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv.gz", "Mix_of_Proteome_annotation.csv" = "Mix_of_Proteome__Mix_of_Proteome_annotation.csv.gz", "idmapping.tsv" = "Mix_of_Proteome__idmapping.tsv.gz" }
+
+# The authors' corrected DIA-NN 1.8 report; the original is in PRIDE PXD054790.
+[[records.datasets]]
+name = "TPCPA"
+module = "msstats_plus"
+software_name = "DIA-NN"
+software_version = "1.8"
+input = "diann-report-fixed.tsv"
+files = { "diann-report-fixed.tsv" = "TPCPA__search_data__diann-report-fixed.tsv.gz", "annotation_file.csv" = "TPCPA__annotation_data__annotation_file.csv.gz", "run_times.csv" = "TPCPA__annotation_data__run_times.csv.gz", "runs.csv" = "TPCPA__annotation_data__runs.csv.gz", "sample_info.txt" = "TPCPA__annotation_data__sample_info.txt.gz", "sample_labels.txt" = "TPCPA__annotation_data__sample_labels.txt.gz" }

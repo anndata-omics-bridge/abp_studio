@@ -1,17 +1,18 @@
 # External datasets
 
-Two Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. `config/zenodo.toml` lists the records, their datasets and the files each dataset stores; `fixture download all` acquires both, and `fixture download NAME` the datasets a corpus lists.
+Three Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. `config/zenodo.toml` lists the records, their datasets and the files each dataset stores; `fixture download all` acquires all three, and `fixture download NAME` the datasets a corpus lists.
 
 | Record | Acquire | Corpus | Workflows |
 | --- | --- | --- | --- |
 | MaxQuant entrapment | `uv run fixture download routine` | none; its folder is a `routine` dataset | any conversion workflow |
 | directLFQ mirror | `uv run fixture download directlfq` | `directlfq` | `convert_no_param` only: no parameter files |
+| MSstats+ DIA reports | `uv run fixture download msstats_plus` | `msstats_plus` | `convert_no_param` only: no parameter files |
 
 Each dataset lands MD5-verified in `test_data_download/zenodo/<record>/<dataset>/`, with its tables kept gzipped and only the parameter file decompressed, or, with `--no-gzip`, fully decompressed, and gets a `downloads.csv` row keyed `zenodo/<record>/<dataset>`, the key a corpus file lists. A dataset of related tables names its folder as input; APB reads the tables inside by their MaxQuant names. A dataset without a parameter file has an empty `vendor_parameter_file_path`, which workflows reading vendor parameters refuse.
 
 ## ProteoBench entrapment DIA — MaxQuant 2.8.1.0 related tables
 
-The only complete set of related MaxQuant tables available to Studio. ProteoBench submissions carry the ion-level table alone, so APB's multi-table joins (peptide, peptidoform and protein levels joined to the ion level) are otherwise exercised only by synthetic unit-test tables.
+The only complete set of related MaxQuant tables available to Studio. ProteoBench submissions carry one ion-level table, except MSAngel's workbook, whose "Protein sets" sheet APB joins onto its ion sheet; MaxQuant's multi-table joins (peptide, peptidoform and protein levels joined to the ion level) are otherwise exercised only by synthetic unit-test tables.
 
 - DOI: [10.5281/zenodo.23150735](https://doi.org/10.5281/zenodo.23150735)
 - Tables: `evidence.txt`, `modificationSpecificPeptides.txt`, `peptides.txt`, `proteinGroups.txt`
@@ -45,3 +46,29 @@ Limits for APB:
 
 - No parameter files: conversion needs `--software`, as in the `convert_no_param` workflow
 - Fractionated Kuster tissue: `evidence.txt` (324 raw files) and `peptides.txt` (9 experiments) have different samples, which APB writes to separate results; the corpus therefore runs them as two datasets, `kuster_tissue_data_evidence` and `kuster_tissue_data_peptides`
+
+## MSstats+ DIA reports — Spectronaut and DIA-NN (mirror)
+
+The largest inputs Studio has: 7 to 27 GB and up to 33 million rows per table. They are the reports of the MSstats+ paper (Kohler et al., Nature Communications 2026, doi:10.1038/s41467-026-78591-w), mirrored from MassIVE reanalysis RMSV000000701, where two of them sit only inside tar archives.
+
+- DOI: [10.5281/zenodo.23615038](https://doi.org/10.5281/zenodo.23615038)
+- Size: 19 files, 16.5 GB as stored, 80.0 GB uncompressed
+- Layout: MassIVE path flattened with `__`, spaces as `_`; text gzipped, Parquet as deposited; `manifest.tsv` carries MassIVE paths and checksums
+- Staging scripts: `zenodo_msstats_plus/` in [extend_directflq_benchmark](https://github.com/wolski/extend_directflq_benchmark)
+
+| Dataset | Software | Input | Rows | Runs | Uncompressed |
+| --- | --- | --- | --- | --- | --- |
+| K562_Spectronaut | Spectronaut 19 | fragment-level `Report.tsv` | 27,815,940 | 45 | 22.8 GB |
+| CSF_Spectronaut | Spectronaut 19 | fragment-level `Report.tsv` | 8,840,227 | 47 | 7.4 GB |
+| K562_DIANN | DIA-NN 2 | `report.parquet` | 3,040,701 | 40 | 0.6 GB |
+| CSF_DIANN | DIA-NN 2 | `report.parquet` | 673,791 | 40 | 0.1 GB |
+| Mix_of_Proteome | Spectronaut 19 | fragment-level report | 29,823,948 | 18 | 26.7 GB |
+| TPCPA | DIA-NN 1.8 | `diann-report-fixed.tsv` | 33,128,194 | 1,236 | 22.3 GB |
+
+Each dataset also stores its sample annotation (`*_annotation.csv`, TPCPA's five annotation files, the mixture's `idmapping.tsv`); APB does not read them. The DIA-NN datasets keep `report.pg_matrix.tsv` beside the Parquet report.
+
+Limits for APB:
+
+- No parameter files: conversion needs `--software`, as in the `convert_no_param` workflow
+- Size: a single conversion reads up to 27 GB of text; run the corpus one dataset at a time with `--cores 1`
+- TPCPA is the authors' corrected DIA-NN 1.8 report; the original is in PRIDE PXD054790
