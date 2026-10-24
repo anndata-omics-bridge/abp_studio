@@ -1,6 +1,6 @@
 # Changes
 
-- 2026-10-24: Zenodo record `msstats_plus` (10.5281/zenodo.23615038) and its corpus `msstats_plus`: the MSstats+ paper's Spectronaut 19 and DIA-NN reports, mirrored from MassIVE RMSV000000701. Six parameter-free datasets of up to 27 GB and 33 million rows (K562 and CSF dilutions in both tools, a three-species mixture, the 1,236-run TPCPA atlas) for `convert_no_param`; see [datasets](docs/datasets.md).
+- 2026-10-24: Zenodo record `msstats_plus` (10.5281/zenodo.23615038) and its corpus `msstats_plus`: the MSstats+ paper's Spectronaut 19 and DIA-NN reports, mirrored from MassIVE RMSV000000701, with TPCPA's native report from PRIDE PXD054790. Six parameter-free datasets of up to 42 GB and 65 million rows (K562 and CSF dilutions in both tools, a three-species mixture, the 1,236-run TPCPA atlas) for `convert_no_param`; see [datasets](docs/datasets.md).
 
 - 2026-10-24: `fixture download` keeps a Parquet record file as written instead of gzipping it, which apb2 refuses; only `.tsv`, `.txt` and `.csv` tables are gzipped, as for ProteoBench submissions.
 

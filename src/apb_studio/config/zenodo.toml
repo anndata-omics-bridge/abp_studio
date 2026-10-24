@@ -118,8 +118,8 @@ input = "shortened_input.tsv"
 files = { "shortened_input.tsv" = "quicktests__spectronaut__shortened_input.tsv.gz" }
 
 # MSstats+ paper (Kohler et al., Nat Commun 2026): its Spectronaut and DIA-NN reports, mirrored
-# from MassIVE reanalysis RMSV000000701. The largest inputs Studio has (7–27 GB per table, up to
-# 33 million rows), with no parameter files, so `convert_no_param` only.
+# from MassIVE reanalysis RMSV000000701, TPCPA from PRIDE PXD054790. The largest inputs Studio has
+# (7–42 GB per table, up to 65 million rows), with no parameter files, so `convert_no_param` only.
 [[records]]
 name = "msstats_plus"
 record_id = 23615038
@@ -162,11 +162,12 @@ software_version = "19"
 input = "20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv"
 files = { "20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv" = "Mix_of_Proteome__20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv.gz", "Mix_of_Proteome_annotation.csv" = "Mix_of_Proteome__Mix_of_Proteome_annotation.csv.gz", "idmapping.tsv" = "Mix_of_Proteome__idmapping.tsv.gz" }
 
-# The authors' corrected DIA-NN 1.8 report; the original is in PRIDE PXD054790.
+# The native DIA-NN report from PRIDE PXD054790. The MSstats+ authors' corrected copy in
+# MassIVE ends in a truncated row, which apb2 refuses.
 [[records.datasets]]
 name = "TPCPA"
 module = "msstats_plus"
 software_name = "DIA-NN"
 software_version = "1.8"
-input = "diann-report-fixed.tsv"
-files = { "diann-report-fixed.tsv" = "TPCPA__search_data__diann-report-fixed.tsv.gz", "annotation_file.csv" = "TPCPA__annotation_data__annotation_file.csv.gz", "run_times.csv" = "TPCPA__annotation_data__run_times.csv.gz", "runs.csv" = "TPCPA__annotation_data__runs.csv.gz", "sample_info.txt" = "TPCPA__annotation_data__sample_info.txt.gz", "sample_labels.txt" = "TPCPA__annotation_data__sample_labels.txt.gz" }
+input = "diann-report.tsv"
+files = { "diann-report.tsv" = "TPCPA__diann-report.tsv.gz", "annotation_file.csv" = "TPCPA__annotation_data__annotation_file.csv.gz", "run_times.csv" = "TPCPA__annotation_data__run_times.csv.gz", "runs.csv" = "TPCPA__annotation_data__runs.csv.gz", "sample_info.txt" = "TPCPA__annotation_data__sample_info.txt.gz", "sample_labels.txt" = "TPCPA__annotation_data__sample_labels.txt.gz" }

@@ -49,10 +49,10 @@ Limits for APB:
 
 ## MSstats+ DIA reports — Spectronaut and DIA-NN (mirror)
 
-The largest inputs Studio has: 7 to 27 GB and up to 33 million rows per table. They are the reports of the MSstats+ paper (Kohler et al., Nature Communications 2026, doi:10.1038/s41467-026-78591-w), mirrored from MassIVE reanalysis RMSV000000701, where two of them sit only inside tar archives.
+The largest inputs Studio has: 7 to 42 GB and up to 65 million rows per table. They are the reports of the MSstats+ paper (Kohler et al., Nature Communications 2026, doi:10.1038/s41467-026-78591-w), mirrored from MassIVE reanalysis RMSV000000701, with TPCPA's native report from PRIDE PXD054790, where two of them sit only inside tar archives.
 
 - DOI: [10.5281/zenodo.23615038](https://doi.org/10.5281/zenodo.23615038)
-- Size: 19 files, 16.5 GB as stored, 80.0 GB uncompressed
+- Size: 19 files, 21.9 GB as stored, 99.7 GB uncompressed
 - Layout: MassIVE path flattened with `__`, spaces as `_`; text gzipped, Parquet as deposited; `manifest.tsv` carries MassIVE paths and checksums
 - Staging scripts: `zenodo_msstats_plus/` in [extend_directflq_benchmark](https://github.com/wolski/extend_directflq_benchmark)
 
@@ -63,12 +63,12 @@ The largest inputs Studio has: 7 to 27 GB and up to 33 million rows per table. T
 | K562_DIANN | DIA-NN 2 | `report.parquet` | 3,040,701 | 40 | 0.6 GB |
 | CSF_DIANN | DIA-NN 2 | `report.parquet` | 673,791 | 40 | 0.1 GB |
 | Mix_of_Proteome | Spectronaut 19 | fragment-level report | 29,823,948 | 18 | 26.7 GB |
-| TPCPA | DIA-NN 1.8 | `diann-report-fixed.tsv` | 33,128,194 | 1,236 | 22.3 GB |
+| TPCPA | DIA-NN 1.8 | `diann-report.tsv` | 65,208,190 | 1,236 | 42.1 GB |
 
 Each dataset also stores its sample annotation (`*_annotation.csv`, TPCPA's five annotation files, the mixture's `idmapping.tsv`); APB does not read them. The DIA-NN datasets keep `report.pg_matrix.tsv` beside the Parquet report.
 
 Limits for APB:
 
 - No parameter files: conversion needs `--software`, as in the `convert_no_param` workflow
-- Size: a single conversion reads up to 27 GB of text; run the corpus one dataset at a time with `--cores 1`
-- TPCPA is the authors' corrected DIA-NN 1.8 report; the original is in PRIDE PXD054790
+- Size: a single conversion reads up to 42 GB of text; run the corpus one dataset at a time with `--cores 1`
+- TPCPA is the native DIA-NN 1.8 report from PRIDE PXD054790; the MSstats+ authors' corrected copy in MassIVE ends in a truncated row. apb2 does not yet convert it on a 48 GiB machine: the OS kills it in `parse.decompose` at every level
