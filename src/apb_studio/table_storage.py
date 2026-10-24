@@ -52,18 +52,22 @@ class GzipTables:
     def keep_extracted(self, folder: Path) -> None:
         """Gzip an extracted submission's text tables in place; a workbook stays plain."""
         for path in sorted(folder.glob(_SUBMISSION_TABLES)):
-            if path.is_file() and path.suffix.lower() in _TEXT_TABLES and not _is_workbook(path):
+            if path.is_file() and _is_text_table(path):
                 _gzip(path)
 
     def keep_download(self, download: Path, target: Path, *, table: bool) -> None:
-        """Keep a table gzipped beside ``target``; store a non-table file as ``target``."""
+        """Keep a table gzipped beside ``target``; store any other file as ``target``.
+
+        A Parquet table stays as written: apb2 refuses gzipped Parquet.
+        """
         if not table:
             PlainTables().keep_download(download, target, table=False)
         elif download.suffix == GZIP_SUFFIX:
             download.replace(target.with_name(target.name + GZIP_SUFFIX))
         else:
             download.replace(target)
-            _gzip(target)
+            if _is_text_table(target):
+                _gzip(target)
 
 
 type TableStorage = PlainTables | GzipTables
@@ -72,6 +76,11 @@ type TableStorage = PlainTables | GzipTables
 def tables_for(gzip_tables: bool) -> TableStorage:
     """Select how one acquisition stores its vendor tables."""
     return GzipTables() if gzip_tables else PlainTables()
+
+
+def _is_text_table(path: Path) -> bool:
+    """Say whether a file is a delimited text table, the only kind stored gzipped."""
+    return path.suffix.lower() in _TEXT_TABLES and not _is_workbook(path)
 
 
 def _is_workbook(path: Path) -> bool:

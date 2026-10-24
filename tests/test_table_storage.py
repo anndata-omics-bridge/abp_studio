@@ -61,6 +61,16 @@ def test_a_parquet_submission_table_stays_as_written(tmp_path: Path) -> None:
     assert [path.name for path in tmp_path.iterdir()] == ["input_file.parquet"]
 
 
+def test_a_parquet_record_file_stays_as_written(tmp_path: Path) -> None:
+    """apb2 refuses gzipped Parquet, so a downloaded Parquet table is stored as it came."""
+    download = tmp_path / "single__report.parquet"
+    download.write_bytes(b"PAR1")
+
+    GzipTables().keep_download(download, tmp_path / "report.parquet", table=True)
+
+    assert [path.name for path in tmp_path.iterdir()] == ["report.parquet"]
+
+
 def test_a_workbook_named_like_a_text_table_stays_as_written(tmp_path: Path) -> None:
     """ProlineStudio and MSAngel submit .xlsx workbooks as input_file.txt."""
     workbook = tmp_path / "input_file.txt"
