@@ -46,11 +46,7 @@ def test_metrics_are_collected_from_root_level_and_named_records() -> None:
                         "summary": [entry("unknown_modification_tokens", 1, "attention")],
                     },
                     "fasta": {"summary": [entry("unmatched_features", 3, "attention")]},
-                    "catalog": {
-                        "identification_confidence": {
-                            "summary": [entry("missing_requests", 1, "ok")]
-                        }
-                    },
+                    "catalog": {"confidence": {"summary": [entry("missing_requests", 1, "ok")]}},
                     "proteobench": {
                         "summary": [entry("features", 12, "ok", layer="LFQ/Intensity")]
                     },
@@ -71,7 +67,7 @@ def test_metrics_are_collected_from_root_level_and_named_records() -> None:
     assert [(metric.scope, metric.record, metric.name, metric.layer) for metric in metrics] == [
         ("peptidoform_ion", "parse", "unknown_modification_tokens", ""),
         ("peptidoform_ion", "fasta", "unmatched_features", ""),
-        ("peptidoform_ion", "catalog/identification_confidence", "missing_requests", ""),
+        ("peptidoform_ion", "catalog/confidence", "missing_requests", ""),
         ("peptidoform_ion", "proteobench", "features", "LFQ/Intensity"),
         ("protein", "parse", "effectively_empty_layers", ""),
     ]

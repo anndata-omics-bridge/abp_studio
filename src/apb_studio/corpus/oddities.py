@@ -31,7 +31,7 @@ class Metric(Record):
     scope: str
     """``root`` or the level name."""
     record: str
-    """The record's path below ``apb``, e.g. ``fasta`` or ``catalog/identification_confidence``."""
+    """The record's path below ``apb``, e.g. ``fasta`` or ``catalog/confidence``."""
     name: str
     label: str
     value: JsonValue
