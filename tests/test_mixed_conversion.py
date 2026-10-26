@@ -55,7 +55,7 @@ def test_full_conversion_preserves_all_compatible_levels_with_optional_parameter
 ) -> None:
     source = tmp_path / "MaxQuant"
     source.mkdir()
-    (source / "evidence.txt").write_text("ion", encoding="utf-8")
+    (source / "evidence.txt").write_text("peptidoform_ion", encoding="utf-8")
     (source / "peptides.txt").write_text("peptide", encoding="utf-8")
     row = _dataset("MaxQuant", "params.xml" if has_parameters else "")
     context = _context(tmp_path, row, storage_format)
@@ -173,7 +173,7 @@ def test_parameter_contract_preserves_ignored_and_required_workflows(tmp_path: P
 
     assert workflow_parameter_inputs("convert_no_param", tmp_path, parameterized) == ()
     assert workflow_parameter_inputs("convert_no_param", tmp_path, parameter_free) == ()
-    assert workflow_parameter_inputs("convert_ion", tmp_path, parameterized) == (
+    assert workflow_parameter_inputs("convert_peptidoform_ion", tmp_path, parameterized) == (
         tmp_path / "params.xml",
     )
-    assert workflow_parameter_inputs("convert_ion", tmp_path, parameter_free) == ()
+    assert workflow_parameter_inputs("convert_peptidoform_ion", tmp_path, parameter_free) == ()

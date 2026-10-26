@@ -318,7 +318,7 @@ export interface AnnDataStructure {
   kind: 'anndata'
   label: string
   objectPath: string
-  /** Where this AnnData keeps its level part: ``uns["apb"]``, or ``uns["ion"]["apb"]`` in H5AD. */
+  /** Where this AnnData keeps its level part: ``uns["apb"]``, or ``uns["peptidoform_ion"]["apb"]`` in H5AD. */
   unsKey: string
   /** A standalone H5AD's root part, kept apart in ``uns["apb"]``. */
   rootUns?: ApbMetadata

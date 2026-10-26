@@ -131,7 +131,7 @@ function controller (read = async () => scientific()) {
   return { panel, hosts, calls, context }
 }
 
-function scientific (levels = ['ion', 'protein']) {
+function scientific (levels = ['peptidoform_ion', 'protein']) {
   return {
     artifact: { physical_format: 'h5mu' },
     levels: levels.map(name => ({ name })),
@@ -167,7 +167,7 @@ test('sidebar starts with a scientific file and Show more opens AnnData directly
     'AnnData', 'Structure', 'Inputs & outputs', 'Oddities', 'APB metadata', 'Representation JSON'
   ])
   const objectTabs = hosts.detail.querySelector('.representation-tabs')
-  assert.deepEqual(objectTabs.children.map(button => button.textContent), ['AnnData · ion', 'AnnData · protein'])
+  assert.deepEqual(objectTabs.children.map(button => button.textContent), ['AnnData · peptidoform_ion', 'AnnData · protein'])
   assert.doesNotMatch(hosts.detail.textContent, /Loading view/)
   hosts['detail-tabs'].children.find(button => button.textContent === 'Inputs & outputs').click()
   const action = panel.columns([])[0]
@@ -182,7 +182,7 @@ test('sidebar starts with a scientific file and Show more opens AnnData directly
 })
 
 test('FASTA check tab shows the recorded reference beside counts and keeps unrecorded counts unknown', async () => {
-  const result = scientific(['ion', 'protein'])
+  const result = scientific(['peptidoform_ion', 'protein'])
   result.root.apb.fasta = { provenance: { peptide_verification: {
     sources: { 0: { path: 'ProteoBenchFASTA_MixedSpecies_HYE.fasta' } }
   } } }
@@ -198,11 +198,11 @@ test('FASTA check tab shows the recorded reference beside counts and keeps unrec
   await settle()
   const table = hosts.detail.querySelector('.fasta-checks').querySelector('.scientific-table')
   assert.deepEqual(table.children[1].children[0].children.map(cell => cell.textContent), [
-    'ion', 'ProteoBenchFASTA_MixedSpecies_HYE.fasta', '17,469', '12', '9'
+    'peptidoform_ion', 'ProteoBenchFASTA_MixedSpecies_HYE.fasta', '17,469', '12', '9'
   ])
   assert.equal(table.children[1].children.length, 1, 'unchecked protein level is not reported as verified')
 
-  const unknown = scientific(['ion'])
+  const unknown = scientific(['peptidoform_ion'])
   unknown.levels[0].apb = { fasta: { result: { peptide_verification: {
     matched_feature_count: 0, unmatched_feature_count: 2
   } } } }
@@ -212,12 +212,12 @@ test('FASTA check tab shows the recorded reference beside counts and keeps unrec
   await settle()
   const unknownTable = next.hosts.detail.querySelector('.scientific-table')
   assert.deepEqual(unknownTable.children[1].children[0].children.map(cell => cell.textContent), [
-    'ion', 'Not recorded', '0', '2', 'Not recorded'
+    'peptidoform_ion', 'Not recorded', '0', '2', 'Not recorded'
   ])
 })
 
 test('Search parameters tab lists the recorded file and its fields; a result without one has no tab', async () => {
-  const result = scientific(['ion'])
+  const result = scientific(['peptidoform_ion'])
   result.root.apb.parse = { provenance: { search_parameters: {
     file_name: 'params.json', sha256: 'abcdef0123456789'.repeat(4),
     parameters: { enzyme: 'Trypsin/P', fixed_mods: [], ident_fdr_psm: 0.01 }
@@ -237,7 +237,7 @@ test('Search parameters tab lists the recorded file and its fields; a result wit
     ['Enzyme', 'Trypsin/P'], ['Fixed mods', 'None listed'], ['Ident FDR PSM', '0.01']
   ])
 
-  const free = controller(async () => scientific(['ion']))
+  const free = controller(async () => scientific(['peptidoform_ion']))
   await free.panel.refresh([row('Free')])
   assert.ok(!free.hosts['detail-tabs'].children.some(button => button.textContent === 'Search parameters'))
 })
@@ -450,8 +450,8 @@ test('Oddities renders source evidence and retains its tab when the summary arri
   const updated = { ...dataset, oddities: {
     input_file: dataset.input_file, available: true, source_step: 'convert', source_status: 'succeeded', notes: [],
     metrics: [
-      { scope: 'ion', record: 'parse', name: 'unreadable_cells', label: 'Unreadable numeric cells', value: 12, unit: 'cells', status: 'attention', layer: '' },
-      { scope: 'ion', record: 'parse', name: 'effectively_empty_layers', label: 'Effectively empty layers', value: null, unit: 'layers', status: 'not_checked', layer: '' }
+      { scope: 'peptidoform_ion', record: 'parse', name: 'unreadable_cells', label: 'Unreadable numeric cells', value: 12, unit: 'cells', status: 'attention', layer: '' },
+      { scope: 'peptidoform_ion', record: 'parse', name: 'effectively_empty_layers', label: 'Effectively empty layers', value: null, unit: 'layers', status: 'not_checked', layer: '' }
     ]
   } }
   await panel.show(updated)

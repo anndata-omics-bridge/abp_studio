@@ -1,4 +1,4 @@
-"""prolfquapp's AnnData: APB2's ion level with its analysis configuration.
+"""prolfquapp's AnnData: APB2's peptidoform_ion level with its analysis configuration.
 
 apb-export converts and exports in one call, from its own environment.
 """

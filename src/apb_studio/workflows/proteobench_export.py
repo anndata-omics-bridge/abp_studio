@@ -1,4 +1,4 @@
-"""ProteoBench export and pMultiQC report steps for one ion-level abundance layer."""
+"""ProteoBench export and pMultiQC report steps for one peptidoform-ion-level abundance layer."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ def export_and_report_steps(
     context: WorkflowContext, *, fasta: str, level: str, layer: str
 ) -> list[StepSpec]:
     """Export one layer as pMultiQC input plus ProteoBot JSON, then render its report."""
-    if level != "ion":
-        raise ValueError("the ProteoBench export requires level ion")
+    if level != "peptidoform_ion":
+        raise ValueError("the ProteoBench export requires level peptidoform_ion")
     dataset = context.dataset
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)

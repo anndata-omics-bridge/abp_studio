@@ -9,7 +9,7 @@ uv run corpus run routine convert --format duckdb --strict
 uv run corpus run routine convert --format parquet --strict
 uv run corpus run problems convert --strict
 uv run corpus run directlfq convert_no_param --strict
-uv run corpus run proteobench convert_ion --strict
+uv run corpus run proteobench convert_peptidoform_ion --strict
 
 # ProteoBench scoring
 uv run corpus run routine_pb proteobench_run --strict
@@ -24,7 +24,7 @@ uv run corpus run proteobench proteobench_run --strict
 uv run corpus run proteobench proteobench_run_vendor --strict
 
 # manuscript F3: one dataset at a time
-uv run corpus run proteobench_f3 convert_ion --cores 1 --strict
+uv run corpus run proteobench_f3 convert_peptidoform_ion --cores 1 --strict
 uv run corpus run proteobench_f3 convert --cores 1 --strict
 uv run corpus run directlfq_large_per_vendor convert_no_param --cores 1 --strict
 uv run corpus run directlfq_large_per_vendor convert_no_param --format duckdb --cores 1 --strict

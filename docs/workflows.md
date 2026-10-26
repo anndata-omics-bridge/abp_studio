@@ -48,13 +48,13 @@ When vendor parameters exist, conversion commands pass `--params` and `--softwar
 
 ## Optional tool timings
 
-A workflow may declare one or more outputs `Artifact(role="tool_timings", path=...)` when its tools can write timing JSON files. Their absence from other workflows needs no placeholder. Each file is tool-owned: Studio records its path and size like any output, but never copies phase values into `StepResult.runtime_seconds` or memory telemetry. In that step's Visualizations tab, Studio timings and each available tool/operation timing file have separate subtabs. A tool subtab facets its phases vertically, with an independent duration scale for each phase, a shared selectable x-axis (vendor input size or the ion `var` dimension), and one software legend whose colors remain consistent between phases. The ion count comes from the same step's APB representation sidecar; a missing ion level omits that point on the ion-variable axis. Timing files do not become the dataset's scientific Output or an artifact-size point.
+A workflow may declare one or more outputs `Artifact(role="tool_timings", path=...)` when its tools can write timing JSON files. Their absence from other workflows needs no placeholder. Each file is tool-owned: Studio records its path and size like any output, but never copies phase values into `StepResult.runtime_seconds` or memory telemetry. In that step's Visualizations tab, Studio timings and each available tool/operation timing file have separate subtabs. A tool subtab facets its phases vertically, with an independent duration scale for each phase, a shared selectable x-axis (vendor input size or the peptidoform_ion `var` dimension), and one software legend whose colors remain consistent between phases. The peptidoform_ion count comes from the same step's APB representation sidecar; a missing peptidoform_ion level omits that point on the ion-variable axis. Timing files do not become the dataset's scientific Output or an artifact-size point.
 
 The version-1 JSON contract is `{"format":"apb-tool-timings","format_version":1,"tool":"apb2","operation":"convert","phases":[{"name":"read","seconds":1.25}]}`. Phase names are unique, and seconds are finite nonnegative numbers. Additional tool-specific details, such as APB2's per-level timings, may coexist with `phases`. The convert workflow passes `--timings-output` to APB2. The integrated `proteobench_run` and `proteobench_pmultiqc` workflows pass `--timings-dir` to `apb-proteobench run quant` (and `proteobench_entrapment` to `run entrapment`), which writes separate APB2 conversion, FASTA verification, and ProteoBench benchmark timing files even though those operations execute in one process. A missing file still fails a step that explicitly declared it; runs and workflows without a timing artifact remain valid.
 
 ## Running it through the runners
 
-`convert_ion` is the single-tool ion-only counterpart to `convert`: it passes the positional `ion` level to APB2, writes one H5AD in HDF5 mode, and declares the same representation and timing sidecars. No resource CSV is needed. Unsupported ion inputs remain visible as failed datasets rather than being silently removed.
+`convert_peptidoform_ion` is the single-tool ion-only counterpart to `convert`: it passes the positional `peptidoform_ion` level to APB2, writes one H5AD in HDF5 mode, and declares the same representation and timing sidecars. No resource CSV is needed. Unsupported peptidoform-ion inputs remain visible as failed datasets rather than being silently removed.
 
 A workflow needs no runner change to become runnable. `corpus run CORPUS <name>` selects it; the file's presence in `workflows/` is the whole registration. `corpus workflows` lists what is packaged, with the tools and table each one declares.
 
@@ -89,13 +89,13 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 | conversion | routine | convert | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
 | conversion | problems | convert | hdf5 | `.h5mu` |
 | conversion | directlfq | convert_no_param | hdf5 | `.h5mu` |
-| conversion | proteobench | convert_ion | hdf5 | `.h5ad` |
+| conversion | proteobench | convert_peptidoform_ion | hdf5 | `.h5ad` |
 | scoring | routine_pb, problems | proteobench_run | hdf5 | `.h5mu` |
 | scoring | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
 | scoring | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
 | scoring | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
 | deciding proteins | proteobench | proteobench_run, proteobench_run_vendor | hdf5 | `.h5ad` |
-| manuscript F3 | proteobench_f3 | convert_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
+| manuscript F3 | proteobench_f3 | convert_peptidoform_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
 | manuscript F3 | directlfq_large_per_vendor | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
 
 `scripts/integration_runs.fish` holds the routine checks and exports, in the same form and into the same root, so they are served too:

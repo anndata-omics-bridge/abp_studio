@@ -53,7 +53,7 @@ export function validatedRepresentation (document: unknown): Representation {
   return expandEmbeddedJsonForDisplay(header) as Representation
 }
 
-/** Read the ion AnnData var dimension without expanding the metadata tree. */
+/** Read the peptidoform_ion AnnData var dimension without expanding the metadata tree. */
 export function representationIonVariables (document: unknown): number | null {
   const header = document && typeof document === 'object' ? document as Record<string, unknown> : {}
   if (header.format !== REPRESENTATION_FORMAT ||
@@ -61,7 +61,7 @@ export function representationIonVariables (document: unknown): number | null {
     throw new Error('Unsupported APB representation format or version')
   }
   const levels = Array.isArray(header.levels) ? header.levels as Level[] : []
-  const count = levels.find(level => level?.name === 'ion')?.dimensions?.variables
+  const count = levels.find(level => level?.name === 'peptidoform_ion')?.dimensions?.variables
   return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null
 }
 

@@ -4,7 +4,7 @@ import { oddityCountLabel, oddityState, validatedOddities, withOddities } from '
 import { emptyDatasetFilters, filterDatasets } from '../../viewer/src/corpus/filters.ts'
 
 const metric = (status, value = 0) => ({
-  scope: 'ion', record: 'parse', name: `m_${status}`, label: status, value, unit: 'cells', status, layer: ''
+  scope: 'peptidoform_ion', record: 'parse', name: `m_${status}`, label: status, value, unit: 'cells', status, layer: ''
 })
 const clean = { input_file: 'clean.tsv', available: true, metrics: [metric('ok')] }
 const old = { ...clean, input_file: 'old.tsv', metrics: [metric('ok'), metric('not_checked', null)] }

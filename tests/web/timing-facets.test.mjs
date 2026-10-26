@@ -37,7 +37,7 @@ test('tool phases are faceted with one shared software legend and visible write 
   assert.match(figure.traces[0].hovertemplate, /timing file=/)
 })
 
-test('timing facets can compare phases against persisted ion variable counts', () => {
+test('timing facets can compare phases against persisted peptidoform_ion variable counts', () => {
   const points = [point('parse', 'DIA-NN', 8), point('write', 'DIA-NN', 12)]
   const choices = xAxisChoices([{ steps: [], outputs: [], timingViews: [{ points }] }])
   assert.deepEqual(choices.map(choice => choice.value), [

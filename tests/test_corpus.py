@@ -62,8 +62,10 @@ from apb_studio.settings import StudioSettings
 from apb_studio.workflows.workflow_aggregate import steps as aggregate_steps
 from apb_studio.workflows.workflow_aggregate_medpolish import steps as aggregate_medpolish_steps
 from apb_studio.workflows.workflow_convert import steps as convert_steps
-from apb_studio.workflows.workflow_convert_ion import steps as convert_ion_steps
 from apb_studio.workflows.workflow_convert_no_param import steps as convert_no_param_steps
+from apb_studio.workflows.workflow_convert_peptidoform_ion import (
+    steps as convert_peptidoform_ion_steps,
+)
 from apb_studio.workflows.workflow_export_msmu import steps as export_msmu_steps
 from apb_studio.workflows.workflow_proteobench import WORKFLOW_COLUMNS as PROTEOBENCH_COLUMNS
 from apb_studio.workflows.workflow_proteobench import steps as proteobench_steps
@@ -207,7 +209,7 @@ def test_a_folder_input_has_no_secondary_inputs(tmp_path: Path) -> None:
     """APB reads the related tables inside a folder by their own names."""
     folder = tmp_path / "dataset"
     folder.mkdir()
-    (folder / "evidence.txt").write_text("ion", encoding="utf-8")
+    (folder / "evidence.txt").write_text("peptidoform_ion", encoding="utf-8")
     (tmp_path / "dataset_peptides.txt").write_text("not a companion", encoding="utf-8")
 
     assert resolve_secondary_inputs(tmp_path, "dataset") == ()
@@ -711,8 +713,8 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "aggregate",
         "aggregate_medpolish",
         "convert",
-        "convert_ion",
         "convert_no_param",
+        "convert_peptidoform_ion",
         "export_alphapepttools",
         "export_msmu",
         "export_prolfqua",
@@ -726,8 +728,8 @@ def test_discovery_and_named_selection(tmp_path: Path) -> None:
         "proteobench_run_vendor",
     ]
     assert workflow_path("convert").name == "workflow_convert.py"
-    assert workflow_path("convert_ion").name == "workflow_convert_ion.py"
-    assert workflow_tools("convert_ion") == ("apb2",)
+    assert workflow_path("convert_peptidoform_ion").name == "workflow_convert_peptidoform_ion.py"
+    assert workflow_tools("convert_peptidoform_ion") == ("apb2",)
     for name in ("../convert", "unknown", "convert.py"):
         with pytest.raises(ValueError):
             workflow_path(name)
@@ -863,7 +865,7 @@ def test_aggregate_workflow_is_two_steps_configured_by_software(
 def test_aggregate_table_covers_every_corpus_software_with_explicit_policy() -> None:
     root = Path(__file__).parents[1]
     table = root / "workflow_tables" / "workflow_aggregate.csv"
-    # Software whose every rule variant catalogues ion identification confidence.
+    # Software whose every rule variant catalogues peptidoform_ion identification confidence.
     confidence_software = {"AlphaPept", "DIA-NN", "MaxQuant", "Spectronaut"}
 
     for row in committed_corpus(None):
@@ -985,7 +987,9 @@ def test_compound_software_uses_the_base_parameter_parser(tmp_path: Path) -> Non
 
 def test_msmu_export_checks_the_module_fasta_the_table_names(tmp_path: Path) -> None:
     table = tmp_path / "workflow_proteobench.csv"
-    table.write_text("module,fasta,level\ndia_aif,fasta/hye.fasta,ion\n", encoding="utf-8")
+    table.write_text(
+        "module,fasta,level\ndia_aif,fasta/hye.fasta,peptidoform_ion\n", encoding="utf-8"
+    )
     context = WorkflowContext(
         corpus=tmp_path / "corpus.csv",
         data_root=tmp_path,
@@ -1059,7 +1063,9 @@ def test_no_param_workflow_does_not_depend_on_a_parameter_file(tmp_path: Path) -
 def test_proteobench_plasma_workflow_exports_the_modules_layer(tmp_path: Path) -> None:
     """The module, not the table, picks the un-normalised layer: ``--layer X``."""
     table = tmp_path / "workflow_proteobench_plasma.tsv"
-    table.write_text("module\tsoftware_name\tfasta\tlevel\ndia_aif\tDIA-NN\tfasta/HYE.fasta\tion\n")
+    table.write_text(
+        "module\tsoftware_name\tfasta\tlevel\ndia_aif\tDIA-NN\tfasta/HYE.fasta\tpeptidoform_ion\n"
+    )
     context = proteobench_context(tmp_path).model_copy(
         update={
             "workflow_table": table,
@@ -1102,7 +1108,7 @@ def test_no_param_software_table_covers_proteobench_corpus() -> None:
 )
 @pytest.mark.parametrize("secondary", [False, True])
 @pytest.mark.parametrize("parameters", [False, True])
-def test_convert_ion_workflow_selects_only_ion_and_keeps_timing_artifacts(
+def test_convert_peptidoform_ion_workflow_selects_only_peptidoform_ion_and_keeps_timing_artifacts(
     tmp_path: Path,
     storage_format: StorageFormat,
     suffix: str,
@@ -1131,14 +1137,14 @@ def test_convert_ion_workflow_selects_only_ion_and_keeps_timing_artifacts(
         tools={"apb2": tmp_path / "apb2"},
     )
 
-    [step] = convert_ion_steps(context)
+    [step] = convert_peptidoform_ion_steps(context)
 
     assert step.name == "convert"
     assert step.command[:4] == [
         str(context.tool("apb2")),
         "convert",
         str(folder if secondary else primary),
-        "ion",
+        "peptidoform_ion",
     ]
     assert step.command[step.command.index("--format") + 1] == storage_format
     assert step.command[step.command.index("--software") + 1] == "diann"
@@ -1292,7 +1298,7 @@ def test_stable_run_updates_source_and_selection_snapshots(tmp_path: Path) -> No
     write_rows(
         table,
         ["software_name", "start_level"],
-        [{"software_name": "DIA-NN", "start_level": "fragment"}],
+        [{"software_name": "DIA-NN", "start_level": "peptidoform_fragment"}],
     )
     settings = ExecutionSettings(
         corpus_name="routine",
@@ -1399,7 +1405,7 @@ def proteobench_context(
     tmp_path: Path,
     *,
     fmt: StorageFormat = "hdf5",
-    level: str = "ion",
+    level: str = "peptidoform_ion",
 ) -> WorkflowContext:
     """Build a context whose FASTA resolves inside the data root; the module is packaged."""
     table = tmp_path / "workflow_proteobench.csv"
@@ -1499,7 +1505,9 @@ def test_proteobench_plasma_run_scores_the_modules_layer_without_a_report(
     tmp_path: Path,
 ) -> None:
     table = tmp_path / "workflow_proteobench_plasma.tsv"
-    table.write_text("module\tsoftware_name\tfasta\tlevel\ndia_aif\tDIA-NN\tfasta/HYE.fasta\tion\n")
+    table.write_text(
+        "module\tsoftware_name\tfasta\tlevel\ndia_aif\tDIA-NN\tfasta/HYE.fasta\tpeptidoform_ion\n"
+    )
     context = proteobench_context(tmp_path).model_copy(update={"workflow_table": table})
 
     (run,) = proteobench_plasma_run_steps(context)
@@ -1508,7 +1516,7 @@ def test_proteobench_plasma_run_scores_the_modules_layer_without_a_report(
     assert workflow_table_name("proteobench_plasma_run") == "workflow_proteobench_plasma.tsv"
     assert run.command[1:3] == ["run", "quant"]
     assert "--layer" not in run.command, "the module picks the layer"
-    assert run.command[run.command.index("--level") + 1] == "ion"
+    assert run.command[run.command.index("--level") + 1] == "peptidoform_ion"
     assert run.outputs[0].path.name == "scored.h5ad", "one level"
     assert "--scores" in run.command
 
@@ -1533,7 +1541,7 @@ def test_pmultiqc_workflow_times_export_and_report_as_separate_steps(tmp_path: P
     report = planned[1]
     assert export.command[1:3] == ["run", "quant"]
     assert export.command[3] == str(secondary.parent)
-    assert export.command[export.command.index("--level") + 1] == "ion"
+    assert export.command[export.command.index("--level") + 1] == "peptidoform_ion"
     assert export.command[export.command.index("--layer") + 1] == "X"
     assert export.outputs[0].path.name == "scored.h5ad"
     assert [artifact.role for artifact in export.inputs] == [
@@ -1570,7 +1578,7 @@ def test_pmultiqc_workflow_rejects_a_non_ion_level(tmp_path: Path) -> None:
         update={"tools": {"apb-proteobench": tmp_path / "apb", "multiqc": tmp_path / "multiqc"}}
     )
 
-    with pytest.raises(ValueError, match="requires level ion"):
+    with pytest.raises(ValueError, match="requires level peptidoform_ion"):
         proteobench_pmultiqc_steps(context)
 
 
@@ -1581,7 +1589,7 @@ def test_both_proteobench_workflows_read_one_shared_resource_table() -> None:
     assert workflow_table_name("proteobench_run") == "workflow_proteobench.csv"
     assert workflow_table_name("proteobench_run_vendor") == "workflow_proteobench.csv"
     assert workflow_table_name("convert") == "workflow_convert.csv"
-    assert workflow_table_name("convert_ion") == "workflow_convert_ion.csv"
+    assert workflow_table_name("convert_peptidoform_ion") == "workflow_convert_peptidoform_ion.csv"
 
 
 @pytest.mark.parametrize(
@@ -1640,7 +1648,7 @@ def test_proteobench_table_covers_every_scoring_corpus_module() -> None:
         workflow = join_workflow(row.model_dump(), table, on=("module",))
         assert workflow["module"] == row.module
         assert workflow["fasta"].startswith("fasta/")
-        assert workflow["level"] == "ion"
+        assert workflow["level"] == "peptidoform_ion"
 
 
 def test_proteobench_table_satisfies_every_proteobench_workflow() -> None:

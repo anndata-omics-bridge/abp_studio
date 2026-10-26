@@ -1,4 +1,4 @@
-"""Convert only the ion level to the selected APB2 format."""
+"""Convert only the peptidoform_ion level to the selected APB2 format."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ PARAMETER_INPUTS = optional_parameter_inputs
 
 
 def steps(context: WorkflowContext) -> list[StepSpec]:
-    """Read and write the ion level only, retaining APB2's phase timing artifact."""
+    """Read and write the peptidoform_ion level only, retaining APB2's phase timing artifact."""
     dataset = context.dataset
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
@@ -33,7 +33,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
         str(apb2),
         "convert",
         str(vendor_source),
-        "ion",
+        "peptidoform_ion",
         *[argument for path in parameters for argument in ("--params", str(path))],
         "--software",
         software,
@@ -66,4 +66,4 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
 
 
 if __name__ == "__main__":
-    main("convert_ion", steps)
+    main("convert_peptidoform_ion", steps)

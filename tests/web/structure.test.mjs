@@ -7,9 +7,9 @@ const provenance = {
   proteobench: { provenance: { annotation: { source: 'module.toml' } } }
 }
 const ion = {
-  name: 'ion', dimensions: { observations: 6, variables: 50 },
+  name: 'peptidoform_ion', dimensions: { observations: 6, variables: 50 },
   obs: { row_count: 6, key_columns: ['raw_file'], columns: [{ name: 'raw_file', dtype: 'String' }] },
-  var: { row_count: 50, key_columns: ['ion'], columns: [] },
+  var: { row_count: 50, key_columns: ['peptidoform_ion'], columns: [] },
   layers: [{ name: 'Intensity', storage_slot: 'X', primary: true }],
   apb: {
     fasta: { result: { peptide_verification: { matched_feature_count: 49, unmatched_feature_count: 1 } } },
@@ -25,7 +25,7 @@ const annotation = {
   columns: [{ name: 'id', dtype: 'String', null_count: 0 }], metadata: { source: 'ref.fasta' }
 }
 const relation = {
-  name: 'peptide_protein', blocks: [{ source: annotation.name, target: 'ion', links: 72 }],
+  name: 'peptide_protein', blocks: [{ source: annotation.name, target: 'peptidoform_ion', links: 72 }],
   coordinates: { row_count: 72 }, metadata: { matching: 'sequence' }
 }
 
@@ -35,12 +35,12 @@ test('H5AD keeps its root part and its level part apart in its single AnnData', 
   assert.equal(rest.length, 0)
   assert.equal(view.kind, 'anndata')
   assert.equal(view.objectPath, 'adata')
-  assert.equal(view.unsKey, 'uns["ion"]["apb"]')
+  assert.equal(view.unsKey, 'uns["peptidoform_ion"]["apb"]')
   assert.equal(view.diagram.uns, ion.apb, 'display the emitted level part without recomposing it')
   assert.equal(view.rootUns, provenance, 'display the emitted root part beside it')
   assert.equal('provenance' in view.diagram.uns.fasta, false)
   const scopes = apbMetadataScopes(representation)
-  assert.deepEqual(scopes.map(scope => scope.label), ['AnnData root', 'ion'])
+  assert.deepEqual(scopes.map(scope => scope.label), ['AnnData root', 'peptidoform_ion'])
   assert.deepEqual(scopes[0].value.uns.apb, provenance)
   assert.deepEqual(scopes[1].value.uns.apb, ion.apb)
   assert.equal(view.hasStorage, true)
@@ -51,7 +51,7 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
   const representation = {
     artifact: { physical_format: 'h5mu' }, root: { apb: {
       ...provenance,
-      hierarchy: { name: 'lfq', identities: [['ion', 'ion'], ['protein', 'protein']] },
+      hierarchy: { name: 'lfq', identities: [['peptidoform_ion', 'peptidoform_ion'], ['protein', 'protein']] },
       annotation_tables: { 'fasta proteins': { key_columns: ['id'], metadata: annotation.metadata } },
       feature_relations: { peptide_protein: { metadata: relation.metadata } }
     } }, levels: [protein, ion],
@@ -59,7 +59,7 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
   }
   const [root, ions, proteins, annotations] = structureViews(representation)
   assert.equal(root.label, 'MuData container')
-  assert.deepEqual(root.modalities.map(item => item.name), ['ion', 'protein', 'annotation/fasta proteins'])
+  assert.deepEqual(root.modalities.map(item => item.name), ['peptidoform_ion', 'protein', 'annotation/fasta proteins'])
   assert.deepEqual(root.relations, [relation])
   assert.equal(root.uns, representation.root.apb)
   assert.deepEqual(root.uns.annotation_tables, {
@@ -69,7 +69,7 @@ test('H5MU separates root provenance and relations from every embedded AnnData',
     peptide_protein: { metadata: relation.metadata }
   })
   assert.deepEqual(apbMetadataScopes(representation)[0].value.uns.apb, root.uns)
-  assert.equal(ions.objectPath, 'mdata.mod["ion"]')
+  assert.equal(ions.objectPath, 'mdata.mod["peptidoform_ion"]')
   assert.equal(ions.unsKey, 'uns["apb"]')
   assert.equal('rootUns' in ions, false)
   assert.deepEqual(ions.diagram.uns, ion.apb)
@@ -101,7 +101,7 @@ test('custom hierarchy determines embedded AnnData order', () => {
 test('FASTA check counts and source stay paired in standalone AnnData', () => {
   const representation = { artifact: { physical_format: 'h5ad' }, root: { apb: provenance }, levels: [ion] }
   assert.deepEqual(fastaChecks(representation), [{
-    level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1,
+    level: 'peptidoform_ion', matched_feature_count: 49, unmatched_feature_count: 1,
     protein_count: 100, sources: { 0: { path: 'ref.fasta' } }
   }])
 })
@@ -118,7 +118,7 @@ test('FASTA checks use MuData source provenance without assigning checks to unch
   const snapshot = structuredClone(representation)
   const sources = { 0: { path: 'HYE.fasta', checksum: 'reference-checksum' } }
   assert.deepEqual(fastaChecks(representation), [
-    { level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1, sources },
+    { level: 'peptidoform_ion', matched_feature_count: 49, unmatched_feature_count: 1, sources },
     { level: 'peptide', matched_feature_count: 0, unmatched_feature_count: 2, sources }
   ])
   assert.deepEqual(representation, snapshot)
@@ -126,7 +126,7 @@ test('FASTA checks use MuData source provenance without assigning checks to unch
 
 test('missing FASTA provenance stays unknown and conversion alone has no FASTA checks', () => {
   assert.deepEqual(fastaChecks({ levels: [ion] }), [
-    { level: 'ion', matched_feature_count: 49, unmatched_feature_count: 1 }
+    { level: 'peptidoform_ion', matched_feature_count: 49, unmatched_feature_count: 1 }
   ])
   assert.deepEqual(fastaChecks({ levels: [protein] }), [])
   assert.deepEqual(fastaChecks({ root: { apb: provenance }, levels: [protein] }), [])

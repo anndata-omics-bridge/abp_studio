@@ -39,7 +39,7 @@ def test_metrics_are_collected_from_root_level_and_named_records() -> None:
         "root": {"apb": {"fasta": {"schema_version": "4", "provenance": {}}}},
         "levels": [
             {
-                "name": "ion",
+                "name": "peptidoform_ion",
                 "apb": {
                     "parse": {
                         "result": {"unknown_mod_tokens": ["Mystery"]},
@@ -69,10 +69,10 @@ def test_metrics_are_collected_from_root_level_and_named_records() -> None:
     metrics = representation_metrics(representation)
 
     assert [(metric.scope, metric.record, metric.name, metric.layer) for metric in metrics] == [
-        ("ion", "parse", "unknown_modification_tokens", ""),
-        ("ion", "fasta", "unmatched_features", ""),
-        ("ion", "catalog/identification_confidence", "missing_requests", ""),
-        ("ion", "proteobench", "features", "LFQ/Intensity"),
+        ("peptidoform_ion", "parse", "unknown_modification_tokens", ""),
+        ("peptidoform_ion", "fasta", "unmatched_features", ""),
+        ("peptidoform_ion", "catalog/identification_confidence", "missing_requests", ""),
+        ("peptidoform_ion", "proteobench", "features", "LFQ/Intensity"),
         ("protein", "parse", "effectively_empty_layers", ""),
     ]
     assert metrics[-1].value is None and metrics[-1].status == "not_checked"
@@ -103,7 +103,7 @@ def _representation(path: Path, **parse: Any) -> Path:
             "format": "apb2-result-representation",
             "format_version": "7",
             "root": {"apb": {"parse": {}}},
-            "levels": [{"name": "ion", "apb": {"parse": record}}],
+            "levels": [{"name": "peptidoform_ion", "apb": {"parse": record}}],
         })
     )
     return sidecar

@@ -1,5 +1,5 @@
 import type { ChartView, DatasetPoint, XAxis } from '../types.js'
-// The ion var dimension comes from persisted APB representations.
+// The peptidoform_ion var dimension comes from persisted APB representations.
 
 export function xValue (point: DatasetPoint, axis: XAxis): number | null {
   return axis === 'input_size_mib'

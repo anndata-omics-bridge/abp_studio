@@ -1,4 +1,4 @@
-"""msmu's MuData: APB2's ion level as its psm modality.
+"""msmu's MuData: APB2's peptidoform_ion level as its psm modality.
 
 apb-export converts and exports in one call, from its own environment. A dataset whose module
 has a FASTA in the ProteoBench workflow table is FASTA-checked first, so msmu's contaminant

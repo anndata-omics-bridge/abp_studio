@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm'
 import { isolatedSource } from './source.mjs'
 
 function representation (proteobench) {
-  return { levels: [{ name: 'ion', apb: { proteobench: { result: proteobench } } }] }
+  return { levels: [{ name: 'peptidoform_ion', apb: { proteobench: { result: proteobench } } }] }
 }
 
 function row (input = 'submissions/repo/a/input.csv', status = 'succeeded') {

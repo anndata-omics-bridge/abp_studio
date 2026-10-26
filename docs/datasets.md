@@ -12,7 +12,7 @@ Each dataset lands MD5-verified in `test_data_download/zenodo/<record>/<dataset>
 
 ## ProteoBench entrapment DIA — MaxQuant 2.8.1.0 related tables
 
-The only complete set of related MaxQuant tables available to Studio. ProteoBench submissions carry one ion-level table, except MSAngel's workbook, whose "Protein sets" sheet APB joins onto its ion sheet; MaxQuant's multi-table joins (peptide, peptidoform and protein levels joined to the ion level) are otherwise exercised only by synthetic unit-test tables.
+The only complete set of related MaxQuant tables available to Studio. ProteoBench submissions carry one peptidoform-ion-level table, except MSAngel's workbook, whose "Protein sets" sheet APB joins onto its ion sheet; MaxQuant's multi-table joins (peptide, peptidoform and protein levels joined to the ion level) are otherwise exercised only by synthetic unit-test tables.
 
 - DOI: [10.5281/zenodo.23150735](https://doi.org/10.5281/zenodo.23150735)
 - Tables: `evidence.txt`, `modificationSpecificPeptides.txt`, `peptides.txt`, `proteinGroups.txt`

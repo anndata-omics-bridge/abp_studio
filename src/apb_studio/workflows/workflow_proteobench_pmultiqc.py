@@ -1,4 +1,4 @@
-"""Complete ion-level ProteoBench export and pMultiQC report workflow."""
+"""Complete peptidoform-ion-level ProteoBench export and pMultiQC report workflow."""
 
 from __future__ import annotations
 

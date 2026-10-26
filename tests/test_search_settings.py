@@ -37,7 +37,7 @@ def _sidecar(path: Path, record: dict[str, Any] | None) -> Artifact:
             "format": "apb2-result-representation",
             "format_version": "7",
             "root": {"apb": {"parse": {"provenance": provenance}}},
-            "levels": [{"name": "ion", "apb": {}}],
+            "levels": [{"name": "peptidoform_ion", "apb": {}}],
         })
     )
     return Artifact(role="representation", path=sidecar, size_bytes=sidecar.stat().st_size)
@@ -63,7 +63,7 @@ def _report(name: str, software: str, steps: list[StepResult]) -> DatasetReport:
 def _converted(folder: Path, name: str, record: dict[str, Any] | None) -> list[StepResult]:
     """One conversion writing two split outputs, each with its own sidecar."""
     outputs: list[Artifact] = []
-    for part in ("ion", "protein"):
+    for part in ("peptidoform_ion", "protein"):
         path = folder / f"{name}_{part}.h5ad"
         outputs += [Artifact(role="converted", path=path, size_bytes=10), _sidecar(path, record)]
     return [StepResult(name="convert", command=["apb2"], status="succeeded", outputs=outputs)]

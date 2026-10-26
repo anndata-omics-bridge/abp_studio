@@ -22,12 +22,12 @@ test('dataset rows retain the basename and merge workflow fields', () => {
     input_file: 'submissions/hash/input_file.txt', vendor_parameter_file: 'submissions/hash/params.json',
     module: 'dda_qexactive', software_name: 'MaxQuant'
   }]
-  const workflowRows = [{ software_name: 'MaxQuant', start_level: 'ion', method: 'mean' }]
+  const workflowRows = [{ software_name: 'MaxQuant', start_level: 'peptidoform_ion', method: 'mean' }]
   workflowRows.columns = ['software_name', 'start_level', 'method']
   const rows = datasetRows(manifest, corpus, [], new Map(), new Map(), null, workflowRows)
   assert.equal(rows[0].input_file_name, 'input_file.txt')
   assert.equal(rows[0].input_file_parent, 'hash')
-  assert.equal(rows[0].start_level, 'ion')
+  assert.equal(rows[0].start_level, 'peptidoform_ion')
   assert.equal(rows[0].method, 'mean')
   assert.deepEqual(workflowFields(workflowRows), ['start_level', 'method'])
 })
@@ -162,7 +162,7 @@ test('representation documents are versioned and projected into labelled Plotly 
   assert.equal(representationIonVariables({
     ...document,
     levels: [
-      { name: 'ion', dimensions: { observations: 6, variables: 4242 } },
+      { name: 'peptidoform_ion', dimensions: { observations: 6, variables: 4242 } },
       { name: 'protein', dimensions: { observations: 6, variables: 100 } }
     ]
   }), 4242)
@@ -208,10 +208,10 @@ test('representation display expands known embedded JSON and keeps native aggreg
     artifact: { name: 'result.h5ad' }, annotation_tables: [], feature_relations: [],
     levels: [{ apb: { parse: {
       rule_json: nestedRule,
-      plan_json: JSON.stringify({ level: 'ion' })
+      plan_json: JSON.stringify({ level: 'peptidoform_ion' })
     },
       aggregate: [{
-        source_level: 'ion', target_level: 'protein', method: 'mean'
+        source_level: 'peptidoform_ion', target_level: 'protein', method: 'mean'
       }]
     } }]
   }
@@ -221,9 +221,9 @@ test('representation display expands known embedded JSON and keeps native aggreg
   assert.deepEqual(displayed.levels[0].apb.parse.rule_json, {
     schema_version: '0.3', software_name: 'Sage'
   })
-  assert.deepEqual(displayed.levels[0].apb.parse.plan_json, { level: 'ion' })
+  assert.deepEqual(displayed.levels[0].apb.parse.plan_json, { level: 'peptidoform_ion' })
   assert.deepEqual(displayed.levels[0].apb.aggregate, [{
-    source_level: 'ion', target_level: 'protein', method: 'mean'
+    source_level: 'peptidoform_ion', target_level: 'protein', method: 'mean'
   }])
   assert.equal(source.levels[0].apb.parse.rule_json, nestedRule)
 })
@@ -247,14 +247,14 @@ test('embedded JSON display preserves malformed, scalar and unrelated strings', 
 test('representation views separate APB metadata, scientific levels and raw JSON', () => {
   const h5mu = {
     artifact: { name: 'aggregated.h5mu', physical_format: 'h5mu' },
-    root: { apb: { hierarchy: { name: 'lfq', identities: [['ion', 'ion'], ['protein', 'protein']] } } },
-    levels: [{ name: 'protein' }, { name: 'ion' }],
+    root: { apb: { hierarchy: { name: 'lfq', identities: [['peptidoform_ion', 'peptidoform_ion'], ['protein', 'protein']] } } },
+    levels: [{ name: 'protein' }, { name: 'peptidoform_ion' }],
     annotation_tables: [{ name: 'proteins', row_count: 2, key_columns: ['accession'] }]
   }
   const h5muViews = representationViews(h5mu)
   assert.deepEqual(h5muViews.map(({ key, kind, label }) => ({ key, kind, label })), [
     { key: 'apb-metadata', kind: 'apb-metadata', label: 'APB metadata' },
-    { key: 'level-0', kind: 'level', label: 'AnnData · ion' },
+    { key: 'level-0', kind: 'level', label: 'AnnData · peptidoform_ion' },
     { key: 'level-1', kind: 'level', label: 'AnnData · protein' },
     { key: 'annotation-0', kind: 'annotation', label: 'AnnData · annotation/proteins' },
     { key: 'anndata-structure', kind: 'anndata-structure', label: 'Structure' },
@@ -267,13 +267,13 @@ test('representation views separate APB metadata, scientific levels and raw JSON
 
   const h5ad = {
     artifact: { name: 'converted.h5ad', physical_format: 'h5ad' },
-    levels: [{ name: 'ion' }]
+    levels: [{ name: 'peptidoform_ion' }]
   }
   assert.deepEqual(
     representationViews(h5ad).map(({ kind, label }) => ({ kind, label })),
     [
       { kind: 'apb-metadata', label: 'APB metadata' },
-      { kind: 'level', label: 'AnnData · ion' },
+      { kind: 'level', label: 'AnnData · peptidoform_ion' },
       { kind: 'anndata-structure', label: 'Structure' },
       { kind: 'representation-json', label: 'Representation JSON' }
     ]
@@ -295,11 +295,11 @@ test('representation views separate APB metadata, scientific levels and raw JSON
 
 test('AnnData diagram separates X from persisted slots without losing their descriptors', () => {
   const level = {
-    name: 'ion',
+    name: 'peptidoform_ion',
     dimensions: { observations: 6, variables: 42 },
     primary_layer: 'Intensity',
     obs: { row_count: 6, key_columns: ['raw_file'], columns: [{ name: 'raw_file' }] },
-    var: { row_count: 42, key_columns: ['ion'], columns: [{ name: 'ion' }] },
+    var: { row_count: 42, key_columns: ['peptidoform_ion'], columns: [{ name: 'peptidoform_ion' }] },
     layers: [
       { name: 'Intensity', primary: true, storage_slot: 'X' },
       { name: 'PEP', primary: false, storage_slot: 'layers' }
@@ -308,7 +308,7 @@ test('AnnData diagram separates X from persisted slots without losing their desc
     apb: { parse: { rule_json: {}, produced_by: 'apb2' }, scoring: {} }
   }
   assert.deepEqual(annDataDiagram(level), {
-    name: 'ion',
+    name: 'peptidoform_ion',
     dimensions: { observations: 6, variables: 42 },
     x: level.layers[0],
     layers: [level.layers[1]],
@@ -338,7 +338,7 @@ test('matrix summaries expose shape, semantics and compact completeness statisti
 
 test('aligned summaries expose one object shape and its aggregate null burden', () => {
   assert.deepEqual(alignedSummary({
-    name: 'proteobench', row_count: 42, key_columns: ['ion'],
+    name: 'proteobench', row_count: 42, key_columns: ['peptidoform_ion'],
     columns: [
       { name: 'included', dtype: 'Boolean', null_count: 0 },
       { name: 'epsilon', dtype: 'Float64', null_count: 7 },
@@ -346,7 +346,7 @@ test('aligned summaries expose one object shape and its aggregate null burden', 
     ]
   }), {
     name: 'proteobench', rowCount: 42, columnCount: 3, cellCount: 126,
-    nullCount: 10, keyColumns: ['ion'], dtypes: ['Boolean', 'Float64'],
+    nullCount: 10, keyColumns: ['peptidoform_ion'], dtypes: ['Boolean', 'Float64'],
     columns: [
       { name: 'included', dtype: 'Boolean', null_count: 0 },
       { name: 'epsilon', dtype: 'Float64', null_count: 7 },
@@ -360,7 +360,7 @@ test('APB metadata scopes preserve the physical uns namespace and level ownershi
     artifact: { physical_format: 'h5mu' },
     root: { apb: { parse: { produced_by: 'apb2' }, proteobench: { provenance: {} } } },
     levels: [
-      { name: 'ion', apb: { parse: { rule_json: { software_name: 'FragPipe' } } } },
+      { name: 'peptidoform_ion', apb: { parse: { rule_json: { software_name: 'FragPipe' } } } },
       { name: 'protein', apb: { parse: { plan_json: { level: 'protein' } }, aggregate: [] } }
     ]
   }
@@ -373,7 +373,7 @@ test('APB metadata scopes preserve the physical uns namespace and level ownershi
       } } }
     },
     {
-      label: 'ion',
+      label: 'peptidoform_ion',
       value: { uns: { apb: {
         parse: { rule_json: { software_name: 'FragPipe' } }
       } } }
