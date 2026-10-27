@@ -12,3 +12,4 @@ Results_quant_ion_DIA_Astral/4cc229a793e08041348ccff49d7afaf0117a9da0,DIA-NN · 
 Results_quant_ion_DIA_singlecell/0b5a0c9b8387b98db6f1c287c516fa6ddf2a74ee,FragPipe (DIA-NN quant) · dia_singlecell
 Results_quant_ion_DIA_Astral/1bd69ca0cc5060987715afa2933b54f61fd1522e,AlphaDIA · dia_astral
 Results_quant_ion_DIA_Astral/a17457871aa99ec961cbeef60e81f2400f95fa4e,AlphaDIA · dia_astral
+zenodo/apb_examples/metamorpheus_ionstar,MetaMorpheus 1.0.7alpha + FlashLFQ 1.3alpha · complete IonStar table · 20 runs

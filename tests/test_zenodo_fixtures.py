@@ -126,6 +126,30 @@ def test_packaged_records_keep_the_multifile_fixture_without_a_standalone_corpus
     assert entrapment.parameters == "mqpar.xml"
 
 
+def test_full_metamorpheus_example_is_managed_and_selected_for_routine_conversion() -> None:
+    record = zenodo_fixtures.packaged_config().record("apb_examples")
+    dataset = record.datasets[0]
+    corpuses = Path(__file__).parents[1] / "corpuses"
+    key = zenodo_fixtures.zenodo_key(record, dataset)
+
+    assert record.record_id == 23691153
+    assert key == "zenodo/apb_examples/metamorpheus_ionstar"
+    assert key in load_corpus(corpuses / "apb_examples.csv")
+    assert key in load_corpus(corpuses / "routine.csv")
+    assert len(load_corpus(corpuses / "routine.csv")) == 14
+    assert key not in load_corpus(corpuses / "proteobench.csv")
+    assert dataset.input == "QuantifiedPeaks.tsv"
+    assert dataset.parameters is None, "FlashLFQ settings are not MetaMorpheus search parameters"
+    assert dataset.module == "PXD003881", "the experiment is not a ProteoBench benchmark"
+    assert dataset.files[dataset.input] == "metamorpheus_ionstar__QuantifiedPeaks.tsv.gz"
+    assert {
+        "FlashLfqSettings.toml",
+        "PXD003881_community_annotated.sdrf.tsv",
+        "sdrf.tsv",
+        "provenance.json",
+    } <= dataset.files.keys()
+
+
 def test_a_dataset_names_only_files_it_stores() -> None:
     with pytest.raises(ValidationError, match="not one of its files"):
         ZenodoDataset(

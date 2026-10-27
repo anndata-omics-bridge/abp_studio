@@ -13,6 +13,19 @@
 
 schema_version = 1
 
+# Shared APB example outputs; pin a published record version, not a concept DOI.
+[[records]]
+name = "apb_examples"
+record_id = 23691153
+
+[[records.datasets]]
+name = "metamorpheus_ionstar"
+module = "PXD003881"
+software_name = "MetaMorpheus"
+software_version = "1.0.7alpha"
+input = "QuantifiedPeaks.tsv"
+files = { "QuantifiedPeaks.tsv" = "metamorpheus_ionstar__QuantifiedPeaks.tsv.gz", "FlashLfqSettings.toml" = "metamorpheus_ionstar__FlashLfqSettings.toml", "PXD003881_community_annotated.sdrf.tsv" = "metamorpheus_ionstar__PXD003881_community_annotated.sdrf.tsv", "sdrf.tsv" = "metamorpheus_ionstar__sdrf.tsv", "provenance.json" = "metamorpheus_ionstar__provenance.json" }
+
 [[records]]
 name = "maxquant_entrapment"
 record_id = 23150735

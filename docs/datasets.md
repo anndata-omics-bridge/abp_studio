@@ -1,12 +1,21 @@
 # External datasets
 
-Three Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. `config/zenodo.toml` lists the records, their datasets and the files each dataset stores; `fixture download all` acquires all three, and `fixture download NAME` the datasets a corpus lists.
+Four Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. `config/zenodo.toml` lists the records, their datasets and the files each dataset stores; `fixture download all` acquires all four, and `fixture download NAME` the datasets a corpus lists.
 
 | Record | Acquire | Corpus | Workflows |
 | --- | --- | --- | --- |
 | MaxQuant entrapment | `uv run fixture download routine` | none; its folder is a `routine` dataset | any conversion workflow |
 | directLFQ mirror | `uv run fixture download directlfq` | `directlfq` | `convert_no_param` only: no parameter files |
 | MSstats+ DIA reports | `uv run fixture download msstats_plus` | `msstats_plus` | `convert_no_param` only: no parameter files |
+| APB quantification examples | `uv run fixture download apb_examples` | `apb_examples`, also `routine` for MetaMorpheus | conversion; no search parameter file |
+
+## APB quantitative proteomics example datasets
+
+The shared [Zenodo record 23691153](https://doi.org/10.5281/zenodo.23691153) holds complete software outputs from different studies. Each dataset keeps its own source, software versions, licence and checksums. New additions require a new published version and an explicit configuration pin update; the directLFQ and MSstats+ records retain their study-specific scope.
+
+The first entry, `zenodo/apb_examples/metamorpheus_ionstar`, is the complete IonStar table from the MetaMorpheus 1.0.7alpha → standalone FlashLFQ 1.3alpha workflow of the [PIP-ECHO study](https://doi.org/10.1021/acs.jproteome.5c00065), mirrored from PRIDE PXD057758 (original experiment PXD003881). It has 798,879 rows, 26 columns, 20 runs and 255,817,791 uncompressed bytes. Gzip is the only change to the table: no feature or condition filtering, row reordering, intensity scaling or imputation. Original data are CC0.
+
+The dataset includes matching FlashLFQ settings, the original public SDRF, a separately identified analysis SDRF for all five groups of four technical replicate runs, and provenance. The analysis SDRF projects the actual spike-in level because the current pMultiQC reader otherwise interprets technical replicate IDs as conditions; full original annotations and IDs remain available. FlashLFQ settings are a companion file, not a MetaMorpheus search parameter, so the manifest has no vendor parameter file. No ProteoBench module or benchmark FASTA is assigned. It is selected in `apb_examples` and `routine`, but not in the ProteoBench scoring corpora.
 
 Each dataset lands MD5-verified in `test_data_download/zenodo/<record>/<dataset>/`, with its tables kept gzipped and only the parameter file decompressed, or, with `--no-gzip`, fully decompressed, and gets a `downloads.csv` row keyed `zenodo/<record>/<dataset>`, the key a corpus file lists. A dataset of related tables names its folder as input; APB reads the tables inside by their MaxQuant names. A dataset without a parameter file has an empty `vendor_parameter_file_path`, which workflows reading vendor parameters refuse.
 
