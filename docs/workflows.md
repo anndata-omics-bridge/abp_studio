@@ -96,7 +96,7 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 | scoring | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
 | deciding proteins | proteobench | proteobench_run, proteobench_run_vendor | hdf5 | `.h5ad` |
 | manuscript F3 | proteobench_f3 | convert_peptidoform_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
-| manuscript F3 | directlfq_large_per_vendor | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
+| manuscript F3 | large_inputs | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
 
 `scripts/integration_runs.fish` holds the routine checks and exports, in the same form and into the same root, so they are served too:
 

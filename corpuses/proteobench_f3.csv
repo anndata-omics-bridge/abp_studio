@@ -197,3 +197,7 @@ Results_quant_ion_DIA_singlecell/dfa7a079abb9b0e165d0ec18e8dac2f3bee3e39c,DIA-NN
 Results_quant_ion_DIA_singlecell/e4155ea19b653b078abc939766995e5d16d6776e,DIA-NN · dia_singlecell
 Results_quant_ion_DIA_singlecell/f0ac6060f338dd531a8e4746317aa150113fce96,DIA-NN · dia_singlecell
 zenodo/directlfq/Spectronaut_LargeFC,Spectronaut · directlfq
+zenodo/directlfq/MaxQuant_Kuster200,MaxQuant · directlfq
+zenodo/msstats_plus/K562_DIANN,DIA-NN 2 Parquet · 0.6 GB · 40 runs
+zenodo/msstats_plus/Mix_of_Proteome,Spectronaut 19 · 26.7 GB · 18 runs
+zenodo/msstats_plus/TPCPA,DIA-NN 1.8 · 42.1 GB · 1236 runs

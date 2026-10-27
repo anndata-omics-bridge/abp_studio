@@ -26,9 +26,9 @@ uv run corpus run proteobench proteobench_run_vendor --strict
 # manuscript F3: one dataset at a time
 uv run corpus run proteobench_f3 convert_peptidoform_ion --cores 1 --strict
 uv run corpus run proteobench_f3 convert --cores 1 --strict
-uv run corpus run directlfq_large_per_vendor convert_no_param --cores 1 --strict
-uv run corpus run directlfq_large_per_vendor convert_no_param --format duckdb --cores 1 --strict
-uv run corpus run directlfq_large_per_vendor convert_no_param --format parquet --cores 1 --strict
+uv run corpus run large_inputs convert_no_param --cores 1 --strict
+uv run corpus run large_inputs convert_no_param --format duckdb --cores 1 --strict
+uv run corpus run large_inputs convert_no_param --format parquet --cores 1 --strict
 
 # public site: copies every run of the output root; apb_publish_site must be empty or absent
 uv run corpus publish apb_publish_site
