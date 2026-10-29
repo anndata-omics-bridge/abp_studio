@@ -132,7 +132,7 @@ def test_full_metamorpheus_example_is_managed_and_selected_for_routine_conversio
     corpuses = Path(__file__).parents[1] / "corpuses"
     key = zenodo_fixtures.zenodo_key(record, dataset)
 
-    assert record.record_id == 23691153
+    assert record.record_id == 23737139
     assert key == "zenodo/apb_examples/metamorpheus_ionstar"
     assert key in load_corpus(corpuses / "apb_examples.csv")
     assert key in load_corpus(corpuses / "routine.csv")
@@ -148,6 +148,29 @@ def test_full_metamorpheus_example_is_managed_and_selected_for_routine_conversio
         "sdrf.tsv",
         "provenance.json",
     } <= dataset.files.keys()
+
+
+def test_fgcz_maxquant_examples_read_all_levels_from_one_folder() -> None:
+    record = zenodo_fixtures.packaged_config().record("apb_examples")
+    corpuses = Path(__file__).parents[1] / "corpuses"
+
+    for name, module in (
+        ("maxquant_dda_qexactive", "dda_qexactive"),
+        ("maxquant_dda_astral", "dda_astral"),
+    ):
+        dataset = next(d for d in record.datasets if d.name == name)
+        assert zenodo_fixtures.zenodo_key(record, dataset) in load_corpus(
+            corpuses / "apb_examples.csv"
+        )
+        assert dataset.module == module
+        assert dataset.input is None, "the related tables are read together as one folder"
+        assert dataset.parameters == "mqpar.xml"
+        assert {
+            "evidence.txt",
+            "modificationSpecificPeptides.txt",
+            "peptides.txt",
+            "proteinGroups.txt",
+        } <= dataset.files.keys()
 
 
 def test_a_dataset_names_only_files_it_stores() -> None:

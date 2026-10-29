@@ -16,7 +16,7 @@ schema_version = 1
 # Shared APB example outputs; pin a published record version, not a concept DOI.
 [[records]]
 name = "apb_examples"
-record_id = 23691153
+record_id = 23737139
 
 [[records.datasets]]
 name = "metamorpheus_ionstar"
@@ -25,6 +25,25 @@ software_name = "MetaMorpheus"
 software_version = "1.0.7alpha"
 input = "QuantifiedPeaks.tsv"
 files = { "QuantifiedPeaks.tsv" = "metamorpheus_ionstar__QuantifiedPeaks.tsv.gz", "FlashLfqSettings.toml" = "metamorpheus_ionstar__FlashLfqSettings.toml", "PXD003881_community_annotated.sdrf.tsv" = "metamorpheus_ionstar__PXD003881_community_annotated.sdrf.tsv", "sdrf.tsv" = "metamorpheus_ionstar__sdrf.tsv", "provenance.json" = "metamorpheus_ionstar__provenance.json" }
+
+# FGCZ MaxQuant 2.0.1.0 searches of the ProteoBench DDA samples, all four MaxQuant levels. One
+# raw file per experiment, so the tables share samples and the folder is one run. The search
+# FASTA holds the HYE FASTA's proteins plus one FGCZ header entry.
+[[records.datasets]]
+name = "maxquant_dda_qexactive"
+module = "dda_qexactive"
+software_name = "MaxQuant"
+software_version = "2.0.1.0"
+parameters = "mqpar.xml"
+files = { "evidence.txt" = "maxquant_dda_qexactive__evidence.txt.gz", "modificationSpecificPeptides.txt" = "maxquant_dda_qexactive__modificationSpecificPeptides.txt.gz", "peptides.txt" = "maxquant_dda_qexactive__peptides.txt.gz", "proteinGroups.txt" = "maxquant_dda_qexactive__proteinGroups.txt.gz", "mqpar.xml" = "maxquant_dda_qexactive__mqpar.xml.gz", "parameters.txt" = "maxquant_dda_qexactive__parameters.txt.gz", "summary.txt" = "maxquant_dda_qexactive__summary.txt.gz", "p34486_Proteobench_TripleProteome_20240614.fasta" = "maxquant_dda_qexactive__p34486_Proteobench_TripleProteome_20240614.fasta.gz", "provenance.json" = "maxquant_dda_qexactive__provenance.json" }
+
+[[records.datasets]]
+name = "maxquant_dda_astral"
+module = "dda_astral"
+software_name = "MaxQuant"
+software_version = "2.0.1.0"
+parameters = "mqpar.xml"
+files = { "evidence.txt" = "maxquant_dda_astral__evidence.txt.gz", "modificationSpecificPeptides.txt" = "maxquant_dda_astral__modificationSpecificPeptides.txt.gz", "peptides.txt" = "maxquant_dda_astral__peptides.txt.gz", "proteinGroups.txt" = "maxquant_dda_astral__proteinGroups.txt.gz", "mqpar.xml" = "maxquant_dda_astral__mqpar.xml.gz", "parameters.txt" = "maxquant_dda_astral__parameters.txt.gz", "summary.txt" = "maxquant_dda_astral__summary.txt.gz", "p34486_Proteobench_TripleProteome_20240614.fasta" = "maxquant_dda_astral__p34486_Proteobench_TripleProteome_20240614.fasta.gz", "provenance.json" = "maxquant_dda_astral__provenance.json" }
 
 [[records]]
 name = "maxquant_entrapment"
