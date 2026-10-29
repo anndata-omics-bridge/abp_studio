@@ -32,7 +32,7 @@ Two further conditions must hold, or the run fails before scheduling:
 - **The tool name is also its distribution name.** Snakemake watches each tool's `dist-info` metadata and, for editable installs, its whole source tree; `apb-fasta` the executable must come from `apb-fasta` the distribution.
 - **`<tool> --version` succeeds.** Its output is recorded verbatim in `run.json`.
 
-Add the distribution to `[tool.uv.sources]`, the `samples` extra, and the `DEP002` ignore list in `pyproject.toml`, then `uv lock` and `uv sync`, so the tool is on PATH inside Studio's own environment.
+Either add the distribution to `[tool.uv.sources]`, the `samples` extra, and the `DEP002` ignore list in `pyproject.toml`, then `uv lock` and `uv sync`, so the tool is on PATH inside Studio's own environment, or keep it out of Studio's lock and put it on PATH from its own environment with `uv tool install --editable`, as [Install](install.md) describes for apb-export.
 
 ## Resource tables
 
@@ -78,11 +78,11 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 - `--dry-run` — nondestructive preview; combine with `--no-force` to confirm existing results are current
 - `--strict` — refuse to run when a selected dataset is not downloaded, instead of reporting it `not_downloaded`
 
-`corpus run <corpus>` reads `corpuses/<corpus>.csv`, resolves its keys through the fixture manifest, and runs one selected workflow, so `routine`, `routine_pb`, and `proteobench` are ordinary hand-curated files rather than CLI branches. The `proteobench` corpus contains regular ProteoBench quantification inputs eligible for `proteobench_pmultiqc`; `all` additionally covers peptidoform, plasma, entrapment and downloaded Zenodo inputs, but no script runs it. Corpus inventories and workflow resources remain configured in their CSV/text files, roots live in Studio's settings JSON, and required tools resolve from `PATH`. `corpus configure` reports each exact source file together with the values read from it, including configured corpuses and complete workflow-table rows; it never writes configuration.
+`corpus run <corpus>` reads `corpuses/<corpus>.csv`, resolves its keys through the fixture manifest, and runs one selected workflow, so `routine`, `routine_pb`, and `proteobench` are ordinary hand-curated files rather than CLI branches. The `proteobench` corpus contains regular ProteoBench quantification inputs eligible for `proteobench_pmultiqc`; `all` additionally covers peptidoform, plasma, entrapment and downloaded Zenodo inputs, but no script runs it. Corpus inventories and workflow resources remain configured in their CSV/text files, roots live in Studio's settings JSON, and required tools resolve from `PATH`. `corpus configure` reports the main settings file with its effective values, the corpus files, the fixture manifest and the workflow-table directory; it never writes configuration.
 
 ## Selected combinations
 
-`scripts/corpus_runs.fish` lists every run we serve, one plain command each, all into the configured output root `apb_outputs`; the manuscript figure scripts in `apb_article/pipeline/scripts` read the same runs, and its last line, `corpus publish apb_publish_site`, copies every run of that root. `proteobench_run_vendor` is `proteobench_run` with `--proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides, rather than from the FASTA proteins containing the peptide. The routine inventory contains 13 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains its 12 catalogued ProteoBench datasets, excluding the Zenodo MaxQuant entrapment folder, and is scored with the single-call `proteobench_run`. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+`scripts/corpus_runs.fish` lists every run we serve, one plain command each, all into the configured output root `apb_outputs`; the manuscript figure scripts in `apb_article/pipeline/scripts` read the same runs, and its last line, `corpus publish apb_publish_site`, copies every run of that root. `proteobench_run_vendor` is `proteobench_run` with `--proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides, rather than from the FASTA proteins containing the peptide. The routine inventory contains 14 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains its 12 catalogued ProteoBench datasets, excluding the Zenodo MaxQuant entrapment folder, and is scored with the single-call `proteobench_run`. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
 
 | Section | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 | scoring | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
 | scoring | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
 | scoring | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
-| deciding proteins | proteobench | proteobench_run, proteobench_run_vendor | hdf5 | `.h5ad` |
+| deciding proteins | proteobench | proteobench_run, proteobench_run_vendor | hdf5 | `.h5mu` |
 | manuscript F3 | proteobench_f3 | convert_peptidoform_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
 | manuscript F3 | large_inputs | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
 

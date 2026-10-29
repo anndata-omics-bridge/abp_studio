@@ -3,7 +3,7 @@
 APB Studio provides two local applications over the APB2 toolchain:
 
 - **Fixture Manager** owns the ProteoBench and Zenodo fixture and resource inventory.
-- **Corpus Runner** schedules concrete Python workflows through Snakemake, writes per-dataset JSON reports, and exposes settings and progress to the JavaScript corpus viewer.
+- **Corpus Runner** schedules concrete Python workflows through Snakemake, writes per-dataset JSON reports, and exposes settings and progress to the TypeScript corpus viewer.
 
 The applications share typed, disk-backed settings. APB2 and its focused tools own conversion, annotation, FASTA handling, aggregation, ProteoBench scoring, capability resolution, and artifact summaries; Studio owns orchestration and presentation.
 

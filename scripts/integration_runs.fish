@@ -1,5 +1,6 @@
 #!/usr/bin/env fish
-# Integration runs that are neither published nor read by the manuscript, one command per line.
+# Integration runs, one command per line, into the configured output root: `corpus publish`
+# serves them too, but the manuscript does not read them.
 # Defaults: --format hdf5, --cores 3, --force. Run from the apb_studio folder.
 
 # routine: after any apb2 or apb_studio change
