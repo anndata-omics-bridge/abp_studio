@@ -62,7 +62,7 @@ catalog-app {
   margin: 8px 0;
 }
 
-/* The two groups, Answers and Stored tables, above the tabs of the open one. */
+/* The two groups, Views and Stored tables, above the tabs of the open one. */
 .tabs.groups {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
@@ -71,6 +71,14 @@ catalog-app {
 .tabs.groups button {
   padding: 8px 18px;
   font-size: 15px;
+}
+
+/* What the open group holds, between its button and its tabs. */
+.group-description {
+  margin: 0 0 4px;
+  max-width: 90ch;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .tabs button {

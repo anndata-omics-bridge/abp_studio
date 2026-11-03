@@ -2,7 +2,21 @@ import { LitElement, html } from '../../shared/lit.js'
 import type { TemplateResult } from '../../shared/lit.js'
 import type { Tab, TabGroup } from '../types.js'
 
-const GROUPS: Array<[TabGroup, string]> = [['answers', 'Answers'], ['tables', 'Stored tables']]
+// The two groups of tabs, each with what it holds.
+const GROUPS: Array<{ group: TabGroup; label: string; description: string }> = [
+  {
+    group: 'views',
+    label: 'Views',
+    description: 'Computed from the stored tables, one question each. Overview: which catalogue sets are there? ' +
+      'Meanings: what does each software version call each key? Coverage: what does a converted result lack? ' +
+      'Long table: which entries apply to which software version? Software: which versions does APB2 convert, and which catalogued columns does each write?'
+  },
+  {
+    group: 'tables',
+    label: 'Stored tables',
+    description: 'The catalogue as the bundle stores it: one CSV table per tab, each column described in datapackage.json. The views are computed from these.'
+  }
+]
 
 // The light-DOM shell emits intent. Composition supplies the tabs and their contents.
 export class CatalogApp extends LitElement {
@@ -34,7 +48,7 @@ export class CatalogApp extends LitElement {
   }
 
   get group (): TabGroup {
-    return this.tabs.find(({ id }) => id === this.tab)?.group ?? 'answers'
+    return this.tabs.find(({ id }) => id === this.tab)?.group ?? 'views'
   }
 
   select (tab: string): void {
@@ -79,11 +93,12 @@ export class CatalogApp extends LitElement {
         <span class="status ${this.error ? 'error' : ''}">${this.error || this.status}</span>
       </header>
       <nav class="tabs groups" role="tablist" aria-label="Views">
-        ${GROUPS.map(([group, label]) => html`
+        ${GROUPS.map(({ group, label }) => html`
           <button role="tab" aria-selected=${String(this.group === group)} @click=${() => this.open(group)}>${label}</button>
         `)}
       </nav>
-      <nav class="tabs" role="tablist" aria-label=${GROUPS.find(([group]) => group === this.group)?.[1] ?? ''}>
+      <p class="group-description">${GROUPS.find(({ group }) => group === this.group)?.description ?? ''}</p>
+      <nav class="tabs" role="tablist" aria-label=${GROUPS.find(({ group }) => group === this.group)?.label ?? ''}>
         ${this.tabs.filter(tab => tab.group === this.group).map(({ id, label }) => html`
           <button role="tab" aria-selected=${String(this.tab === id)} @click=${() => this.select(id)}>${label}</button>
         `)}

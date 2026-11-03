@@ -12,12 +12,12 @@ import type { Resource, Row, Tab, Table, TableView } from './types.js'
 // holds, mounted the first time it is shown and again when the catalogue set changes.
 const DATA_ROOT = 'data'
 
-const ANSWERS: Tab[] = [
-  { id: 'overview', label: 'Overview', group: 'answers', sets: 'none' },
-  { id: 'meanings', label: 'Meanings', group: 'answers', sets: 'one' },
-  { id: 'coverage', label: 'Coverage', group: 'answers', sets: 'any' },
-  { id: 'long', label: 'Long table', group: 'answers', sets: 'any' },
-  { id: 'software', label: 'Software', group: 'answers', sets: 'any' }
+const VIEWS: Tab[] = [
+  { id: 'overview', label: 'Overview', group: 'views', sets: 'none' },
+  { id: 'meanings', label: 'Meanings', group: 'views', sets: 'one' },
+  { id: 'coverage', label: 'Coverage', group: 'views', sets: 'any' },
+  { id: 'long', label: 'Long table', group: 'views', sets: 'any' },
+  { id: 'software', label: 'Software', group: 'views', sets: 'any' }
 ]
 
 /** The bundle's manifest: in `data/` beside the viewer, or in the folder `?bundle=` names. */
@@ -61,7 +61,7 @@ class BundleViews {
   }
 
   get tabs (): Tab[] {
-    return [...ANSWERS, ...this.resources.map(({ name, fields }): Tab => ({ id: `table:${name}`, label: name, group: 'tables', sets: fields.some(field => field.name === 'set') ? 'any' : 'none' }))]
+    return [...VIEWS, ...this.resources.map(({ name, fields }): Tab => ({ id: `table:${name}`, label: name, group: 'tables', sets: fields.some(field => field.name === 'set') ? 'any' : 'none' }))]
   }
 
   /** Every set's rule_coverage rows, each with its set. */

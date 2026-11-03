@@ -19,7 +19,7 @@ export interface Column { field: string; title: string; tooltip: string; filter:
  * stored table what each column holds. */
 export interface TableView { key: string; title: string; description: string; columns: Column[]; rows: Row[]; legend: Field[] }
 
-export type TabGroup = 'answers' | 'tables'
+export type TabGroup = 'views' | 'tables'
 /** How a tab picks catalogue sets: not at all, one set, or one or every set. */
 export type SetPicker = 'none' | 'one' | 'any'
 

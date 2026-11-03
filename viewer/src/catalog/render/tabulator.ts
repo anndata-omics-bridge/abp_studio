@@ -44,7 +44,6 @@ export async function mountTable (host: HTMLElement, view: TableView, select?: (
   if (view.legend.length > 0) {
     const legend = document.createElement('details')
     legend.className = 'legend'
-    legend.open = true
     const summary = document.createElement('summary')
     summary.textContent = 'Columns'
     const list = document.createElement('dl')
