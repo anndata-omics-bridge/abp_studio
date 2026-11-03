@@ -88,11 +88,12 @@ wheels = [
 
 [[package]]
 name = "apb-catalog"
-version = "0.1.1"
+version = "0.1.4"
 source = { editable = "../apb-catalog" }
 dependencies = [
     { name = "apb2" },
     { name = "cyclopts" },
+    { name = "numpy" },
     { name = "polars" },
     { name = "pydantic" },
 ]
@@ -101,6 +102,7 @@ dependencies = [
 requires-dist = [
     { name = "apb2", editable = "../apb2" },
     { name = "cyclopts", specifier = ">=4,<5" },
+    { name = "numpy", specifier = ">=2" },
     { name = "polars", specifier = ">=1.43,<2" },
     { name = "pydantic", specifier = ">=2.10" },
 ]

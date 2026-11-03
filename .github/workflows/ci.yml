@@ -43,6 +43,14 @@ jobs:
           repository: anndata-omics-bridge/apb-catalog
           path: apb-catalog
 
+      # The catalog viewer compiles apb-catalog-ts's sources through viewer/tsconfig.json's
+      # paths and vite.config.ts's alias; their hyparquet imports resolve from its node_modules.
+      - name: Checkout apb-catalog-ts
+        uses: actions/checkout@v7
+        with:
+          repository: anndata-omics-bridge/apb-catalog-ts
+          path: apb-catalog-ts
+
       - name: Checkout apb-fasta
         uses: actions/checkout@v7
         with:
@@ -80,10 +88,15 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: apb_studio/viewer/package-lock.json
+          cache-dependency-path: |
+            apb_studio/viewer/package-lock.json
+            apb-catalog-ts/package-lock.json
 
       - name: Install locked viewer dependencies
         run: npm ci --prefix viewer
+
+      - name: Install apb-catalog-ts dependencies
+        run: npm ci --prefix ../apb-catalog-ts
 
       - name: Sync locked environment
         run: uv sync --frozen --extra dev --group docs

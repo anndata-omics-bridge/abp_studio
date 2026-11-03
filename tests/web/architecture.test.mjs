@@ -24,13 +24,13 @@ function importsOf (path) {
 const local = path => relative(SOURCE, path).replaceAll('\\', '/')
 
 test('TypeScript compilation preserves custom-element registration imports', () => {
-  for (const viewer of ['corpus', 'fixture']) {
+  for (const viewer of ['catalog', 'corpus', 'fixture']) {
     const source = compiledSource(resolve(SOURCE, `${viewer}/app.ts`))
     assert.match(source, new RegExp(`import\\s+['"]\\./shell/${viewer}-app\\.js['"]`))
   }
 })
 
-test('both viewers have acyclic dependencies and independent composition roots', () => {
+test('the viewers have acyclic dependencies and independent composition roots', () => {
   const graph = new Map()
   for (const path of modules()) {
     const source = local(path)
@@ -74,7 +74,7 @@ test('viewer libraries are bundled locally with locked exact dependency versions
 })
 
 test('packaged viewers reference existing content-hashed local scripts and styles', () => {
-  for (const viewer of ['corpus', 'fixture']) {
+  for (const viewer of ['catalog', 'corpus', 'fixture']) {
     const root = resolve(PROJECT, `src/apb_studio/${viewer}_viewer/web`)
     const index = readFileSync(resolve(root, 'index.html'), 'utf8')
     const assets = [...index.matchAll(/(?:href|src)=['"](\.\/assets\/[^'"]+)['"]/g)].map(match => match[1])

@@ -7,6 +7,7 @@ APB Studio tests the [AnnData Proteomics Bridge](https://anndata-omics-bridge.gi
 - **Fixture Manager** downloads ProteoBench submissions and Zenodo datasets (the directLFQ benchmark, MaxQuant entrapment tables, MSstats+ DIA reports and APB quantification examples) into a local fixture store
 - **Corpus Runner** runs one workflow over a named corpus with Snakemake: conversion, FASTA checks, ProteoBench scoring, pMultiQC reports, aggregation and exports; each dataset's steps, runtime, memory and outputs are recorded
 - **Corpus viewer** browses runs, datasets, APB metadata and APB-versus-ProteoBench scores; it reads only files, so a published copy runs on a plain file server
+- **Catalog viewer** shows apb-catalog's bundle: its stored tables, which column holds each meaning, coverage per software version, and the software versions APB2 supports
 
 Installation: [docs/install.md](docs/install.md).
 
@@ -18,7 +19,7 @@ uv run corpus run routine
 uv run corpus view
 ```
 
-The corpus viewer is at http://127.0.0.1:8766/. `uv run corpus view` starts it or safely restarts the matching managed process; another viewer or service on the port is refused. `uv run corpus view stop` stops it. The viewer shows saved settings, the absolute server artifact directory, exact CSV inputs, workflow source, live dataset/step progress, stdout, stderr, errors, runtime, peak memory, and input/output-size charts. Input, parameter, TOML/FASTA resource, generated artifact, and frozen snapshot links retain complete filenames. Folders open as browsable listings in new tabs; text and HTML display inline. JSON opens directly as `application/json`, unchanged by the server, using the browser's native display. Binary files such as H5MU, H5AD, DuckDB and individual Parquet files download instead of opening preview tabs; APB Parquet directories remain browsable. Large files stream from disk. It reads persisted files and remains useful after the runner exits. Refresh polling happens every two seconds. `uv run fixture view` starts the fixture viewer on port 8765.
+The corpus viewer is at http://127.0.0.1:8766/. `uv run corpus view` starts it or safely restarts the matching managed process; another viewer or service on the port is refused. `uv run corpus view stop` stops it. The viewer shows saved settings, the absolute server artifact directory, exact CSV inputs, workflow source, live dataset/step progress, stdout, stderr, errors, runtime, peak memory, and input/output-size charts. Input, parameter, TOML/FASTA resource, generated artifact, and frozen snapshot links retain complete filenames. Folders open as browsable listings in new tabs; text and HTML display inline. JSON opens directly as `application/json`, unchanged by the server, using the browser's native display. Binary files such as H5MU, H5AD, DuckDB and individual Parquet files download instead of opening preview tabs; APB Parquet directories remain browsable. Large files stream from disk. It reads persisted files and remains useful after the runner exits. Refresh polling happens every two seconds. `uv run fixture view` starts the fixture viewer on port 8765. `uv run catalog view` starts the catalog viewer on port 8767, on apb-catalog's `make bundle` output beside Studio or the folder `--bundle` names.
 
 ## Inputs
 
@@ -148,7 +149,7 @@ The output root's `corpus/index.json` lists the visible runs; the viewer reads i
 
 ## Deploy on a file server
 
-The corpus viewer reads only files, so any static file server can host it with its runs and the fixture store. The fixture viewer stays local.
+The corpus viewer reads only files, so any static file server can host it with its runs and the fixture store. The fixture viewer stays local. `catalog publish SITE` copies the catalog viewer to `SITE/` and the bundle to `SITE/data/`, which any static file server serves as it is.
 
 ```bash
 fish scripts/corpus_runs.fish    # every served run, then corpus publish apb_publish_site
@@ -206,7 +207,7 @@ See [architecture](docs/architecture.md) for module ownership and [development](
 
 ## Viewer development
 
-Both viewers use the same strict TypeScript/Vite setup as rawdiagQC and proptm3d. Sources live in [viewer/src](viewer/src); shared adapters bundle Lit, Tabulator, Plotly, D3-DSV and the JSON tree viewer from locked npm dependencies. The Python package contains generated scripts and styles, so installed users need no Node runtime or CDN.
+The three viewers use the same strict TypeScript/Vite setup as rawdiagQC and proptm3d. Sources live in [viewer/src](viewer/src); shared adapters bundle Lit, Tabulator, Plotly, D3-DSV and the JSON tree viewer from locked npm dependencies. The Python package contains generated scripts and styles, so installed users need no Node runtime or CDN.
 
 ```bash
 make sync-web                 # install locked npm dependencies
@@ -217,4 +218,4 @@ make check-web-assets         # detect stale packaged bundles
 npm --prefix viewer run dev   # Vite development server
 ```
 
-Vite exposes `/corpus/` and `/fixture/`, proxying reads to the existing local viewers on ports 8766 and 8765. Start them with `uv run corpus view` and `uv run fixture view`. The frontend performs rendering and navigation in the browser and reads the catalog `index.json` that runs write; the corpus server only serves the viewer, runs under `/data/` and the fixture store under `/fixtures/` as files. A standalone browser directory loader would be a separate change.
+Vite exposes `/corpus/`, `/fixture/` and `/catalog/`, proxying reads to the existing local viewers on ports 8766, 8765 and 8767. Start them with `uv run corpus view`, `uv run fixture view` and `uv run catalog view`. The catalog viewer imports apb-catalog-ts from its sibling checkout, `../apb-catalog-ts`, through an alias in `viewer/vite.config.ts` and `viewer/tsconfig.json`; run `npm ci` there once. The frontend performs rendering and navigation in the browser and reads the catalog `index.json` that runs write; the corpus server only serves the viewer, runs under `/data/` and the fixture store under `/fixtures/` as files. A standalone browser directory loader would be a separate change.

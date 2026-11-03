@@ -18,7 +18,12 @@
     "types": [
       "vite/client",
       "node"
-    ]
+    ],
+    "paths": {
+      "@anndata-omics-bridge/apb-catalog": [
+        "../../apb-catalog-ts/src/index.ts"
+      ]
+    }
   },
   "include": [
     "src",

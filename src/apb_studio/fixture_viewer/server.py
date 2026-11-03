@@ -88,10 +88,10 @@ def build_server(
     return ThreadingHTTPServer((host, port), handler)
 
 
-def run(store: Store, host: str = "127.0.0.1", port: int = 8765) -> None:
-    """Serve the viewer until interrupted."""
+def run(store: Store, host: str = "127.0.0.1", port: int = 8765, web_root: Path = WEB_ROOT) -> None:
+    """Serve the viewer at ``web_root`` until interrupted."""
     try:
-        server = build_server(store, host, port)
+        server = build_server(store, host, port, web_root)
     except OSError as error:
         if error.errno not in {errno.EADDRINUSE, errno.EACCES}:
             raise

@@ -16,7 +16,8 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 - Corpus scheduling belongs to Snakemake. Its dataset output is one JSON report. APB failures are recorded results; framework failures fail jobs.
 - `run.json` and copied CSV/source files expose settings before execution. Progress snapshots expose running steps. The final `corpus_index.json` links completed reports.
 - The corpus viewer is a TypeScript application built with Vite and served by a small read server. The Runs Output column and Run overview Output summary display actual extensions from observed scientific artifacts; the storage-format label does not imply `.h5ad` or `.h5mu`. The viewer reads only files: runs write the catalog `index.json`, `input_kinds.json` and `proteobench_references.json`, and the read server serves `/` (viewer), `/data/` (runs) and `/fixtures/` (fixture store) as files, so `corpus publish` output runs on any plain file server. All run evidence remains static JSON, CSV and text, and the viewer computes no proteomics metrics.
-- Both viewers use one strict TypeScript/Vite project in `viewer/`: Lit light-DOM shells, shared npm dependency adapters, pure model/panel projections, renderer adapters, and small `app.ts` composition roots. Keep shared modules independent of either viewer. Edit TypeScript sources, then run `make build-web`; the Python web roots contain generated bundles. Do not introduce a second UI stack or edit generated assets directly.
+- The catalog viewer shows apb-catalog's bundle through apb-catalog-ts, imported from the sibling `../apb-catalog-ts` by an alias in `viewer/vite.config.ts` and `viewer/tsconfig.json`; it reads the bundle only through apb-catalog-ts and computes projections, never answers of its own. `catalog view` serves it with the bundle under `/data/` as files, and `catalog publish SITE` writes the same layout.
+- The viewers use one strict TypeScript/Vite project in `viewer/`: Lit light-DOM shells, shared npm dependency adapters, pure model/panel projections, renderer adapters, and small `app.ts` composition roots. Keep shared modules independent of every viewer. Edit TypeScript sources, then run `make build-web`; the Python web roots contain generated bundles. Do not introduce a second UI stack or edit generated assets directly.
 - Keep module dependencies acyclic. Keep `__init__.py` empty. Use annotated Python, Ruff and strict Pyright.
 - Never remove fixture inputs during run cleanup. Every ordinary run defaults to force. Explicit clean deletes both stable and legacy hashed run directories; force deletes the selected combination's previous generated results and any legacy history before rerunning, without archiving.
 
@@ -43,6 +44,8 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 | Copy viewer and runs for a file server | `uv run corpus publish SITE` |
 | Stop corpus viewer | `uv run corpus view stop` |
 | Fixture viewer | `uv run fixture view` |
+| Catalog viewer on apb-catalog's `make bundle` output | `uv run catalog view` |
+| Copy catalog viewer and bundle for a file server | `uv run catalog publish SITE` |
 | Fast gate | `make check` |
 | Unit tests | `make test` |
 | Install viewer dependencies | `make sync-web` |
@@ -61,4 +64,4 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 
 After execution changes, run the configured `routine` corpus and report actual APB outcomes; `fixture download routine` fetches exactly its datasets. Changes to a workflow's tool contract are worth running under both a single-tool and a multi-tool workflow. Confirm an inspection with `--no-force --dry-run` and the same corpus, cores, workflow, and format schedules zero jobs. For deliberate broader benchmark coverage, use the larger-corpus lines of [scripts/corpus_runs.fish](scripts/corpus_runs.fish). Keep quality gates at their existing strength.
 
-The fixture and corpus viewers compile strict TypeScript to local ES-module bundles. Dependencies are locked in `viewer/package-lock.json`; no CDN is required. Node is needed for development and CI, while installed viewers need only a file server, such as `corpus view` locally, and a browser. Their servers serve files and do not launch jobs.
+The fixture, corpus and catalog viewers compile strict TypeScript to local ES-module bundles. Dependencies are locked in `viewer/package-lock.json`; no CDN is required. Node is needed for development and CI, while installed viewers need only a file server, such as `corpus view` locally, and a browser. Their servers serve files and do not launch jobs.

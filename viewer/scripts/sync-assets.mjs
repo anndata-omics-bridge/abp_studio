@@ -29,7 +29,7 @@ async function filesUnder (directory, prefix = '') {
   return files
 }
 
-for (const name of ['corpus', 'fixture']) {
+for (const name of ['catalog', 'corpus', 'fixture']) {
   const destination = resolve(viewer, `../src/apb_studio/${name}_viewer/web`)
   const entry = `${name}/index.html`
   const files = new Map()

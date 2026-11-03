@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 _ENTRY_POINTS = {
+    "catalog": "apb_studio.catalog_viewer.cli:main",
     "corpus": "apb_studio.corpus.cli:main",
     "fixture": "apb_studio.proteobench_fixtures:main",
 }
@@ -19,6 +20,7 @@ _REQUIRED_FILES = {
     "apb_studio/__init__.py",
     "apb_studio/py.typed",
     "apb_studio/workflows/workflow_convert.py",
+    "apb_studio/catalog_viewer/web/index.html",
     "apb_studio/corpus_viewer/web/index.html",
     "apb_studio/fixture_viewer/web/index.html",
     "apb_studio/workflow/Snakefile",
@@ -53,7 +55,7 @@ def _verify_wheel(wheel: Path) -> None:
         if missing := _REQUIRED_FILES - names:
             raise RuntimeError(f"Wheel is missing package files: {sorted(missing)}")
 
-        for viewer in ("corpus", "fixture"):
+        for viewer in ("catalog", "corpus", "fixture"):
             prefix = f"apb_studio/{viewer}_viewer/web/"
             document = archive.read(prefix + "index.html").decode()
             assets = re.findall(r'(?:href|src)=["\']\./(assets/[^"\']+)["\']', document)

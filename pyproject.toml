@@ -60,6 +60,7 @@ docs = [
 ]
 
 [project.scripts]
+catalog = "apb_studio.catalog_viewer.cli:main"
 corpus = "apb_studio.corpus.cli:main"
 fixture = "apb_studio.proteobench_fixtures:main"
 
