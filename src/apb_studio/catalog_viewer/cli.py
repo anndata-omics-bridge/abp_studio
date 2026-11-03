@@ -1,4 +1,4 @@
-"""Show apb-catalog's bundle: its stored tables, its answers and the software versions APB2 supports.
+"""Show apb-catalog's bundle: stored tables, answers and the software versions APB2 supports.
 
 The viewer reads the bundle through apb-catalog-ts and computes nothing on the server: `view`
 serves the viewer at / and the bundle at /data/ as files, and `publish` writes the same layout.

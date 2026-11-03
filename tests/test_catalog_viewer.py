@@ -1,4 +1,4 @@
-"""The catalog viewer's commands: the bundle served at /data/, the published site, the default bundle."""
+"""The catalog viewer's commands: the bundle served at /data/, the published site, its default."""
 
 from __future__ import annotations
 
@@ -34,7 +34,9 @@ def _web_root(tmp_path: Path) -> Path:
 
 
 def test_the_server_serves_the_viewer_at_root_and_the_bundle_under_data(tmp_path: Path) -> None:
-    httpd = server.build_server(Store(_bundle(tmp_path)), "127.0.0.1", 0, web_root=_web_root(tmp_path))
+    httpd = server.build_server(
+        Store(_bundle(tmp_path)), "127.0.0.1", 0, web_root=_web_root(tmp_path)
+    )
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
