@@ -17,7 +17,8 @@ export default defineConfig({
       input: {
         catalog: resolve(import.meta.dirname, 'catalog/index.html'),
         corpus: resolve(import.meta.dirname, 'corpus/index.html'),
-        fixture: resolve(import.meta.dirname, 'fixture/index.html')
+        fixture: resolve(import.meta.dirname, 'fixture/index.html'),
+        rules: resolve(import.meta.dirname, 'rules/index.html')
       }
     }
   },
@@ -26,7 +27,8 @@ export default defineConfig({
     proxy: {
       '/catalog/data': { target: 'http://127.0.0.1:8767', rewrite: path => path.replace(/^\/catalog/, '') },
       '/corpus/data': { target: 'http://127.0.0.1:8766', rewrite: path => path.replace(/^\/corpus/, '') },
-      '/fixture/data': { target: 'http://127.0.0.1:8765', rewrite: path => path.replace(/^\/fixture/, '') }
+      '/fixture/data': { target: 'http://127.0.0.1:8765', rewrite: path => path.replace(/^\/fixture/, '') },
+      '/rules/data': { target: 'http://127.0.0.1:8768', rewrite: path => path.replace(/^\/rules/, '') }
     }
   }
 })

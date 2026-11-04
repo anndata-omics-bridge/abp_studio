@@ -63,6 +63,7 @@ docs = [
 catalog = "apb_studio.catalog_viewer.cli:main"
 corpus = "apb_studio.corpus.cli:main"
 fixture = "apb_studio.proteobench_fixtures:main"
+rules = "apb_studio.rules_viewer.cli:main"
 
 [build-system]
 requires = ["hatchling>=1.28,<2"]

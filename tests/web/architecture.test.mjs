@@ -24,7 +24,7 @@ function importsOf (path) {
 const local = path => relative(SOURCE, path).replaceAll('\\', '/')
 
 test('TypeScript compilation preserves custom-element registration imports', () => {
-  for (const viewer of ['catalog', 'corpus', 'fixture']) {
+  for (const viewer of ['catalog', 'corpus', 'fixture', 'rules']) {
     const source = compiledSource(resolve(SOURCE, `${viewer}/app.ts`))
     assert.match(source, new RegExp(`import\\s+['"]\\./shell/${viewer}-app\\.js['"]`))
   }
@@ -74,7 +74,7 @@ test('viewer libraries are bundled locally with locked exact dependency versions
 })
 
 test('packaged viewers reference existing content-hashed local scripts and styles', () => {
-  for (const viewer of ['catalog', 'corpus', 'fixture']) {
+  for (const viewer of ['catalog', 'corpus', 'fixture', 'rules']) {
     const root = resolve(PROJECT, `src/apb_studio/${viewer}_viewer/web`)
     const index = readFileSync(resolve(root, 'index.html'), 'utf8')
     const assets = [...index.matchAll(/(?:href|src)=['"](\.\/assets\/[^'"]+)['"]/g)].map(match => match[1])

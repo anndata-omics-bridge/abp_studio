@@ -27,9 +27,10 @@ Studio has three boundaries: acquisition writes fixture files and the fixture ma
 | `corpus/search_settings.py` | `search_settings.json` from apb2's recorded search parameters |
 | `corpus/publish.py` | `corpus publish`: the viewer and every saved run copied for a plain file server |
 | `catalog_viewer/cli.py`, `catalog_viewer/publish.py` | `catalog view` and `catalog publish`: the catalog viewer with one apb-catalog bundle under `/data/` |
-| `viewer/src/corpus/`, `viewer/src/fixture/`, `viewer/src/catalog/` | Typed browser state, projections and rendering |
+| `rules_viewer/cli.py`, `rules_viewer/publish.py` | `rules view` and `rules publish`: the rules viewer with apb2's rules bundle under `/data/` |
+| `viewer/src/corpus/`, `viewer/src/fixture/`, `viewer/src/catalog/`, `viewer/src/rules/` | Typed browser state, projections and rendering |
 | `viewer/src/shared/` | Shared dependency adapters, apb-catalog-ts among them |
-| `corpus_viewer/web/`, `fixture_viewer/web/`, `catalog_viewer/web/` | Generated Vite bundles packaged with Python |
+| `corpus_viewer/web/`, `fixture_viewer/web/`, `catalog_viewer/web/`, `rules_viewer/web/` | Generated Vite bundles packaged with Python |
 
 The workflow scripts depend on the shared corpus runner. The corpus runner never imports APB domain packages or analyzes scientific matrices. Its index job collects the producers' recorded summary entries from representation JSON into `oddities.json`, with explicit source, per-dataset entries and affected-dataset counts by software and producer metric. The projection selects the displayed successful scientific output, including FASTA-verified intermediates when a later step fails. The same job reads apb2's recorded search parameters from that representation into `search_settings.json`, counting per software the datasets that recovered each setting. The server serves static files and performs no workflow actions. The stage registry and pipeline YAMLs have been removed.
 
