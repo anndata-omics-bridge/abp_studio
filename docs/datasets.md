@@ -69,12 +69,14 @@ The largest inputs Studio has: 7 to 42 GB and up to 65 million rows per table. T
 
 | Dataset | Software | Input | Rows | Runs | Uncompressed |
 | --- | --- | --- | --- | --- | --- |
-| K562_Spectronaut | Spectronaut 19 | fragment-level `Report.tsv` | 27,815,940 | 45 | 22.8 GB |
-| CSF_Spectronaut | Spectronaut 19 | fragment-level `Report.tsv` | 8,840,227 | 47 | 7.4 GB |
+| K562_Spectronaut | Spectronaut | fragment-level `Report.tsv` | 27,815,940 | 45 | 22.8 GB |
+| CSF_Spectronaut | Spectronaut | fragment-level `Report.tsv` | 8,840,227 | 47 | 7.4 GB |
 | K562_DIANN | DIA-NN 2 | `report.parquet` | 3,040,701 | 40 | 0.6 GB |
 | CSF_DIANN | DIA-NN 2 | `report.parquet` | 673,791 | 40 | 0.1 GB |
-| Mix_of_Proteome | Spectronaut 19 | fragment-level report | 29,823,948 | 18 | 26.7 GB |
+| Mix_of_Proteome | Spectronaut | fragment-level report | 29,823,948 | 18 | 26.7 GB |
 | TPCPA | DIA-NN 1.8 | `diann-report.tsv` | 65,208,190 | 1,236 | 42.1 GB |
+
+The three Spectronaut reports name no version, and no parameter file comes with them. Their 61-column fragment-level export shares 16 columns with the ProteoBench Spectronaut 19 reports and lacks `E.Errors`, `EG.ModifiedPeptide` and `FG.Qvalue`, so APB reads them with its Spectronaut 15 rule.
 
 Each dataset also stores its sample annotation (`*_annotation.csv`, TPCPA's five annotation files, the mixture's `idmapping.tsv`); APB does not read them. The DIA-NN datasets keep `report.pg_matrix.tsv` beside the Parquet report.
 

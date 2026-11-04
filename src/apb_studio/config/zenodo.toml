@@ -110,17 +110,6 @@ software_name = "DIA-NN"
 input = "report.tsv"
 files = { "report.tsv" = "Spectronaut_LargeFC__re_run_DIANN__report.tsv.gz" }
 
-# NOT NATIVE DIA-NN OUTPUT. This table was rewritten after DIA-NN: every missing cell holds the
-# text NA (409,887 cells, none empty) and File.Name holds only the run name. APB therefore reads
-# a fake protein group "NA" and flags the gene columns as unreadable. Native 1.7.16, 1.8 and 1.8.1
-# reports leave missing cells empty. Listed in no corpus; kept only because the mirror holds it.
-[[records.datasets]]
-name = "diann_charite_dataset"
-module = "directlfq"
-software_name = "DIA-NN"
-input = "Charite-DIA-NN_analysis.txt"
-files = { "Charite-DIA-NN_analysis.txt" = "diann_charite_dataset__Charite-DIA-NN_analysis.txt.gz" }
-
 [[records.datasets]]
 name = "iq_spectronaut_example_file"
 module = "directlfq"
@@ -160,7 +149,6 @@ record_id = 23615038
 name = "K562_Spectronaut"
 module = "msstats_plus"
 software_name = "Spectronaut"
-software_version = "19"
 input = "20250108_163028_K562_dilutions_Jan_2025_PGT_no_normalization_Report.tsv"
 files = { "20250108_163028_K562_dilutions_Jan_2025_PGT_no_normalization_Report.tsv" = "K562_Spectronaut__20250108_163028_K562_dilutions_Jan_2025_PGT_no_normalization_Report.tsv.gz", "K562_annotation.csv" = "K562_Spectronaut__K562_annotation.csv.gz" }
 
@@ -168,7 +156,6 @@ files = { "20250108_163028_K562_dilutions_Jan_2025_PGT_no_normalization_Report.t
 name = "CSF_Spectronaut"
 module = "msstats_plus"
 software_name = "Spectronaut"
-software_version = "19"
 input = "20250130_163144_CSF_dilutions_Jan_2025_no_normalization_Report.tsv"
 files = { "20250130_163144_CSF_dilutions_Jan_2025_no_normalization_Report.tsv" = "CSF_Spectronaut__20250130_163144_CSF_dilutions_Jan_2025_no_normalization_Report.tsv.gz", "CSF_annotation.csv" = "CSF_Spectronaut__CSF_annotation.csv.gz" }
 
@@ -190,7 +177,6 @@ files = { "report.parquet" = "CSF_DIANN__report.parquet", "report.pg_matrix.tsv"
 name = "Mix_of_Proteome"
 module = "msstats_plus"
 software_name = "Spectronaut"
-software_version = "19"
 input = "20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv"
 files = { "20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv" = "Mix_of_Proteome__20250422_140629_OKE_April22_2025_Olsen_astral_benchmark_mix_200ng_NE_report_nodecoy.tsv.gz", "Mix_of_Proteome_annotation.csv" = "Mix_of_Proteome__Mix_of_Proteome_annotation.csv.gz", "idmapping.tsv" = "Mix_of_Proteome__idmapping.tsv.gz" }
 

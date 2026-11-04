@@ -1,5 +1,9 @@
 # Changes
 
+- 2026-11-04: The MSstats+ Spectronaut reports `K562_Spectronaut`, `CSF_Spectronaut` and `Mix_of_Proteome` lose their `software_version = "19"` in `config/zenodo.toml`, and their corpus notes say "version unknown". Nothing in the files or beside them names a version. Their fragment-level export shares 16 of 61 columns with the ProteoBench Spectronaut 19 reports, and APB reads them with its Spectronaut 15 rule
+
+- 2026-11-04: `zenodo/directlfq/diann_charite_dataset` leaves `config/zenodo.toml`, so the Fixture Manager no longer downloads it and the `all` corpus no longer runs it. It is not native DIA-NN output: its missing cells hold the text `NA`, so its protein level failed `repeated_cells` mode `same` in the 4 Nov `all` run. It had left every curated corpus on 21 Oct, but `all` is every downloaded dataset
+
 - 2026-11-04: Rules viewer: the Levels tab shows a level's `forbidden_columns`, the header columns that rule a table out of it, such as `charge` for WOMBAT-P's peptidoform level; the column appears only where a level declares one
 
 - 2026-11-03: Rules viewer, `viewer/rules/`: apb2's packaged parsing rules from the bundle `make rules-bundle` writes in apb2. Rules lists each rules.json with its input; Rule shows one rule level by level, as conversion stores it, with its settings, layers, feature-table and sample-table columns, modification maps and, where search parameters select different declarations, what differs; Levels, Layers and Columns list them across rules, filtered by level. `uv run rules view` serves it on port 8768; `uv run rules publish SITE` writes it with the bundle for a static file server
