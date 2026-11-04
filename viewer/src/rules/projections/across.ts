@@ -27,7 +27,8 @@ export const LEVEL_FIELDS: Field[] = [
   { name: 'fasta_accessions', description: 'The column with the fasta_accessions role: the accessions apb-fasta looks up.' },
   { name: 'layers', description: 'How many quantity layers the level declares.' },
   { name: 'var_columns', description: 'How many feature-table columns the level declares.' },
-  { name: 'repeated_cells', description: 'How rows that repeat one sample and feature become one cell: error, same, sum or keep_best.' }
+  { name: 'repeated_cells', description: 'How rows that repeat one sample and feature become one cell: error, same, sum or keep_best.' },
+  { name: 'forbidden_columns', description: 'Header columns that mean a table reports another level: the level skips a table carrying one.' }
 ]
 
 /** Levels fine to coarse, as apb2 orders them; any other after them. */
@@ -81,7 +82,8 @@ export function levelRows (rules: RuleDocument[], levels: RuleLevel[]): Table {
       fasta_accessions: columns.filter(column => hasRole(column, 'fasta_accessions')).map(column => column.name ?? null),
       layers: layers.length,
       var_columns: columns.length,
-      repeated_cells: record(measurements.repeated_cells).mode ?? null
+      repeated_cells: record(measurements.repeated_cells).mode ?? null,
+      forbidden_columns: declaration.forbidden_columns ?? null
     }]
   })
   return tableOf(rows, LEVEL_FIELDS.map(field => field.name))

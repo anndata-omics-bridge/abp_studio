@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-11-04: Rules viewer: the Levels tab shows a level's `forbidden_columns`, the header columns that rule a table out of it, such as `charge` for WOMBAT-P's peptidoform level; the column appears only where a level declares one
+
 - 2026-11-03: Rules viewer, `viewer/rules/`: apb2's packaged parsing rules from the bundle `make rules-bundle` writes in apb2. Rules lists each rules.json with its input; Rule shows one rule level by level, as conversion stores it, with its settings, layers, feature-table and sample-table columns, modification maps and, where search parameters select different declarations, what differs; Levels, Layers and Columns list them across rules, filtered by level. `uv run rules view` serves it on port 8768; `uv run rules publish SITE` writes it with the bundle for a static file server
 
 - 2026-10-26: Corpus `directlfq_large_per_vendor` becomes `large_inputs`: MaxQuant Kuster200 and Spectronaut LargeFC plus three `msstats_plus` reports, the largest per software release (Spectronaut 19 `Mix_of_Proteome`, DIA-NN 2 `K562_DIANN`, DIA-NN 1.8 `TPCPA`), five inputs. `proteobench_f3` gains Kuster200 and the same three reports, 202 inputs; `scripts/corpus_runs.fish` runs `large_inputs`

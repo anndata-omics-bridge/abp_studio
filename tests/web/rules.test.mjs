@@ -26,6 +26,7 @@ function declaration (primary) {
         { name: 'Q', source: 'Q.Value', type: 'number', roles: [], missing_values: [], missing_tokens: [], note: null }
       ]
     },
+    forbidden_columns: [],
     requires_search_parameters: {},
     modification_maps: { basic: { 'UniMod:35': 'UNIMOD:35' } },
     columns: {
@@ -107,4 +108,13 @@ test('the tabs across rules give one row per declaration and name it only where 
   const columns = allColumns(RULES, ofLevel(LEVELS, 'protein'))
   assert.deepEqual(columns.rows.map(row => [row.table, row.name]), [['var', 'Protein_Group'], ['var', 'ProForma_ion'], ['obs', 'Run']])
   assert.ok(!columns.columns.includes('selected_by'))
+})
+
+test('a level shows the columns that rule a table out, and a table without them no column', () => {
+  const refusing = { ...declaration('Q'), forbidden_columns: ['charge'] }
+  const levels = [{ rule: 'other/rules.json', level: 'peptidoform', declarations: [{ selected_by: ANY, declaration: refusing }] }]
+  assert.deepEqual(levelRows(RULES, levels).rows[0].forbidden_columns, ['charge'])
+  const settings = Object.fromEntries(summaryRows(refusing).map(row => [row.setting, row.value]))
+  assert.equal(settings.forbidden_columns, 'charge')
+  assert.ok(!levelRows(RULES, ofLevel(LEVELS, 'peptidoform_ion')).columns.includes('forbidden_columns'))
 })
