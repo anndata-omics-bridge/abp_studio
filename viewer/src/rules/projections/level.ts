@@ -36,7 +36,7 @@ export const COLUMN_FIELDS: Field[] = [
   { name: 'type', description: 'The value type: string, number, integer or boolean.' },
   { name: 'required', description: 'true: a report without the source column is refused.' },
   { name: 'roles', description: 'Roles the rule declares: protein_assignment names the protein group, fasta_accessions the accessions apb-fasta looks up.' },
-  { name: 'per_feature', description: 'How a feature\'s repeated rows become one value: first by default, or min, max, or best_row, the row the level\'s rank_rows keeps.' },
+  { name: 'per_feature', description: 'How a feature\'s repeated rows become one value: first keeps the first nonblank value, min or max the smallest or largest number, best_row the row the level\'s rank_rows keeps.' },
   { name: 'separator', description: 'The separator that splits a list column.' },
   { name: 'note', description: 'Why the rule declares the entry as it does.' }
 ]

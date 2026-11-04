@@ -19,7 +19,7 @@ function declaration (primary) {
     measurements: {
       primary_layer: primary,
       sample_layer: null,
-      repeated_cells: { mode: 'error', by: null, best: 'highest', sum: [] },
+      repeated_cells: { mode: 'error', by: null, best: null, sum: [] },
       layers: [
         { name: 'Ms1', source: 'Ms1.Area', type: 'number', roles: ['abundance'], missing_values: ['<=0'], missing_tokens: [], note: null },
         { name: 'Precursor', source: 'Precursor.Quantity', type: 'number', roles: ['abundance'], missing_values: ['<=0'], missing_tokens: [], note: null },
@@ -32,7 +32,7 @@ function declaration (primary) {
       obs: [{ name: 'Run', source: 'Run', type: 'string', roles: [], note: null }],
       var: [
         { name: 'Protein_Group', source: 'Protein.Group', type: 'string', roles: ['protein_assignment', 'fasta_accessions'], note: null },
-        { name: 'ProForma_ion', inputs: ['Modified_Sequence', 'Charge'], how: 'proforma_ion', type: 'string', roles: [], note: null }
+        { name: 'ProForma_ion', inputs: ['Modified_Sequence', 'Charge'], how: 'proforma_ion', roles: [], note: null }
       ]
     }
   }
@@ -50,7 +50,7 @@ const LEVELS = [
 ]
 
 test('cells drop empty values and tables drop columns empty in every row', () => {
-  assert.equal(cellText({ mode: 'error', by: null, best: 'highest', sum: [] }), 'mode=error; best=highest')
+  assert.equal(cellText({ mode: 'error', by: null, best: null, sum: [] }), 'mode=error')
   assert.equal(cellText({ outer: { inner: 1 } }), 'outer={inner=1}')
   assert.deepEqual(tableOf([{ a: 1, b: null }, { c: [], a: 2 }], ['c', 'a']).columns, ['a'])
 })
@@ -73,7 +73,7 @@ test('settings come one key deep, without the entries that have their own tables
   const rows = summaryRows(declaration('Ms1'))
   const settings = Object.fromEntries(rows.map(row => [row.setting, row.value]))
   assert.equal(settings['axis.var_keys'], 'ProForma_ion')
-  assert.equal(settings['measurements.repeated_cells'], 'mode=error; best=highest')
+  assert.equal(settings['measurements.repeated_cells'], 'mode=error')
   assert.equal(settings['measurements.primary_layer'], 'Ms1')
   assert.ok(!('measurements.layers' in settings))
   assert.ok(!('columns' in settings) && !('modification_maps' in settings) && !('requires_search_parameters' in settings))
