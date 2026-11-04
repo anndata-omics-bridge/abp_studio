@@ -28,7 +28,7 @@ function declaration (primary) {
     },
     forbidden_columns: [],
     requires_search_parameters: {},
-    modification_maps: { basic: { 'UniMod:35': 'UNIMOD:35' } },
+    modification_map: { 'UniMod:35': 'UNIMOD:35' },
     columns: {
       obs: [{ name: 'Run', source: 'Run', type: 'string', roles: [], note: null }],
       var: [
@@ -77,7 +77,7 @@ test('settings come one key deep, without the entries that have their own tables
   assert.equal(settings['measurements.repeated_cells'], 'mode=error')
   assert.equal(settings['measurements.primary_layer'], 'Ms1')
   assert.ok(!('measurements.layers' in settings))
-  assert.ok(!('columns' in settings) && !('modification_maps' in settings) && !('requires_search_parameters' in settings))
+  assert.ok(!('columns' in settings) && !('modification_map' in settings) && !('requires_search_parameters' in settings))
 })
 
 test('a level with two declarations lists only where they differ', () => {
@@ -88,7 +88,7 @@ test('a level with two declarations lists only where they differ', () => {
 
 test('a level page shows settings, variants, layers with the primary marked, columns and maps', () => {
   const page = levelPage(LEVELS[1])
-  assert.deepEqual(page.tables.map(view => view.title), ['Settings', 'Variants', 'Quantity layers', 'Feature table (var)', 'Sample table (obs)', 'Modification maps'])
+  assert.deepEqual(page.tables.map(view => view.title), ['Settings', 'Variants', 'Quantity layers', 'Feature table (var)', 'Sample table (obs)', 'Modification map'])
   const layers = page.tables[2]
   assert.deepEqual(layers.columns.map(column => column.field), ['name', 'primary', 'source', 'roles', 'type', 'missing_values'])
   assert.deepEqual(layers.rows.map(row => row.primary), ['primary', null, null])

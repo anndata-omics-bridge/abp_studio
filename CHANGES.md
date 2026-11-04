@@ -1,5 +1,9 @@
 # Changes
 
+- 2026-11-04: Rules viewer: a level's column table shows a var column's `missing_tokens`, the vendor's text for a missing value, which apb2's var columns now declare
+
+- 2026-11-04: Rules viewer: a level's "Modification map" table lists token and accession, as apb2's rule schema 0.11 keeps one unnamed `modification_map` per level instead of named `modification_maps`
+
 - 2026-11-04: The MSstats+ Spectronaut reports `K562_Spectronaut`, `CSF_Spectronaut` and `Mix_of_Proteome` lose their `software_version = "19"` in `config/zenodo.toml`, and their corpus notes say "version unknown". Nothing in the files or beside them names a version. Their fragment-level export shares 16 of 61 columns with the ProteoBench Spectronaut 19 reports, and APB reads them with its Spectronaut 15 rule
 
 - 2026-11-04: `zenodo/directlfq/diann_charite_dataset` leaves `config/zenodo.toml`, so the Fixture Manager no longer downloads it and the `all` corpus no longer runs it. It is not native DIA-NN output: its missing cells hold the text `NA`, so its protein level failed `repeated_cells` mode `same` in the 4 Nov `all` run. It had left every curated corpus on 21 Oct, but `all` is every downloaded dataset

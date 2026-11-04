@@ -8,10 +8,10 @@ const ACQUISITIONS = ['DDA', 'DIA', 'unknown']
 const COMBINE_CHARGE_STATES = [true, false, null]
 
 // Shown in their own tables, or by the rule picker and level buttons, not as settings.
-const OWN_TABLES = new Set(['columns', 'modification_maps', 'measurements.layers', 'schema_version', 'file_version', 'software_name', 'software_version_pattern', 'quantification_level'])
+const OWN_TABLES = new Set(['columns', 'modification_map', 'measurements.layers', 'schema_version', 'file_version', 'software_name', 'software_version_pattern', 'quantification_level'])
 
 export const LAYER_COLUMNS = ['name', 'primary', 'source', 'roles', 'type', 'encoding_mode', 'required', 'missing_values', 'missing_tokens', 'categories', 'value_pattern', 'note']
-export const COLUMN_COLUMNS = ['name', 'source', 'inputs', 'how', 'type', 'required', 'roles', 'per_feature', 'separator', 'note']
+export const COLUMN_COLUMNS = ['name', 'source', 'inputs', 'how', 'type', 'required', 'roles', 'per_feature', 'separator', 'missing_tokens', 'note']
 
 export const LAYER_FIELDS: Field[] = [
   { name: 'name', description: 'The layer\'s name in the APB result.' },
@@ -38,6 +38,7 @@ export const COLUMN_FIELDS: Field[] = [
   { name: 'roles', description: 'Roles the rule declares: protein_assignment names the protein group, fasta_accessions the accessions apb-fasta looks up.' },
   { name: 'per_feature', description: 'How a feature\'s repeated rows become one value: first keeps the first nonblank value, min or max the smallest or largest number, best_row the row the level\'s rank_rows keeps.' },
   { name: 'separator', description: 'The separator that splits a list column.' },
+  { name: 'missing_tokens', description: 'Text the tool writes for a missing value, such as NaN, read as missing.' },
   { name: 'note', description: 'Why the rule declares the entry as it does.' }
 ]
 
@@ -98,11 +99,10 @@ export function columnRows (declaration: Record<string, Value>, group: 'var' | '
   return isRecord(declaration.columns) ? records(declaration.columns[group]) : []
 }
 
-/** Each modification map, one row per token and the Unimod accession it maps to. */
+/** The level's modification map, one row per token and the Unimod accession it maps to. */
 export function modificationRows (declaration: Record<string, Value>): Row[] {
-  const maps = isRecord(declaration.modification_maps) ? declaration.modification_maps : {}
-  return Object.entries(maps).flatMap(([map, tokens]) =>
-    isRecord(tokens) ? Object.entries(tokens).map(([token, accession]): Row => ({ map, token, accession })) : [])
+  const tokens = isRecord(declaration.modification_map) ? declaration.modification_map : {}
+  return Object.entries(tokens).map(([token, accession]): Row => ({ token, accession }))
 }
 
 // Every leaf of a value by path; list items with a name are keyed by it, so a layer keeps its path.
@@ -157,7 +157,7 @@ export function levelPage (level: RuleLevel): { tables: TableView[]; json: JsonV
     if (rows.length > 0) tables.push(tableView(`${level.rule}:${level.level}:${group}`, title, description, tableOf(rows, COLUMN_COLUMNS), COLUMN_FIELDS))
   }
   const modifications = modificationRows(declaration)
-  if (modifications.length > 0) tables.push(tableView(`${level.rule}:${level.level}:modifications`, 'Modification maps', 'Each modification token the tool writes and the Unimod accession it maps to.', tableOf(modifications, ['map', 'token', 'accession'])))
+  if (modifications.length > 0) tables.push(tableView(`${level.rule}:${level.level}:modifications`, 'Modification map', 'Each modification token the tool writes and the Unimod accession it maps to.', tableOf(modifications, ['token', 'accession'])))
   const json = level.declarations.map((item, index): JsonView => ({
     key: `${level.rule}:${level.level}:json:${index}`,
     title: several ? `Declaration ${index + 1} as stored: ${evidenceLabel(item.selected_by)}` : 'Declaration as stored',
