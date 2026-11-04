@@ -86,7 +86,7 @@ class BundleViews {
         })
       ]
       case 'meanings': return this.meanings(set)
-      case 'coverage': return [tableView('coverage', 'Coverage: what a converted result lacks', 'A gap report. Each row is one software version and level, checked against what its set requires (requirements.csv, per level and slot) and naming the keys it has no column for. Read Spectronaut, 19–20, peptidoform_fragment, warn, SHOULD peptidoform_fragment in var as: a Spectronaut 19–20 result, on its fragment level, has no var column for the key peptidoform_fragment, which apb wants with SHOULD. Only sets with requirements appear, today apb and abundance; the columns a result does have are in Meanings.', coverage(inSet(this.coverage, set)), COVERAGE_FIELDS)]
+      case 'coverage': return [tableView('coverage', 'Coverage: what a converted result lacks', 'A gap report. Each row is one software version and level, checked against what its set requires (requirements.csv, per level and slot) and naming the keys it has no column for. Read Spectronaut, 19–20, peptidoform_fragment, warn, recommended peptidoform_fragment in var as: a Spectronaut 19–20 result, on its fragment level, has no var column for the key peptidoform_fragment, which apb recommends. Only sets with requirements appear, today apb and abundance; the columns a result does have are in Meanings.', coverage(inSet(this.coverage, set)), COVERAGE_FIELDS)]
       case 'long': return [tableView('long', 'Long table', 'One row per entry and software version it applies to, as apb-catalog table prints it.', { columns: this.long.columns, rows: inSet(this.long.rows, set) })]
       case 'software': return [tableView('software', 'Software versions', 'The software versions APB2 supports, from versions.csv, one row per level. entries: how many catalogued columns that version writes on that level, in the chosen set; click a row to list them.', this.software(set))]
     }
@@ -99,7 +99,7 @@ class BundleViews {
   meanings (set: string): TableView[] {
     const rows = inSet(this.coverage, set)
     const { table, keys } = keyColumns(rows)
-    const views = [tableView(`meanings:${set}`, `${set}: column per key`, 'What each software version calls each key of the set, on each level. Empty: not catalogued; missing MUST, SHOULD or MAY: required but not catalogued.', table, keys)]
+    const views = [tableView(`meanings:${set}`, `${set}: column per key`, 'What each software version calls each key of the set, on each level. Empty: not catalogued; missing required, recommended or optional: asked for by the set but not catalogued.', table, keys)]
     const apps = appFields(rows)
     if (apps.rows.length > 0) views.push(tableView(`apps:${set}`, `${set}: written by apps`, 'Fields an app writes after conversion, the same for every software version; they exist once the app has run.', apps))
     return views

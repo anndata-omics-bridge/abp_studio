@@ -23,8 +23,8 @@ const COVERAGE = [
   { set: 'confidence', software: 'WOMBAT', version: '1.x', software_version_pattern: '^1\\.', level: 'protein', key: 'q_value', kind: 'q_value', qualifiers: 'stage=identification', origin: 'vendor', location: 'layers', table: null, column: 'PG_Q', requirement: null, producer: null, needs: null, verdict: null },
   { set: 'confidence', software: 'WOMBAT', version: '2.x', software_version_pattern: '^2\\.', level: 'protein', key: 'q_value', kind: 'q_value', qualifiers: 'stage=identification', origin: 'vendor', location: 'layers', table: null, column: 'Q', requirement: null, producer: null, needs: null, verdict: null },
   { set: 'confidence', software: 'WOMBAT', version: '2.x', software_version_pattern: '^2\\.', level: 'protein', key: 'q_value', kind: 'q_value', qualifiers: 'stage=identification', origin: 'vendor', location: 'layers', table: null, column: 'Q2', requirement: null, producer: null, needs: null, verdict: null },
-  { set: 'apb', software: 'WOMBAT', version: '2.x', software_version_pattern: '^2\\.', level: 'protein', key: 'decoy', kind: 'decoy', qualifiers: null, origin: 'apb2', location: 'var', table: null, column: 'decoy', requirement: 'MUST', producer: null, needs: null, verdict: 'fail' },
-  { set: 'apb', software: 'WOMBAT', version: '2.x', software_version_pattern: '^2\\.', level: 'protein', key: 'group', kind: 'group', qualifiers: 'convention=sdrf', origin: null, location: 'obs', table: null, column: null, requirement: 'MUST', producer: null, needs: null, verdict: 'fail' },
+  { set: 'apb', software: 'WOMBAT', version: '2.x', software_version_pattern: '^2\\.', level: 'protein', key: 'decoy', kind: 'decoy', qualifiers: null, origin: 'apb2', location: 'var', table: null, column: 'decoy', requirement: 'required', producer: null, needs: null, verdict: 'fail' },
+  { set: 'apb', software: 'WOMBAT', version: '2.x', software_version_pattern: '^2\\.', level: 'protein', key: 'group', kind: 'group', qualifiers: 'convention=sdrf', origin: null, location: 'obs', table: null, column: null, requirement: 'required', producer: null, needs: null, verdict: 'fail' },
   { set: 'apb', software: 'WOMBAT', version: '1.x', software_version_pattern: '^1\\.', level: 'protein', key: null, kind: null, qualifiers: null, origin: null, location: null, table: null, column: null, requirement: null, producer: null, needs: null, verdict: 'pass' }
 ]
 
@@ -105,7 +105,7 @@ test('a required key a version lacks reads missing, and a version with no fields
   const { table } = keyColumns(COVERAGE.filter(row => row.set === 'apb'))
   assert.deepEqual(table.columns, ['software', 'version', 'level', 'decoy', 'group'])
   assert.deepEqual(table.rows, [
-    { software: 'WOMBAT', version: '2.x', level: 'protein', decoy: 'decoy', group: 'missing MUST' },
+    { software: 'WOMBAT', version: '2.x', level: 'protein', decoy: 'decoy', group: 'missing required' },
     { software: 'WOMBAT', version: '1.x', level: 'protein' }
   ])
 })
@@ -126,7 +126,7 @@ test('fields an app writes are listed once, with their levels, not per software 
 test('coverage judges each version and level once and names what it misses', () => {
   const table = coverage(COVERAGE)
   assert.deepEqual(table.rows, [
-    { set: 'apb', software: 'WOMBAT', version: '2.x', level: 'protein', verdict: 'fail', missing: ['MUST group in obs'] },
+    { set: 'apb', software: 'WOMBAT', version: '2.x', level: 'protein', verdict: 'fail', missing: ['required group in obs'] },
     { set: 'apb', software: 'WOMBAT', version: '1.x', level: 'protein', verdict: 'pass', missing: [] }
   ])
 })

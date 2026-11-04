@@ -25,7 +25,7 @@ function keyMeaning (row: Row): string {
 }
 
 /** One set's keys as columns: one row per software version and level, each cell the column
- * holding that key, or `missing MUST` (SHOULD, MAY) for a required key the version lacks.
+ * holding that key, or `missing required` (recommended, optional) for a required key the version lacks.
  * Fields an app writes are left to appFields. */
 export function keyColumns (rows: Row[]): { table: Table; keys: Field[] } {
   const keys = new Map<string, string>()
@@ -73,8 +73,8 @@ export const COVERAGE_FIELDS: Field[] = [
   { name: 'software', description: 'The conversion software.' },
   { name: 'version', description: 'The software versions one APB2 rule converts, as versions.csv labels them.' },
   { name: 'level', description: 'The quantification level of the converted result: requirements differ per level, since a protein row has no peptide sequence and a fragment row needs its fragment id.' },
-  { name: 'verdict', description: 'fail: a MUST key is missing. warn: only SHOULD or MAY keys are missing. pass: nothing the set requires is missing.' },
-  { name: 'missing', description: 'Each key the result lacks, as <requirement> <key> in <slot>: SHOULD peptidoform_fragment in var means no var column holds the fragment id, and the set wants one. Meanings names the column of every key the result has.' }
+  { name: 'verdict', description: 'fail: a required key is missing. warn: a recommended key is missing. pass: nothing required or recommended is missing; a missing optional key is still listed.' },
+  { name: 'missing', description: 'Each key the result lacks, as <requirement> <key> in <slot>: recommended peptidoform_fragment in var means no var column holds the fragment id, and the set wants one. Meanings names the column of every key the result has.' }
 ]
 
 /** One row per set, software version and level the set judges: its verdict and missing fields. */
