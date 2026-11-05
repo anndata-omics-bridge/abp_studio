@@ -3,7 +3,7 @@ import type { Tabulator } from '../shared/tabulator.js'
 import { RulesBundle } from './bundle.js'
 import { ACROSS_COLUMN_FIELDS, ACROSS_LAYER_FIELDS, allColumns, allLayers, LEVEL_FIELDS, levelRows, ofLevel, orderedLevels } from './projections/across.js'
 import { levelPage } from './projections/level.js'
-import { RULE_FIELDS, ruleLabel, ruleRows } from './projections/rules.js'
+import { RULE_FIELDS, ruleOption, ruleRows } from './projections/rules.js'
 import { tableView } from './projections/tables.js'
 import { mountJson } from './render/json.js'
 import { mountTable } from './render/tabulator.js'
@@ -57,7 +57,7 @@ async function main (): Promise<void> {
     const bundle = await RulesBundle.load(manifestUrl())
     const { rules, levels, manifest } = bundle
     app.tabs = TABS
-    app.rules = rules.map(rule => ({ rule: rule.rule, label: ruleLabel(rule), levels: rule.levels }))
+    app.rules = rules.map(ruleOption)
     app.levels = orderedLevels(levels)
     app.rule = rules[0]?.rule ?? ''
     app.view = rules[0]?.levels[0] ?? DOCUMENT
@@ -75,13 +75,20 @@ async function main (): Promise<void> {
           select: (row: Row) => { app.open(String(row.rule)) }
         }
         case 'rule': {
-          const key = `rule:${app.rule}:${app.view}`
           if (app.view === DOCUMENT) {
+            app.sections = []
+            const key = `rule:${app.rule}:${DOCUMENT}`
             return { key, tables: [], json: [{ key, title: app.rule, description: 'The rules.json as apb2 packages it: each table\'s input, the base shared by its levels, and each level\'s own declarations.', data: await bundle.document(app.rule) }] }
           }
           const level = levels.find(item => item.rule === app.rule && item.level === app.view)
           if (!level) throw new Error(`No level ${app.view} in ${app.rule}`)
-          return { key, ...levelPage(level) }
+          // One tab at a time; the open tab stays open across rules and levels that have it.
+          const sections = levelPage(level)
+          const section = sections.find(({ id }) => id === app.section) ?? sections[0]
+          if (!section) throw new Error(`Level ${app.view} of ${app.rule} has no declaration`)
+          app.sections = sections.map(({ id, label }) => ({ id, label }))
+          app.section = section.id
+          return { key: `rule:${app.rule}:${app.view}:${section.id}`, tables: section.tables, json: section.json }
         }
         case 'levels': return {
           key: `levels:${app.level}`,
@@ -122,6 +129,7 @@ async function main (): Promise<void> {
     }
     app.addEventListener('tab-change', rerender)
     app.addEventListener('rule-view-change', rerender)
+    app.addEventListener('section-change', rerender)
     app.addEventListener('level-change', rerender)
     await render()
   } catch (error) {

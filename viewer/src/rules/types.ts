@@ -19,6 +19,12 @@ export interface TableView { key: string; title: string; description: string; co
 /** One JSON value to show as a tree under a heading. */
 export interface JsonView { key: string; title: string; description: string; data: Value }
 
+/** One tab of a rule level: a table, or the stored declarations as JSON. */
+export interface Section { id: string; label: string; tables: TableView[]; json: JsonView[] }
+
+/** One entry of the rule list: the rule, how it is named, and a line or two about it. */
+export interface RuleOption { rule: string; software: string; versions: string; levels: string[]; details: string[] }
+
 /** `manifest.json` of the bundle. */
 export interface Manifest { bundle_format: number; apb2_version: string; apb2_commit: string | null; files: string[] }
 

@@ -82,23 +82,19 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 
 ## Selected combinations
 
-`scripts/corpus_runs.fish` lists every run we serve, one plain command each, all into the configured output root `apb_outputs`; the manuscript figure scripts in `apb_article/pipeline/scripts` read the same runs, and its last line, `corpus publish apb_publish_site`, copies every run of that root. `proteobench_run_vendor` is `proteobench_run` with `--proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides, rather than from the FASTA proteins containing the peptide. The routine inventory contains 14 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains its 12 catalogued ProteoBench datasets, excluding the Zenodo MaxQuant entrapment folder, and is scored with the single-call `proteobench_run`. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+Two fish scripts list every run, one plain command each. `scripts/staging_35.fish` alone builds the fgcz-r-035 staging site; `scripts/collected_other_options.fish` holds every other run, into the configured output root `apb_outputs`, which the manuscript figure scripts in `apb_article/pipeline/scripts` read. `proteobench_run_vendor` is `proteobench_run` with `--proteins vendor`: species and contaminants come from the proteins the vendor reports, as ProteoBench decides, rather than from the FASTA proteins containing the peptide. The routine inventory contains 14 bounded datasets, including multifile MaxQuant, i2MassChroQ 1.2.9, DIA-NN 2.3.0, Sage 0.14.6, AlphaDIA 2.1.0 Parquet and two-file AlphaDIA 1.12.1. The independent `routine_pb` inventory contains its 12 catalogued ProteoBench datasets, excluding the Zenodo MaxQuant entrapment folder, and is scored with the single-call `proteobench_run`. The Format column names the requested storage backend; Output names the scientific artifact’s actual extension, which the Runs and Run overview tables read from persisted reports. Missing or pending outputs show `—`; HDF5 alone does not determine H5AD versus H5MU.
+
+`scripts/staging_35.fish` runs these combinations into `apb_publish_output`, copies them with `corpus publish apb_publish_site --output-root apb_publish_output`, and uploads the site and the fixture store to fgcz-r-035. It refuses to start while either folder exists, because `corpus publish` copies every run of its root. Its pMultiQC run uses `proteobench`, the 197 ProteoBench rows of `proteobench_f3`: the five large inputs have no row in `workflow_proteobench.csv`.
 
 | Section | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
 | conversion | routine | convert | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
 | conversion | problems | convert | hdf5 | `.h5mu` |
-| conversion | directlfq | convert_no_param | hdf5 | `.h5mu` |
-| conversion | proteobench | convert_peptidoform_ion | hdf5 | `.h5ad` |
-| scoring | routine_pb, problems | proteobench_run | hdf5 | `.h5mu` |
-| scoring | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
-| scoring | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
-| scoring | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
-| deciding proteins | proteobench | proteobench_run, proteobench_run_vendor | hdf5 | `.h5mu` |
 | manuscript F3 | proteobench_f3 | convert_peptidoform_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
 | manuscript F3 | large_inputs | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
+| scoring | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
 
-`scripts/integration_runs.fish` holds the routine checks and exports, in the same form and into the same root, so they are served too:
+`scripts/collected_other_options.fish` holds every other run, into `apb_outputs`:
 
 | Section | Corpus | Workflow | Format | Output |
 | --- | --- | --- | --- | --- |
@@ -108,6 +104,14 @@ A workflow needs no runner change to become runnable. `corpus run CORPUS <name>`
 | routine | problems | convert | hdf5 | `.h5mu` |
 | exports | routine, problems | export_msmu, export_alphapepttools | hdf5 | `.h5mu` |
 | exports | routine, problems | export_prolfqua, export_proteopy | hdf5 | `.h5ad` |
+| conversion | directlfq | convert_no_param | hdf5 | `.h5mu` |
+| conversion | proteobench | convert_peptidoform_ion | hdf5 | `.h5ad` |
+| scoring | proteobench | proteobench_pmultiqc | hdf5 | `.h5ad` |
+| scoring | proteobench_plasma | proteobench_plasma | hdf5 | `.h5ad` |
+| scoring | proteobench_entrapment | proteobench_entrapment | hdf5 | `.h5ad` |
+| deciding proteins | proteobench | proteobench_run, proteobench_run_vendor | hdf5 | `.h5mu` |
+| manuscript F3 | proteobench_f3 | convert_peptidoform_ion, convert (`--cores 1`) | hdf5 | `.h5ad`, `.h5mu` |
+| manuscript F3 | large_inputs | convert_no_param (`--cores 1`) | hdf5, duckdb, parquet | `.h5mu`, `.duckdb`, `.parquet` |
 
 The three-call `proteobench` and the general `aggregate` are in neither file.
 

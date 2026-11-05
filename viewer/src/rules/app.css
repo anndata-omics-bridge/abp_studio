@@ -126,9 +126,99 @@ section.view p {
   padding: 2px 4px;
 }
 
-/* The levels of the open rule and its rules.json, beside the rule picker. */
+/* The Rule tab: the rule list on the left, the open rule on the right. */
+.rule-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 8px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 4px;
+}
+
+.rule-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  background: transparent;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rule-entry:hover {
+  background: var(--paper);
+}
+
+.rule-entry[aria-current="true"] {
+  background: var(--paper);
+  border-color: var(--line);
+  border-left-color: var(--accent);
+}
+
+.rule-software {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.rule-software code,
+.rule-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.rule-path,
+.rule-detail {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.rule-main {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .rule-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rule-list {
+    position: static;
+    max-height: 40vh;
+  }
+}
+
+/* The levels of the open rule and its rules.json, then the open level's tabs. */
 .tabs.levels {
-  margin: 4px 0 8px;
+  margin: 0 0 4px;
+}
+
+.tabs.sections {
+  margin: 0 0 8px;
+}
+
+.tabs.sections button {
+  padding: 4px 10px;
+  font-size: 13px;
 }
 
 .picker {

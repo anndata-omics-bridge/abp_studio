@@ -1,4 +1,4 @@
-import type { Field, Row, RuleDocument, Table, Value } from '../types.js'
+import type { Field, Row, RuleDocument, RuleOption, Table, Value } from '../types.js'
 import { cellText, tableOf } from './tables.js'
 
 // The Rules tab: one row per packaged rules.json, its input policy table by table.
@@ -40,7 +40,20 @@ export function ruleRows (rules: RuleDocument[]): Table {
   return tableOf(rows, RULE_FIELDS.map(field => field.name))
 }
 
-/** How the rule picker names a rule: software, version pattern and path. */
-export function ruleLabel (rule: RuleDocument): string {
-  return `${rule.software_name} ${rule.software_version_pattern} · ${rule.rule}`
+/** A rule as the rule list shows it: software and version pattern, then its levels, and its
+ * acquisition methods, shape, extensions and parameter file. */
+export function ruleOption (rule: RuleDocument): RuleOption {
+  const input = [
+    rule.categories.join(', '),
+    distinct(rule.tables.map(table => table.input.shape ?? null)),
+    distinct(rule.tables.map(table => table.input.extensions ?? null)),
+    `parameter file ${rule.parameter_file}`
+  ]
+  return {
+    rule: rule.rule,
+    software: rule.software_name,
+    versions: rule.software_version_pattern,
+    levels: rule.levels,
+    details: [rule.levels.join(', '), input.filter(text => text !== '').join(' · ')]
+  }
 }

@@ -1,12 +1,12 @@
 import { LitElement, html } from '../../shared/lit.js'
 import type { TemplateResult } from '../../shared/lit.js'
-import type { Tab, TabId } from '../types.js'
+import type { RuleOption, Tab, TabId } from '../types.js'
 
 /** The Document view of the Rule tab, beside its levels. */
 export const DOCUMENT = 'document'
 
-/** One entry of the rule picker. */
-export interface RuleOption { rule: string; label: string; levels: string[] }
+/** One tab of the open level: its id and label. */
+export interface SectionTab { id: string; label: string }
 
 // The light-DOM shell emits intent. Composition supplies the tabs, the rules and their contents.
 export class RulesApp extends LitElement {
@@ -18,6 +18,8 @@ export class RulesApp extends LitElement {
     rules: { type: Array },
     rule: { type: String },
     view: { type: String },
+    sections: { type: Array },
+    section: { type: String },
     levels: { type: Array },
     level: { type: String }
   }
@@ -31,6 +33,10 @@ export class RulesApp extends LitElement {
   rule = ''
   /** The Rule tab's view: one of the rule's levels, or the document. */
   view = ''
+  /** The tabs of the open level; none for the document. */
+  sections: SectionTab[] = []
+  /** The open level's tab, kept when another rule or level has a tab of that id. */
+  section = ''
   /** Every level of the bundle, for the level picker. */
   levels: string[] = []
   /** The level picked for the tabs across rules; empty for every level. */
@@ -65,6 +71,11 @@ export class RulesApp extends LitElement {
     this.dispatchEvent(new CustomEvent('rule-view-change', { detail: { view }, bubbles: true }))
   }
 
+  pick (section: string): void {
+    this.section = section
+    this.dispatchEvent(new CustomEvent('section-change', { detail: { section }, bubbles: true }))
+  }
+
   choose (level: string): void {
     this.level = level
     this.dispatchEvent(new CustomEvent('level-change', { detail: { level }, bubbles: true }))
@@ -82,20 +93,37 @@ export class RulesApp extends LitElement {
     `
   }
 
-  ruleControls (): TemplateResult {
+  /** The rule list on the left; the open rule's levels, the level's tabs and one table on the right. */
+  ruleLayout (): TemplateResult {
     const views = [...(this.chosen?.levels ?? []), DOCUMENT]
     return html`
-      <label class="picker">
-        Rule
-        <select @change=${(event: Event) => { this.open((event.currentTarget as HTMLSelectElement).value) }}>
-          ${this.rules.map(({ rule, label }) => html`<option value=${rule} ?selected=${rule === this.rule}>${label}</option>`)}
-        </select>
-      </label>
-      <nav class="tabs levels" role="tablist" aria-label="Levels of the rule">
-        ${views.map(view => html`
-          <button role="tab" aria-selected=${String(this.view === view)} @click=${() => this.show(view)}>${view === DOCUMENT ? 'rules.json' : view}</button>
-        `)}
-      </nav>
+      <div class="rule-layout">
+        <nav class="rule-list" aria-label="Parsing rules">
+          ${this.rules.map(option => html`
+            <button class="rule-entry" aria-current=${String(option.rule === this.rule)} @click=${() => { this.open(option.rule) }}>
+              <span class="rule-software">${option.software} <code>${option.versions}</code></span>
+              <span class="rule-path">${option.rule}</span>
+              ${option.details.map(line => html`<span class="rule-detail">${line}</span>`)}
+            </button>
+          `)}
+        </nav>
+        <div class="rule-main">
+          <nav class="tabs levels" role="tablist" aria-label="Levels of the rule">
+            ${views.map(view => html`
+              <button role="tab" aria-selected=${String(this.view === view)} @click=${() => this.show(view)}>${view === DOCUMENT ? 'rules.json' : view}</button>
+            `)}
+          </nav>
+          ${this.sections.length > 0
+            ? html`
+              <nav class="tabs sections" role="tablist" aria-label="Tables of the level">
+                ${this.sections.map(({ id, label }) => html`
+                  <button role="tab" aria-selected=${String(this.section === id)} @click=${() => { this.pick(id) }}>${label}</button>
+                `)}
+              </nav>`
+            : ''}
+          <div data-views="rule"></div>
+        </div>
+      </div>
     `
   }
 
@@ -114,9 +142,9 @@ export class RulesApp extends LitElement {
       <p class="group-description">${open?.description ?? ''}</p>
       ${this.tabs.map(tab => html`
         <div ?hidden=${this.tab !== tab.id}>
-          ${tab.levels ? this.picker() : ''}
-          ${tab.id === 'rule' ? this.ruleControls() : ''}
-          <div data-views=${tab.id}></div>
+          ${tab.id === 'rule'
+            ? this.ruleLayout()
+            : html`${tab.levels ? this.picker() : ''}<div data-views=${tab.id}></div>`}
         </div>
       `)}
     `
@@ -129,6 +157,7 @@ declare global {
   interface HTMLElementTagNameMap { 'rules-app': RulesApp }
   interface HTMLElementEventMap {
     'rule-view-change': CustomEvent<{ view: string }>
+    'section-change': CustomEvent<{ section: string }>
     'level-change': CustomEvent<{ level: string }>
   }
 }

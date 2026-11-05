@@ -1,5 +1,9 @@
 # Changes
 
+- 2026-11-05: Rules viewer: the Rule tab lists the rules on the left, each with its software and version pattern, path, levels, acquisition methods, shape, extensions and parameter file, replacing the rule dropdown. The open level shows one table at a time, in tabs: Settings, Variants, Quantity layers, Feature table (var), Sample table (obs), Modification map and As stored. The open tab stays open when another rule or level has it
+
+- 2026-11-05: `scripts/staging_35.fish` alone builds the fgcz-r-035 staging site: routine `convert` in three formats, problems `convert`, the five manuscript Figure 5 runs and proteobench pMultiQC into `apb_publish_output`, then `corpus publish apb_publish_site` and the upload. It refuses to start while either folder exists. `scripts/collected_other_options.fish` holds every other run into the configured root; `corpus_runs.fish` and `integration_runs.fish` are gone
+
 - 2026-11-04: Rules viewer: a level's column table shows a var column's `missing_tokens`, the vendor's text for a missing value, which apb2's var columns now declare
 
 - 2026-11-04: Rules viewer: a level's "Modification map" table lists token and accession, as apb2's rule schema 0.11 keeps one unnamed `modification_map` per level instead of named `modification_maps`

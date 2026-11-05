@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import { allColumns, allLayers, levelRows, ofLevel, orderedLevels } from '../../viewer/src/rules/projections/across.ts'
 import { evidenceLabel, levelPage, summaryRows, variantRows } from '../../viewer/src/rules/projections/level.ts'
-import { ruleRows } from '../../viewer/src/rules/projections/rules.ts'
+import { ruleOption, ruleRows } from '../../viewer/src/rules/projections/rules.ts'
 import { cellText, tableOf } from '../../viewer/src/rules/projections/tables.ts'
 
 const ANY = ['DDA', 'DIA', 'unknown'].flatMap(acquisition_method =>
@@ -86,15 +86,29 @@ test('a level with two declarations lists only where they differ', () => {
   assert.deepEqual(variants.rows, [{ setting: 'measurements.primary_layer', DDA: 'Ms1', 'DIA, unknown': 'Precursor' }])
 })
 
-test('a level page shows settings, variants, layers with the primary marked, columns and maps', () => {
+test('a level page has one tab per table: settings, variants, layers with the primary marked, columns, map, stored JSON', () => {
   const page = levelPage(LEVELS[1])
-  assert.deepEqual(page.tables.map(view => view.title), ['Settings', 'Variants', 'Quantity layers', 'Feature table (var)', 'Sample table (obs)', 'Modification map'])
-  const layers = page.tables[2]
+  assert.deepEqual(page.map(section => [section.id, section.label]), [
+    ['settings', 'Settings'], ['variants', 'Variants'], ['layers', 'Quantity layers'], ['var', 'Feature table (var)'],
+    ['obs', 'Sample table (obs)'], ['modifications', 'Modification map'], ['stored', 'As stored']
+  ])
+  const [layers] = page[2].tables
   assert.deepEqual(layers.columns.map(column => column.field), ['name', 'primary', 'source', 'roles', 'type', 'missing_values'])
   assert.deepEqual(layers.rows.map(row => row.primary), ['primary', null, null])
-  assert.equal(page.tables[0].rows[0].value, 'DDA / DIA, unknown')
-  assert.equal(page.json.length, 2)
-  assert.equal(levelPage(LEVELS[0]).tables.length, 5)
+  assert.equal(page[0].tables[0].rows[0].value, 'DDA / DIA, unknown')
+  assert.ok(page.slice(0, -1).every(section => section.tables.length === 1 && section.json.length === 0))
+  assert.equal(page.at(-1).json.length, 2)
+  assert.deepEqual(levelPage(LEVELS[0]).map(section => section.id), ['settings', 'layers', 'var', 'obs', 'modifications', 'stored'])
+})
+
+test('the rule list names a rule by software and versions, then its levels and input', () => {
+  assert.deepEqual(ruleOption(RULES[1]), {
+    rule: 'other/rules.json',
+    software: 'OTHER',
+    versions: '^.*$',
+    levels: ['peptidoform_ion'],
+    details: ['peptidoform_ion', 'DDA · wide | long · .tsv · parameter file none']
+  })
 })
 
 test('the tabs across rules give one row per declaration and name it only where a level has several', () => {

@@ -1,4 +1,4 @@
-import type { Declaration, Evidence, Field, JsonView, Row, RuleLevel, TableView, Value } from '../types.js'
+import type { Declaration, Evidence, Field, JsonView, Row, RuleLevel, Section, TableView, Value } from '../types.js'
 import { cellText, isEmpty, tableOf, tableView } from './tables.js'
 
 // One level of one rule, from its effective declarations: apb2 composed each table's base with
@@ -7,7 +7,7 @@ import { cellText, isEmpty, tableOf, tableView } from './tables.js'
 const ACQUISITIONS = ['DDA', 'DIA', 'unknown']
 const COMBINE_CHARGE_STATES = [true, false, null]
 
-// Shown in their own tables, or by the rule picker and level buttons, not as settings.
+// Shown in their own tables, or by the rule list and level buttons, not as settings.
 const OWN_TABLES = new Set(['columns', 'modification_map', 'measurements.layers', 'schema_version', 'file_version', 'software_name', 'software_version_pattern', 'quantification_level'])
 
 export const LAYER_COLUMNS = ['name', 'primary', 'source', 'roles', 'type', 'encoding_mode', 'required', 'missing_values', 'missing_tokens', 'categories', 'value_pattern', 'note']
@@ -131,22 +131,23 @@ export function variantRows (declarations: Declaration[]): { columns: string[]; 
   return { columns: ['setting', ...labels], rows }
 }
 
-/** What the Rule tab shows for one level: settings, layers, columns, modification maps, the
- * differences between its declarations, and each declaration as stored. */
-export function levelPage (level: RuleLevel): { tables: TableView[]; json: JsonView[] } {
+/** What the Rule tab shows for one level, one tab each: settings, the differences between its
+ * declarations, layers, columns, modification map, and each declaration as stored. */
+export function levelPage (level: RuleLevel): Section[] {
   const [first] = level.declarations
-  if (!first) return { tables: [], json: [] }
+  if (!first) return []
   const declaration = first.declaration
   const several = level.declarations.length > 1
-  const tables: TableView[] = []
+  const key = `${level.rule}:${level.level}`
+  const sections: Section[] = []
+  const add = (id: string, view: TableView): void => { sections.push({ id, label: view.title, tables: [view], json: [] }) }
   const settings = summaryRows(declaration)
   settings.splice(0, 0, { setting: 'selected by', value: several ? level.declarations.map(item => evidenceLabel(item.selected_by)).join(' / ') : evidenceLabel(first.selected_by) })
-  tables.push(tableView(`${level.rule}:${level.level}:settings`, 'Settings', several ? `This level has ${level.declarations.length} declarations; the settings are those of the first, ${evidenceLabel(first.selected_by)}, and Variants lists where the others differ.` : 'Axis keys, primary layer, duplicate policy, sequence syntax and search-parameter conditions, as conversion stores them.', tableOf(settings, ['setting', 'value']), SUMMARY_FIELDS))
+  add('settings', tableView(`${key}:settings`, 'Settings', several ? `This level has ${level.declarations.length} declarations; the settings are those of the first, ${evidenceLabel(first.selected_by)}, and Variants lists where the others differ.` : 'Axis keys, primary layer, duplicate policy, sequence syntax and search-parameter conditions, as conversion stores them.', tableOf(settings, ['setting', 'value']), SUMMARY_FIELDS))
   if (several) {
-    const variants = variantRows(level.declarations)
-    tables.push(tableView(`${level.rule}:${level.level}:variants`, 'Variants', 'Where the declarations differ, one column per declaration, named by the search parameters that select it.', variants))
+    add('variants', tableView(`${key}:variants`, 'Variants', 'Where the declarations differ, one column per declaration, named by the search parameters that select it.', variantRows(level.declarations)))
   }
-  tables.push(tableView(`${level.rule}:${level.level}:layers`, 'Quantity layers', 'One matrix of samples by features each, in the order the rule declares them.', tableOf(layerRows(declaration), LAYER_COLUMNS), LAYER_FIELDS))
+  add('layers', tableView(`${key}:layers`, 'Quantity layers', 'One matrix of samples by features each, in the order the rule declares them.', tableOf(layerRows(declaration), LAYER_COLUMNS), LAYER_FIELDS))
   // A wide table names its samples in the layer patterns, so its sample table may declare no column.
   const groups = [
     ['var', 'Feature table (var)', 'One value per feature: identifiers, experiment-wide values and computed columns such as the ProForma identifiers.'],
@@ -154,15 +155,16 @@ export function levelPage (level: RuleLevel): { tables: TableView[]; json: JsonV
   ] as const
   for (const [group, title, description] of groups) {
     const rows = columnRows(declaration, group)
-    if (rows.length > 0) tables.push(tableView(`${level.rule}:${level.level}:${group}`, title, description, tableOf(rows, COLUMN_COLUMNS), COLUMN_FIELDS))
+    if (rows.length > 0) add(group, tableView(`${key}:${group}`, title, description, tableOf(rows, COLUMN_COLUMNS), COLUMN_FIELDS))
   }
   const modifications = modificationRows(declaration)
-  if (modifications.length > 0) tables.push(tableView(`${level.rule}:${level.level}:modifications`, 'Modification map', 'Each modification token the tool writes and the Unimod accession it maps to.', tableOf(modifications, ['token', 'accession'])))
+  if (modifications.length > 0) add('modifications', tableView(`${key}:modifications`, 'Modification map', 'Each modification token the tool writes and the Unimod accession it maps to.', tableOf(modifications, ['token', 'accession'])))
   const json = level.declarations.map((item, index): JsonView => ({
-    key: `${level.rule}:${level.level}:json:${index}`,
+    key: `${key}:json:${index}`,
     title: several ? `Declaration ${index + 1} as stored: ${evidenceLabel(item.selected_by)}` : 'Declaration as stored',
     description: 'The exact rule_json conversion stores for this level, every default filled in.',
     data: item.declaration
   }))
-  return { tables, json }
+  sections.push({ id: 'stored', label: 'As stored', tables: [], json })
+  return sections
 }
