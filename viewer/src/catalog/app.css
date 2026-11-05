@@ -163,22 +163,66 @@ section.view p {
   padding: 2px 4px;
 }
 
-.picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 12px 0 4px;
-  color: var(--muted);
-  font-size: 12px;
+/* The catalogue sets as tabs down the left of the open tab; a wrapping row above it when narrow. */
+.workspace {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
 }
 
-.picker select {
-  font: inherit;
-  color: var(--ink);
-  padding: 3px 6px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--paper);
+.panels {
+  flex: 1;
+  min-width: 0;
+}
+
+.sets {
+  flex: none;
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  padding-top: 12px;
+}
+
+.sets h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sets .tabs {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  margin: 0;
+}
+
+.sets .tabs button {
+  text-align: left;
+  border-bottom-width: 1px;
+  border-left-width: 3px;
+}
+
+.sets .tabs button[aria-selected="true"] {
+  border-bottom-color: var(--line);
+  border-left-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sets {
+    position: static;
+  }
+
+  .sets .tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
 }
 
 .legend {

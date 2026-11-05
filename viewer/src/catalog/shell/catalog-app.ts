@@ -73,20 +73,24 @@ export class CatalogApp extends LitElement {
     return tab.sets === 'one' && this.set === '' ? this.sets[0] ?? '' : this.set
   }
 
-  picker (tab: Tab): TemplateResult {
+  /** The sets a tab can show, as tabs down the left: every set where the tab takes it, then each set. */
+  setTabs (tab: Tab): TemplateResult {
     const chosen = this.setFor(tab)
+    const choices = [...(tab.sets === 'any' ? [{ set: '', label: 'every set' }] : []), ...this.sets.map(set => ({ set, label: set }))]
     return html`
-      <label class="picker">
-        Catalogue set
-        <select @change=${(event: Event) => { this.choose((event.currentTarget as HTMLSelectElement).value) }}>
-          ${tab.sets === 'any' ? html`<option value="" ?selected=${chosen === ''}>every set</option>` : ''}
-          ${this.sets.map(set => html`<option value=${set} ?selected=${set === chosen}>${set}</option>`)}
-        </select>
-      </label>
+      <aside class="sets">
+        <h2>Catalogue set</h2>
+        <nav class="tabs" role="tablist" aria-orientation="vertical" aria-label="Catalogue set">
+          ${choices.map(({ set, label }) => html`
+            <button role="tab" aria-selected=${String(set === chosen)} @click=${() => { this.choose(set) }}>${label}</button>
+          `)}
+        </nav>
+      </aside>
     `
   }
 
   render (): TemplateResult {
+    const current = this.tabs.find(({ id }) => id === this.tab)
     return html`
       <header class="masthead">
         <h1>APB Catalog</h1>
@@ -103,14 +107,18 @@ export class CatalogApp extends LitElement {
           <button role="tab" aria-selected=${String(this.tab === id)} @click=${() => this.select(id)}>${label}</button>
         `)}
       </nav>
-      ${this.tabs.map(tab => html`
-        <div ?hidden=${this.tab !== tab.id}>
-          ${tab.sets === 'none' ? '' : this.picker(tab)}
-          ${tab.id === 'software'
-            ? html`<div class="split"><div data-views=${tab.id}></div><div data-views="software-detail" class="detail"></div></div>`
-            : html`<div data-views=${tab.id}></div>`}
+      <div class="workspace">
+        ${current === undefined || current.sets === 'none' ? '' : this.setTabs(current)}
+        <div class="panels">
+          ${this.tabs.map(tab => html`
+            <div ?hidden=${this.tab !== tab.id}>
+              ${tab.id === 'software'
+                ? html`<div class="split"><div data-views=${tab.id}></div><div data-views="software-detail" class="detail"></div></div>`
+                : html`<div data-views=${tab.id}></div>`}
+            </div>
+          `)}
         </div>
-      `)}
+      </div>
     `
   }
 }
