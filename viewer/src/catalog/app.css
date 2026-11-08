@@ -62,7 +62,7 @@ catalog-app {
   margin: 8px 0;
 }
 
-/* The two groups, Views and Stored tables, above the tabs of the open one. */
+/* The two groups, Catalog and Catalog Views, above the tabs of the open one. */
 .tabs.groups {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
@@ -163,7 +163,8 @@ section.view p {
   padding: 2px 4px;
 }
 
-/* The catalogue sets as tabs down the left of the open tab; a wrapping row above it when narrow. */
+/* The pickers, catalogue set, level and location, as tabs down the left of the open tab;
+   wrapping rows above it when narrow. */
 .workspace {
   display: flex;
   align-items: flex-start;
@@ -175,14 +176,14 @@ section.view p {
   min-width: 0;
 }
 
-.sets {
+.filters {
   flex: none;
   position: sticky;
   top: env(safe-area-inset-top, 0px);
   padding-top: 12px;
 }
 
-.sets h2 {
+.filters h2 {
   margin: 0 0 6px;
   font-size: 13px;
   font-weight: 400;
@@ -191,20 +192,25 @@ section.view p {
   letter-spacing: 0.04em;
 }
 
-.sets .tabs {
+/* Each picker after the first sits below the one before it. */
+.filters .tabs + h2 {
+  margin-top: 16px;
+}
+
+.filters .tabs {
   flex-direction: column;
   flex-wrap: nowrap;
   align-items: stretch;
   margin: 0;
 }
 
-.sets .tabs button {
+.filters .tabs button {
   text-align: left;
   border-bottom-width: 1px;
   border-left-width: 3px;
 }
 
-.sets .tabs button[aria-selected="true"] {
+.filters .tabs button[aria-selected="true"] {
   border-bottom-color: var(--line);
   border-left-color: var(--accent);
 }
@@ -215,11 +221,11 @@ section.view p {
     align-items: stretch;
   }
 
-  .sets {
+  .filters {
     position: static;
   }
 
-  .sets .tabs {
+  .filters .tabs {
     flex-direction: row;
     flex-wrap: wrap;
   }
@@ -251,4 +257,298 @@ section.view p {
 
 .legend dd {
   margin: 0;
+}
+
+/* The editor demo: its toolbar above each table, and the cells that break a key. */
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.editor-toolbar button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 4px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.editor-toolbar button:hover {
+  border-color: var(--accent);
+}
+
+.editor-problems.error {
+  color: var(--error);
+}
+
+.tabulator .tabulator-row .tabulator-cell.cell-problem {
+  background: #fbe9ea;
+  box-shadow: inset 0 0 0 1px var(--error);
+}
+
+/* An editor tab's state, as a dot before its label: complete green, missing a description orange,
+   broken red; and the orange cells. */
+.tabs button[data-state]::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--state);
+}
+
+.tabs button[data-state="complete"] { --state: #2e8b3e; }
+.tabs button[data-state="incomplete"] { --state: #e08a00; }
+.tabs button[data-state="broken"] { --state: var(--error); }
+
+.tabulator .tabulator-row .tabulator-cell.cell-missing {
+  background: #fdf1dc;
+  box-shadow: inset 0 0 0 1px #e08a00;
+}
+
+.editor-note {
+  margin: 0 0 4px;
+  color: var(--accent);
+}
+
+/* The API console demo: the code box, the names it may use, and what a run gave. */
+.console-code {
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.console-code .cm-editor {
+  max-height: 70vh;
+  color: var(--ink);
+}
+
+.console-code .cm-editor .cm-scroller {
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.console-code .cm-editor .cm-content,
+.console-code .cm-editor .cm-gutter {
+  min-height: 22rem;
+}
+
+.console-code .cm-editor .cm-gutters {
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.console-code .cm-editor .cm-activeLine,
+.console-code .cm-editor .cm-activeLineGutter {
+  background: #eef3f9;
+}
+
+.console-code .cm-editor.cm-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.console-code .cm-editor .cm-matchingBracket {
+  background: #d7e5f4;
+  outline: 1px solid #9db8d6;
+}
+
+/* JavaScript tokens, as CodeMirror's class highlighter names them. */
+.console .tok-comment { color: #5f7161; font-style: italic; }
+.console .tok-keyword { color: #7b3fa0; }
+.console .tok-string,
+.console .tok-string2 { color: #a14b0b; }
+.console .tok-number,
+.console .tok-bool,
+.console .tok-atom { color: #1f6f8b; }
+.console .tok-propertyName { color: var(--accent); }
+.console .tok-variableName.tok-definition { font-weight: 600; }
+.console .tok-operator,
+.console .tok-punctuation { color: var(--muted); }
+
+.console-names {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The console: a transcript that scrolls on its own, newest run last, and the input line under it. */
+.console-output {
+  margin-top: 12px;
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.console-output:empty {
+  display: none;
+}
+
+.console-entry {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.console-entry section.view {
+  margin: 0;
+  min-width: 0;
+}
+
+.console-entry section.view h3 {
+  margin-top: 0;
+}
+
+.console-entry p.console-names {
+  margin: 0;
+}
+
+.console-output pre {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 40vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.console-output pre.console-entry-code {
+  position: relative;
+  max-height: none;
+  padding: 0 0 0 1.4em;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.console-entry-code::before,
+.console-input::before {
+  content: "›";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.console-output pre.console-error {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.console-input {
+  position: relative;
+  padding-left: 1.4em;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.console-input::before {
+  top: 4px;
+  left: 8px;
+  font: 700 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.console-input .cm-editor .cm-scroller {
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.console-input .cm-editor .cm-content {
+  padding: 4px 0;
+}
+
+.console-input:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.console-input .cm-editor.cm-focused {
+  outline: none;
+}
+
+.console-input .cm-editor .cm-placeholder {
+  color: var(--muted);
+}
+
+/* Examples down the left, the code box to the right, the output below both; stacked when narrow. */
+.console-layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 30rem) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .console-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.console-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.console-list th {
+  padding: 4px 8px;
+  border-bottom: 2px solid var(--line);
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.console-list td {
+  padding: 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.console-list td.console-category {
+  padding: 6px 8px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.console-pick {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.console-list tr:hover td,
+.console-list tr[aria-current] td {
+  background: var(--panel);
+}
+
+.console-list tr[aria-current] .console-pick {
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.console-pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Cells the editor fills itself, from the row's term. */
+.tabulator .tabulator-row .tabulator-cell.cell-derived {
+  color: var(--muted);
+  font-style: italic;
 }

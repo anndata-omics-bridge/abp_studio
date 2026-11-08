@@ -3,14 +3,14 @@ import { test } from 'node:test'
 
 import { appFields, coverage, keyColumns } from '../../viewer/src/catalog/projections/coverage.ts'
 import { softwareList, versionEntries } from '../../viewer/src/catalog/projections/software.ts'
-import { cellText, inSet, parseResources, storedView, tableOf } from '../../viewer/src/catalog/projections/tables.ts'
+import { cellText, chosen, levelsOf, parseResources, storedView, tableOf } from '../../viewer/src/catalog/projections/tables.ts'
 
 const DATAPACKAGE = {
   name: 'apb-catalog',
   resources: [
     {
-      name: 'entries',
-      path: 'entries.csv',
+      name: 'catalog',
+      path: 'catalog.csv',
       description: 'One row per catalogued field.',
       schema: { fields: [{ name: 'set', type: 'string', description: 'The catalogue set.' }, { name: 'reference', type: 'string' }] }
     },
@@ -37,6 +37,9 @@ const LONG = [
   { set: 'apb', source: 'producer:apb-fasta', software_version_pattern: null, level: 'peptide', location: 'varm', table: 'fasta_validation', name: 'match', entry_id: 'e' }
 ]
 
+// Every set, level and location; tests pick from it.
+const EVERY = { set: '', level: '', location: '' }
+
 const VERSIONS = {
   columns: ['software', 'version', 'software_version_pattern'],
   rows: [
@@ -47,40 +50,77 @@ const VERSIONS = {
 
 test('stored tables come in datapackage order with each column described', () => {
   const [entries, levels] = parseResources(DATAPACKAGE)
-  assert.equal(entries.name, 'entries')
+  assert.equal(entries.name, 'catalog')
   assert.equal(entries.description, 'One row per catalogued field.')
   assert.deepEqual(entries.fields, [{ name: 'set', description: 'The catalogue set.' }, { name: 'reference', description: '' }])
   assert.equal(levels.path, 'rule_levels.csv')
   assert.equal(levels.description, '')
 })
 
+test('a column header says whether the column is the primary key, part of it, or of a foreign key', () => {
+  const schema = (primaryKey) => ({
+    fields: [{ name: 'set' }, { name: 'kind' }, { name: 'definition' }],
+    primaryKey,
+    foreignKeys: [{ fields: ['set'], reference: { resource: 'sets', fields: ['set'] } }]
+  })
+  const [kinds, single] = parseResources({
+    resources: [
+      { name: 'kinds', path: 'kinds.csv', schema: schema(['set', 'kind']) },
+      { name: 'sets', path: 'sets.csv', schema: schema('kind') }
+    ]
+  })
+  const table = { columns: ['set', 'kind', 'definition'], rows: [] }
+  assert.deepEqual(storedView(kinds, table, EVERY).columns.map(({ title }) => title), ['set [K] [FK]', 'kind [K]', 'definition'])
+  assert.deepEqual(storedView(single, table, EVERY).columns.map(({ title }) => title), ['set [FK]', 'kind [PK]', 'definition'])
+})
+
 test('a datapackage without resources is refused, not shown empty', () => {
   assert.throws(() => parseResources({ name: 'apb-catalog' }), /lists no resources/)
-  assert.throws(() => parseResources({ resources: [{ name: 'entries', path: 'entries.csv' }] }), /no schema fields/)
+  assert.throws(() => parseResources({ resources: [{ name: 'catalog', path: 'catalog.csv' }] }), /no schema fields/)
 })
 
 test('a stored table keeps its stored columns and shows only the chosen set', () => {
   const [entries] = parseResources(DATAPACKAGE)
   const table = { columns: ['set', 'reference'], rows: [{ set: 'apb', reference: 'decoy' }, { set: 'abundance', reference: 'Intensity' }] }
-  const view = storedView(entries, table, 'apb')
+  const view = storedView(entries, table, { ...EVERY, set: 'apb' })
   assert.deepEqual(view.rows, [{ set: 'apb', reference: 'decoy' }])
   assert.deepEqual(view.columns.map(({ field, tooltip }) => [field, tooltip]), [['set', 'The catalogue set.'], ['reference', '']])
   assert.deepEqual(view.legend, [{ name: 'set', description: 'The catalogue set.' }], 'a stored table lists what each described column holds')
-  assert.equal(storedView(entries, table, '').rows.length, 2)
-  assert.equal(storedView(entries, { columns: ['set'], rows: [] }, 'apb').columns.length, 1)
+  assert.equal(storedView(entries, table, EVERY).rows.length, 2)
+  assert.equal(storedView(entries, { columns: ['set'], rows: [] }, { ...EVERY, set: 'apb' }).columns.length, 1)
 })
 
 test('a column with many distinct values filters by text, a short one by a value list', () => {
   const [entries] = parseResources(DATAPACKAGE)
   const rows = Array.from({ length: 41 }, (_, index) => ({ set: 'apb', reference: `column_${index}` }))
-  const view = storedView(entries, { columns: ['set', 'reference'], rows }, '')
+  const view = storedView(entries, { columns: ['set', 'reference'], rows }, EVERY)
   assert.deepEqual(view.columns.map(({ filter }) => filter), ['list', 'input'])
 })
 
 test('a table without a set column is shown whole whatever the set', () => {
   const [, levels] = parseResources(DATAPACKAGE)
-  assert.equal(storedView(levels, VERSIONS, 'apb').rows.length, 2)
-  assert.deepEqual(inSet([{ catalogue: 'apb' }, { catalogue: 'abundance' }], 'apb', 'catalogue'), [{ catalogue: 'apb' }])
+  assert.equal(storedView(levels, VERSIONS, { set: 'apb', level: 'protein', location: 'var' }).rows.length, 2)
+})
+
+test('stored entries are chosen by the level and location their location names', () => {
+  const [entries] = parseResources(DATAPACKAGE)
+  const rows = [
+    { set: 'abundance', software: 'DIA-NN/*', location: 'protein/layers', name: 'PG_MaxLFQ/-' },
+    { set: 'abundance', software: 'DIA-NN/*', location: 'peptidoform_ion/var', name: '-/Precursor_Charge' },
+    { set: 'apb', software: 'annotation:sdrf/*', location: '*/obs', name: '-/factor_value_*' }
+  ]
+  const table = { columns: ['set', 'software', 'location', 'name'], rows }
+  const names = (filter) => storedView(entries, table, filter).rows.map(row => row.name)
+  assert.deepEqual(names({ ...EVERY, level: 'protein' }), ['PG_MaxLFQ/-', '-/factor_value_*'], 'an entry of every level is on each')
+  assert.deepEqual(names({ ...EVERY, location: 'var' }), ['-/Precursor_Charge'])
+  assert.deepEqual(names({ set: 'abundance', level: 'protein', location: 'layers' }), ['PG_MaxLFQ/-'])
+})
+
+test('views are chosen by their rows level and location; levels list protein first', () => {
+  assert.deepEqual(chosen(LONG, { ...EVERY, level: 'peptide' }).map(row => row.entry_id), ['d', 'e'])
+  assert.deepEqual(chosen(LONG, { set: 'confidence', level: '', location: 'layers' }).map(row => row.entry_id), ['a', 'b', 'c'])
+  assert.deepEqual(chosen(LONG, { ...EVERY, location: 'varm' }).map(row => row.entry_id), ['e'])
+  assert.deepEqual(levelsOf([{ level: 'peptidoform_ion' }, { level: '*' }, { level: 'protein' }, { level: 'custom' }, { level: 'peptide' }]), ['protein', 'peptide', 'peptidoform_ion', 'custom'])
 })
 
 test('cells read as text: lists joined, missing values empty', () => {
