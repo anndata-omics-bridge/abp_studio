@@ -1,5 +1,7 @@
 # Changes
 
+- 2026-11-09: Rules viewer: DIA-NN's new `gene` level comes after `protein` in every level list, and the Levels table shows the column with the `gene_assignment` role, which links an ion or protein to its gene
+
 - 2026-11-05: Rules viewer: the Rule tab lists the rules on the left, each with its software and version pattern, path, levels, acquisition methods, shape, extensions and parameter file, replacing the rule dropdown. The open level shows one table at a time, in tabs: Settings, Variants, Quantity layers, Feature table (var), Sample table (obs), Modification map and As stored. The open tab stays open when another rule or level has it
 
 - 2026-11-05: `scripts/staging_35.fish` alone builds the fgcz-r-035 staging site: routine `convert` in three formats, problems `convert`, the five manuscript Figure 5 runs and proteobench pMultiQC into `apb_publish_output`, then `corpus publish apb_publish_site` and the upload. It refuses to start while either folder exists. `scripts/collected_other_options.fish` holds every other run into the configured root; `corpus_runs.fish` and `integration_runs.fish` are gone

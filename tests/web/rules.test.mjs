@@ -124,6 +124,15 @@ test('the tabs across rules give one row per declaration and name it only where 
   assert.ok(!columns.columns.includes('selected_by'))
 })
 
+test('a level names the column that links it to its gene, and the gene level comes after protein', () => {
+  const linked = declaration('Q')
+  linked.columns.var.push({ name: 'Genes', source: 'Genes', type: 'string', roles: ['gene_assignment'], note: null })
+  const levels = [{ rule: 'other/rules.json', level: 'protein', declarations: [{ selected_by: ANY, declaration: linked }] }]
+  assert.deepEqual(levelRows(RULES, levels).rows[0].gene_assignment, ['Genes'])
+  assert.ok(!levelRows(RULES, ofLevel(LEVELS, 'peptidoform_ion')).columns.includes('gene_assignment'))
+  assert.deepEqual(orderedLevels([{ level: 'gene' }, { level: 'protein' }]), ['protein', 'gene'])
+})
+
 test('a level shows the columns that rule a table out, and a table without them no column', () => {
   const refusing = { ...declaration('Q'), forbidden_columns: ['charge'] }
   const levels = [{ rule: 'other/rules.json', level: 'peptidoform', declarations: [{ selected_by: ANY, declaration: refusing }] }]

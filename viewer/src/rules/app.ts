@@ -18,7 +18,7 @@ const DATA_ROOT = 'data'
 const TABS: Tab[] = [
   { id: 'rules', label: 'Rules', levels: false, description: 'One row per packaged parsing rule: the quantification tool and versions it reads, its input and the levels it declares. Click a row to open the rule.' },
   { id: 'rule', label: 'Rule', levels: false, description: 'One rule, level by level, as conversion stores it: the base merged into each level and the search-parameter overrides applied by apb2. rules.json shows the file as packaged.' },
-  { id: 'levels', label: 'Levels', levels: true, description: 'Every level of every rule: its keys, primary layer, abundance layers and the columns with the protein_assignment and fasta_accessions roles.' },
+  { id: 'levels', label: 'Levels', levels: true, description: 'Every level of every rule: its keys, primary layer, abundance layers and the columns with the protein_assignment, fasta_accessions and gene_assignment roles.' },
   { id: 'layers', label: 'Layers', levels: true, description: 'Every quantity layer of every rule level, with its source, roles and missing-value policy.' },
   { id: 'columns', label: 'Columns', levels: true, description: 'Every feature-table (var) and sample-table (obs) column of every rule level, read or computed.' }
 ]

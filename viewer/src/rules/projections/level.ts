@@ -35,7 +35,7 @@ export const COLUMN_FIELDS: Field[] = [
   { name: 'how', description: 'For a computed column, the computation, such as proforma_sequence.' },
   { name: 'type', description: 'The value type: string, number, integer or boolean.' },
   { name: 'required', description: 'true: a report without the source column is refused.' },
-  { name: 'roles', description: 'Roles the rule declares: protein_assignment names the protein group, fasta_accessions the accessions apb-fasta looks up.' },
+  { name: 'roles', description: 'Roles the rule declares: protein_assignment names the protein group, fasta_accessions the accessions apb-fasta looks up, gene_assignment the gene group.' },
   { name: 'per_feature', description: 'How a feature\'s repeated rows become one value: first keeps the first nonblank value, min or max the smallest or largest number, best_row the row the level\'s rank_rows keeps.' },
   { name: 'separator', description: 'The separator that splits a list column.' },
   { name: 'missing_tokens', description: 'Text the tool writes for a missing value, such as NaN, read as missing.' },

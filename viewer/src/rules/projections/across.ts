@@ -5,7 +5,7 @@ import { tableOf } from './tables.js'
 // The tabs across rules: every rule level, every layer, every column, optionally of one level.
 // A level with several declarations gives one row per declaration, named in selected_by.
 
-const LEVEL_ORDER = ['peptidoform_fragment', 'peptidoform_ion', 'peptidoform', 'peptide', 'protein']
+const LEVEL_ORDER = ['peptidoform_fragment', 'peptidoform_ion', 'peptidoform', 'peptide', 'protein', 'gene']
 
 const WHERE = ['software', 'versions', 'rule', 'level', 'selected_by']
 
@@ -25,6 +25,7 @@ export const LEVEL_FIELDS: Field[] = [
   { name: 'abundance_layers', description: 'Every layer with the abundance role.' },
   { name: 'protein_assignment', description: 'The column with the protein_assignment role: the protein group.' },
   { name: 'fasta_accessions', description: 'The column with the fasta_accessions role: the accessions apb-fasta looks up.' },
+  { name: 'gene_assignment', description: 'The column with the gene_assignment role: the gene group, which links a feature to the gene level.' },
   { name: 'layers', description: 'How many quantity layers the level declares.' },
   { name: 'var_columns', description: 'How many feature-table columns the level declares.' },
   { name: 'repeated_cells', description: 'How rows that repeat one sample and feature become one cell: error, same, sum or keep_best.' },
@@ -80,6 +81,7 @@ export function levelRows (rules: RuleDocument[], levels: RuleLevel[]): Table {
       abundance_layers: layers.filter(layer => hasRole(layer, 'abundance')).map(layer => layer.name ?? null),
       protein_assignment: columns.filter(column => hasRole(column, 'protein_assignment')).map(column => column.name ?? null),
       fasta_accessions: columns.filter(column => hasRole(column, 'fasta_accessions')).map(column => column.name ?? null),
+      gene_assignment: columns.filter(column => hasRole(column, 'gene_assignment')).map(column => column.name ?? null),
       layers: layers.length,
       var_columns: columns.length,
       repeated_cells: record(measurements.repeated_cells).mode ?? null,
