@@ -86,6 +86,25 @@ test('a level with two declarations lists only where they differ', () => {
   assert.deepEqual(variants.rows, [{ setting: 'measurements.primary_layer', DDA: 'Ms1', 'DIA, unknown': 'Precursor' }])
 })
 
+test('entries of one name, one per version, keep their own rows and variant paths', () => {
+  const tagged = newest => {
+    const tagged = declaration('Ms1')
+    tagged.columns.var.push(
+      { name: 'Lead', source: 'Lead Proteins', version: '^1\\.', type: 'string', roles: [], note: null },
+      { name: 'Lead', source: newest, version: '^2\\.', type: 'string', roles: [], note: null })
+    return tagged
+  }
+  const variants = variantRows([
+    { selected_by: of('DDA'), declaration: tagged('Leading proteins') },
+    { selected_by: of('DIA'), declaration: tagged('Leading protein') }
+  ])
+  assert.deepEqual(variants.rows.map(row => row.setting), ['columns.var[Lead ^2\\.].source'])
+  const page = levelPage({ rule: 'tool/v2/rules.json', level: 'protein', declarations: [{ selected_by: ANY, declaration: tagged('Leading proteins') }] })
+  const [columns] = page.find(section => section.id === 'var').tables
+  assert.deepEqual(columns.columns.map(column => column.field).slice(0, 3), ['name', 'source', 'version'])
+  assert.deepEqual(columns.rows.filter(row => row.name === 'Lead').map(row => row.version), ['^1\\.', '^2\\.'])
+})
+
 test('a level page has one tab per table: settings, variants, layers with the primary marked, columns, map, stored JSON', () => {
   const page = levelPage(LEVELS[1])
   assert.deepEqual(page.map(section => [section.id, section.label]), [

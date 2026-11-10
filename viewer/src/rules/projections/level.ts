@@ -10,13 +10,14 @@ const COMBINE_CHARGE_STATES = [true, false, null]
 // Shown in their own tables, or by the rule list and level buttons, not as settings.
 const OWN_TABLES = new Set(['columns', 'modification_map', 'measurements.layers', 'schema_version', 'file_version', 'software_name', 'software_version_pattern', 'quantification_level'])
 
-export const LAYER_COLUMNS = ['name', 'primary', 'source', 'roles', 'type', 'encoding_mode', 'required', 'missing_values', 'missing_tokens', 'categories', 'value_pattern', 'note']
-export const COLUMN_COLUMNS = ['name', 'source', 'inputs', 'how', 'type', 'required', 'roles', 'per_feature', 'separator', 'missing_tokens', 'note']
+export const LAYER_COLUMNS = ['name', 'primary', 'source', 'version', 'roles', 'type', 'encoding_mode', 'required', 'missing_values', 'missing_tokens', 'categories', 'value_pattern', 'note']
+export const COLUMN_COLUMNS = ['name', 'source', 'version', 'inputs', 'how', 'type', 'required', 'roles', 'per_feature', 'separator', 'missing_tokens', 'note']
 
 export const LAYER_FIELDS: Field[] = [
   { name: 'name', description: 'The layer\'s name in the APB result.' },
   { name: 'primary', description: 'primary: the level\'s primary abundance, X; sample: the layer that decides which samples a feature was seen in.' },
   { name: 'source', description: 'The column the layer reads; in a wide table, a pattern whose sample group names the sample of each column.' },
+  { name: 'version', description: 'The software versions whose reports carry the source, a pattern; layers of one name read one column the tool spells differently by version.' },
   { name: 'roles', description: 'Roles the rule declares: abundance marks a layer a consumer may use as abundance.' },
   { name: 'type', description: 'The value type: number, integer, string or boolean.' },
   { name: 'encoding_mode', description: 'numeric: values as read; factor: text categories stored as integer codes.' },
@@ -31,6 +32,7 @@ export const LAYER_FIELDS: Field[] = [
 export const COLUMN_FIELDS: Field[] = [
   { name: 'name', description: 'The column\'s name in the APB result.' },
   { name: 'source', description: 'The report column it reads.' },
+  { name: 'version', description: 'The software versions whose reports carry the source, a pattern; columns of one name read one column the tool spells differently by version.' },
   { name: 'inputs', description: 'For a computed column, the columns it is computed from.' },
   { name: 'how', description: 'For a computed column, the computation, such as proforma_sequence.' },
   { name: 'type', description: 'The value type: string, number, integer or boolean.' },
@@ -105,15 +107,20 @@ export function modificationRows (declaration: Record<string, Value>): Row[] {
   return Object.entries(tokens).map(([token, accession]): Row => ({ token, accession }))
 }
 
-// Every leaf of a value by path; list items with a name are keyed by it, so a layer keeps its path.
+// Every leaf of a value by path; list items with a name are keyed by it, and by their version where
+// entries of one name read one column per version, so a layer keeps its path.
 function leaves (value: Value, path: string, out: Map<string, string>): void {
   if (Array.isArray(value) && value.length > 0 && value.every(item => isRecord(item) && typeof item.name === 'string')) {
-    for (const item of value) leaves(item, `${path}[${String((item as Record<string, Value>).name)}]`, out)
+    for (const item of value) leaves(item, `${path}[${itemKey(item as Record<string, Value>)}]`, out)
   } else if (isRecord(value) && Object.keys(value).length > 0) {
     for (const [key, item] of Object.entries(value)) leaves(item, path === '' ? key : `${path}.${key}`, out)
   } else {
     out.set(path, cellText(value))
   }
+}
+
+function itemKey (item: Record<string, Value>): string {
+  return typeof item.version === 'string' ? `${String(item.name)} ${item.version}` : String(item.name)
 }
 
 /** The settings in which a level's declarations differ, one column per declaration named by the
