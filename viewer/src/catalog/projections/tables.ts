@@ -72,7 +72,7 @@ export function parseResources (datapackage: unknown): Resource[] {
   })
 }
 
-/** Where a field of a level lives, as entry ids name it. */
+/** The slots a field of a level lives in, as entry ids name them. */
 export const LOCATIONS = ['obs', 'var', 'layers', 'varm']
 
 // APB's levels from protein down; a level not listed follows them in first-seen order.
@@ -88,16 +88,16 @@ export function levelsOf (rows: Row[]): string[] {
   return named.sort((one, other) => rank(one) - rank(other))
 }
 
-/** A row's level and location: its own columns, or for a catalog.csv row the two halves of its
- * location, `<level>/<attribute>`. */
+/** A row's level and slot: its own `level` and `slot` columns, or for a catalog.csv or terms.csv
+ * row the two halves of its location, `<level>/<slot>`. */
 function placeOf (row: Row): { level: string; location: string } {
-  if ('level' in row) return { level: cellText(row.level), location: cellText(row.location) }
+  if ('level' in row) return { level: cellText(row.level), location: cellText(row.slot) }
   const [level = '', location = ''] = cellText(row.location).split('/')
   return { level, location }
 }
 
 /** The rows a filter chooses: of its set, on its level or on every level (`*`), in its
- * location; an empty choice keeps every row. */
+ * slot; an empty choice keeps every row. */
 export function chosen (rows: Row[], filter: Filter): Row[] {
   return rows.filter(row => {
     const { level, location } = placeOf(row)

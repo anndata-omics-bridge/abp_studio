@@ -239,10 +239,10 @@ const fragments = await read_parsed_levels(result('diann_v1_7-peptidoform_fragme
 // Its whole var table: every column, the vendor's own included.
 fragments.levels.get('peptidoform_fragment').var()`
   },
-  { category: 'Sets', label: 'The catalogue sets', code: '// Every set the bundle holds, with its prefix and what it is for.\ncatalogues(bundle)' },
+  { category: 'Sets', label: 'The sets', code: '// Every set the bundle holds, with its prefix and what it is for.\nsets(bundle)' },
   {
     category: 'Lookup', label: 'What DIA-NN 2.2 calls each abundance term on ions',
-    code: `// No data needed: a Catalog answers from the rules alone, by software, version and set.
+    code: `// No data needed: a Catalog answers from the rules alone, by software, software version and set.
 const ion = new Catalog(bundle, 'DIA-NN', '2.2.0', 'abundance_alpha').levels.get('peptidoform_ion')
 // The terms the ion level answers, and the column behind two of them.
 return {
@@ -292,6 +292,6 @@ return {
   },
   { category: 'Fields', label: 'Every field MaxQuant 2.0 writes, by term', code: "// One row per MaxQuant 2.0 field the abundance set maps, with its term.\nnew Catalog(bundle, 'MaxQuant', '2.0.1', 'abundance_alpha').fields()" },
   { category: 'Coverage', label: 'What each software version lacks', code: "// The software versions missing a required or recommended abundance term.\nrule_coverage(bundle, 'abundance_alpha').filter(row => row.verdict !== 'pass')" },
-  { category: 'Tables', label: 'One set as the long table', code: "// The chromatography set as one table: a row per field and qualifier.\ncatalogue_table(bundle, 'chromatography_alpha')" },
+  { category: 'Tables', label: 'One set as the long table', code: "// The chromatography set as one table: a row per field and qualifier.\ncatalog_table(bundle, 'chromatography_alpha')" },
   { category: 'Editor', label: 'The editor\'s tables: their states and problems', code: '// What the Editor tab holds now: each table\'s state, then its problems.\nprint(editor.states())\neditor.problems()' }
 ]

@@ -52,7 +52,7 @@ export const READ_ONLY = ['versions']
 export const DERIVED: Record<string, string[]> = { catalog: ['kind', 'fixed', 'psi_ms'] }
 
 /** The columns one APB2 rule level writes, from the rules bundle's levels.json, and for each
- * name, as `<key>/<column>`, the vendor column it is read from and the rule's note on it. */
+ * name, as `<layer or table>/<column>`, the vendor column it is read from and the rule's note on it. */
 export interface RuleColumns {
   software: string
   pattern: string
@@ -113,12 +113,12 @@ const UNKNOWN_DEFINITION = 'The reviewer could not establish this.'
 
 // A qualifier with values defines the value `unknown`, which a reviewer gives where the evidence
 // does not establish one; a qualifier declared alone is being planned and needs none. Kinds have
-// no `unknown`: a field whose meaning is not established is not catalogued.
+// no `unknown`: a field whose meaning is not established is not cataloged.
 const NEEDED: Needed[] = [
   { table: 'qualifiers', target: 'qualifier_values', columns: ['set', 'qualifier'], match: { value: 'unknown' }, fill: { definition: UNKNOWN_DEFINITION }, message: 'this qualifier has values, none of them unknown; a qualifier with values defines it' }
 ]
 
-// A location is `<level>/<attribute>`; `*` is every level, which app and annotation entries use.
+// A location is `<level>/<slot>`; `*` is every level, which app and annotation entries use.
 const LEVELS = ['protein', 'peptide', 'peptidoform', 'peptidoform_ion', 'peptidoform_fragment', '*']
 const ATTRIBUTES = ['layers', 'var', 'obs', 'varm']
 
@@ -258,9 +258,9 @@ export class CatalogDraft {
     this.edited = true
   }
 
-  /** The rule levels a catalog.csv row's software, version and level name; `*` names every one. */
+  /** The rule levels a catalog.csv row's source, version and level name; `*` names every one. */
   #declared (cells: Cells): RuleColumns[] {
-    const [software = '', version = ''] = (cells.software ?? '').split('/')
+    const [software = '', version = ''] = (cells.source ?? '').split('/')
     const level = (cells.location ?? '').split('/')[0] ?? ''
     const patterns = new Set(this.rows('versions')
       .filter(row => row.cells.software === software && (version === '*' || row.cells.version === version))
@@ -299,16 +299,16 @@ export class CatalogDraft {
 
   /** What a cell may hold, for a dropdown: true or false for a boolean; the values a pattern
    * lists; or, for a column of foreign keys, the values the referenced tables hold for the row's
-   * other key fields filled so far. A `software` column also offers each `versions.csv` label and
+   * other key fields filled so far. A `source` column also offers each `versions.csv` label and
    * `*`. Null for free text. */
   choices (table: string, cells: Cells, column: string): string[] | null {
     const schema = this.schema(table)
     if (column === 'set' && table !== 'sets') return this.sets()
     if (table === 'catalog' && column === 'name') return this.#names(cells)
     if (table === 'catalog' && column === 'evidence_url') {
-      const source = (cells.software ?? '').split('/')[0] ?? ''
+      const source = (cells.source ?? '').split('/')[0] ?? ''
       return sortText(this.rows('catalog')
-        .filter(row => source === '' || (row.cells.software ?? '').split('/')[0] === source)
+        .filter(row => source === '' || (row.cells.source ?? '').split('/')[0] === source)
         .map(row => row.cells.evidence_url ?? '')
         .filter(url => url !== ''))
     }
@@ -330,10 +330,10 @@ export class CatalogDraft {
     }
     const [first, ...others] = answers
     const found = first === undefined ? null : [...first].filter(value => others.every(other => other.has(value)))
-    if (column === 'software' && table !== 'versions') {
+    if (column === 'source') {
       const labels = this.rows('versions').flatMap(row => [`${row.cells.software ?? ''}/${row.cells.version ?? ''}`, `${row.cells.software ?? ''}/*`])
       const apps = this.rows('producers').map(row => `${row.cells.producer ?? ''}/*`)
-      return sortText([...labels, ...apps, ...this.rows(table).map(row => row.cells.software ?? '')].filter(label => label !== ''))
+      return sortText([...labels, ...apps, ...this.rows(table).map(row => row.cells.source ?? '')].filter(label => label !== ''))
     }
     if (column === 'location' && found === null) {
       return LEVELS.flatMap(level => ATTRIBUTES.map(attribute => `${level}/${attribute}`))
@@ -341,8 +341,8 @@ export class CatalogDraft {
     return found === null ? null : sortText(found)
   }
 
-  /** The names a catalog.csv row may map, as `<key>/<column>`: the layers, or the obs or var
-   * columns, APB2's rules write for the row's software, version and level (`*` every version or
+  /** The names a catalog.csv row may map, as `<layer or table>/<column>`: the layers, or the obs or var
+   * columns, APB2's rules write for the row's source, version and level (`*` every version or
    * level), and the names other rows already map there. */
   #names (cells: Cells): string[] {
     const attribute = (cells.location ?? '').split('/')[1] ?? ''
@@ -350,7 +350,7 @@ export class CatalogDraft {
     const written = attribute === 'layers'
       ? declared.flatMap(rule => rule.layers.map(layer => `${layer}/-`))
       : attribute === 'var' || attribute === 'obs' ? declared.flatMap(rule => rule[attribute].map(column => `-/${column}`)) : []
-    const mapped = this.rows('catalog').filter(row => row.cells.software === cells.software && row.cells.location === cells.location).map(row => row.cells.name ?? '')
+    const mapped = this.rows('catalog').filter(row => row.cells.source === cells.source && row.cells.location === cells.location).map(row => row.cells.name ?? '')
     return sortText([...written, ...mapped].filter(name => name !== ''))
   }
 

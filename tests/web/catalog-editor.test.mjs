@@ -22,8 +22,8 @@ const DATAPACKAGE = {
       name: 'catalog',
       path: 'catalog.csv',
       schema: {
-        fields: [{ name: 'set' }, { name: 'software' }, { name: 'location' }, { name: 'key' }, { name: 'fixed', type: 'boolean' }, { name: 'basis' }],
-        primaryKey: ['set', 'software', 'location', 'key'],
+        fields: [{ name: 'set' }, { name: 'source' }, { name: 'location' }, { name: 'key' }, { name: 'fixed', type: 'boolean' }, { name: 'basis' }],
+        primaryKey: ['set', 'source', 'location', 'key'],
         foreignKeys: [{ fields: ['set', 'key', 'location'], reference: { resource: 'terms', fields: ['set', 'key', 'location'] } }]
       }
     },
@@ -41,7 +41,7 @@ function draft () {
       { set: 'rt', location: 'peptidoform_ion/layers', key: 'retention_time', kind: 'retention_time', requirement: 'required' }
     ]],
     ['kinds', [{ set: 'abundance', kind: 'intensity', definition: 'A signal.' }, { set: 'abundance', kind: 'ibaq', definition: 'iBAQ.' }, { set: 'rt', kind: 'retention_time', definition: 'Where it eluted.' }, { set: 'abundance', kind: 'unknown', definition: 'Not established.' }, { set: 'rt', kind: 'unknown', definition: 'Not established.' }]],
-    ['catalog', [{ set: 'abundance', software: 'DIA-NN/*', location: 'peptidoform_ion/layers', key: 'intensity', fixed: 'true', basis: 'DIA-NN: "Quantity", non-normalised' }]],
+    ['catalog', [{ set: 'abundance', source: 'DIA-NN/*', location: 'peptidoform_ion/layers', key: 'intensity', fixed: 'true', basis: 'DIA-NN: "Quantity", non-normalised' }]],
     ['versions', [{ software: 'DIA-NN', version: '2.x' }]]
   ]))
 }
@@ -59,13 +59,13 @@ test('a foreign-key cell offers what the referenced table holds for the row\'s o
   assert.deepEqual(catalog.choices('terms', { set: 'rt' }, 'kind'), ['retention_time', 'unknown'])
 })
 
-test('a set, a boolean, a listing pattern and a software cell offer their values; free text offers none', () => {
+test('a set, a boolean, a listing pattern and a source cell offer their values; free text offers none', () => {
   const catalog = draft()
   catalog.update('sets', catalog.add('sets').id, 'set', 'peak_qc')
   assert.deepEqual(catalog.choices('terms', {}, 'set'), ['abundance', 'rt', 'peak_qc'])
   assert.deepEqual(catalog.choices('catalog', {}, 'fixed'), ['true', 'false'])
   assert.deepEqual(catalog.choices('terms', {}, 'requirement'), ['required', 'recommended', 'optional'])
-  assert.deepEqual(catalog.choices('catalog', {}, 'software'), ['DIA-NN/*', 'DIA-NN/2.x'])
+  assert.deepEqual(catalog.choices('catalog', {}, 'source'), ['DIA-NN/*', 'DIA-NN/2.x'])
   assert.equal(catalog.choices('catalog', {}, 'basis'), null)
 })
 
@@ -143,7 +143,7 @@ test('a unique column refuses a value another row holds, and key columns carry t
   assert.deepEqual(catalog.problems().map(problem => `${problem.table}.${problem.column} ${problem.level}: ${problem.message}`), [
     "sets.prefix broken: 'a' is already the prefix of another row; prefix is unique"
   ])
-  assert.deepEqual(catalog.schema('catalog').marks, { set: '[K] [FK]', software: '[K]', location: '[K] [FK]', key: '[K] [FK]' })
+  assert.deepEqual(catalog.schema('catalog').marks, { set: '[K] [FK]', source: '[K]', location: '[K] [FK]', key: '[K] [FK]' })
   assert.deepEqual(catalog.schema('sets').marks, { set: '[PK]' })
 })
 
@@ -169,8 +169,8 @@ const MAPPING = {
       name: 'catalog',
       path: 'catalog.csv',
       schema: {
-        fields: [{ name: 'set' }, { name: 'software' }, { name: 'location' }, { name: 'name' }, { name: 'key' }, { name: 'kind' }, { name: 'qualifier' }, { name: 'value' }, { name: 'fixed', type: 'boolean' }, { name: 'psi_ms' }, { name: 'basis' }, { name: 'evidence_url' }],
-        primaryKey: ['set', 'software', 'location', 'name', 'key', 'qualifier'],
+        fields: [{ name: 'set' }, { name: 'source' }, { name: 'location' }, { name: 'name' }, { name: 'key' }, { name: 'kind' }, { name: 'qualifier' }, { name: 'value' }, { name: 'fixed', type: 'boolean' }, { name: 'psi_ms' }, { name: 'basis' }, { name: 'evidence_url' }],
+        primaryKey: ['set', 'source', 'location', 'name', 'key', 'qualifier'],
         foreignKeys: [{ fields: ['set', 'key', 'location'], reference: { resource: 'terms', fields: ['set', 'key', 'location'] } }]
       }
     },
@@ -200,10 +200,10 @@ test('a catalog row names what APB2 writes there, and takes kind, PSI-MS terms a
     ['versions', [{ software: 'DIA-NN', version: '2.x', software_version_pattern: '^2\\.' }]]
   ]))
   draft.rules = parseRuleLevels(RULES)
-  assert.deepEqual(draft.choices('catalog', { software: 'DIA-NN/2.x', location: 'protein/layers' }, 'name'), ['PG_MaxLFQ/-', 'PG_Q_Value/-'])
-  assert.deepEqual(draft.choices('catalog', { software: 'DIA-NN/*', location: 'protein/var' }, 'name'), ['-/Genes', '-/ProForma_protein'])
+  assert.deepEqual(draft.choices('catalog', { source: 'DIA-NN/2.x', location: 'protein/layers' }, 'name'), ['PG_MaxLFQ/-', 'PG_Q_Value/-'])
+  assert.deepEqual(draft.choices('catalog', { source: 'DIA-NN/*', location: 'protein/var' }, 'name'), ['-/Genes', '-/ProForma_protein'])
   const row = draft.add('catalog', 'a')
-  for (const [column, value] of Object.entries({ software: 'DIA-NN/2.x', location: 'protein/layers', name: 'PG_MaxLFQ/-', key: 'intensity_norm_settings', qualifier: 'normalization', value: 'run_setting' })) {
+  for (const [column, value] of Object.entries({ source: 'DIA-NN/2.x', location: 'protein/layers', name: 'PG_MaxLFQ/-', key: 'intensity_norm_settings', qualifier: 'normalization', value: 'run_setting' })) {
     draft.update('catalog', row.id, column, value)
   }
   draft.update('catalog', row.id, 'basis', 'PG.MaxLFQ: the protein group MaxLFQ quantity.')
@@ -217,17 +217,17 @@ test('a catalog row names what APB2 writes there, and takes kind, PSI-MS terms a
 test('naming a field starts its basis from the rule, which stays incomplete until it says what the value means', () => {
   const draft = new CatalogDraft(parseSchemas(MAPPING), new Map([
     ['terms', [{ set: 'a', location: 'protein/layers', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', psi_ms: '' }]],
-    ['catalog', [{ set: 'a', software: 'DIA-NN/*', location: 'protein/layers', name: 'PG_MaxLFQ/-', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', fixed: 'true', psi_ms: '', basis: 'PG.MaxLFQ: MaxLFQ.', evidence_url: 'https://github.com/vdemichev/DiaNN' }]],
+    ['catalog', [{ set: 'a', source: 'DIA-NN/*', location: 'protein/layers', name: 'PG_MaxLFQ/-', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', fixed: 'true', psi_ms: '', basis: 'PG.MaxLFQ: MaxLFQ.', evidence_url: 'https://github.com/vdemichev/DiaNN' }]],
     ['versions', [{ software: 'DIA-NN', version: '2.x', software_version_pattern: '^2\\.' }]]
   ]))
   draft.rules = parseRuleLevels(RULES)
   const row = draft.add('catalog', 'a')
-  for (const [column, value] of Object.entries({ software: 'DIA-NN/2.x', location: 'protein/layers', name: 'PG_Q_Value/-' })) draft.update('catalog', row.id, column, value)
+  for (const [column, value] of Object.entries({ source: 'DIA-NN/2.x', location: 'protein/layers', name: 'PG_Q_Value/-' })) draft.update('catalog', row.id, column, value)
   assert.equal(row.cells.basis, 'PG.Q.Value (Run-specific):')
   assert.deepEqual(draft.problems().filter(problem => problem.column === 'basis').map(problem => problem.level), ['incomplete'])
   draft.update('catalog', row.id, 'basis', 'PG.Q.Value (Run-specific): the protein group q-value in its run.')
   assert.deepEqual(draft.problems().filter(problem => problem.column === 'basis'), [])
-  assert.deepEqual(draft.choices('catalog', { software: 'DIA-NN/2.x' }, 'evidence_url'), ['https://github.com/vdemichev/DiaNN'])
-  assert.deepEqual(draft.choices('catalog', { software: 'MaxQuant/*' }, 'evidence_url'), [])
+  assert.deepEqual(draft.choices('catalog', { source: 'DIA-NN/2.x' }, 'evidence_url'), ['https://github.com/vdemichev/DiaNN'])
+  assert.deepEqual(draft.choices('catalog', { source: 'MaxQuant/*' }, 'evidence_url'), [])
   assert.equal(basisStart({ source: '^(?P<sample>.+)$', note: '' }), '')
 })

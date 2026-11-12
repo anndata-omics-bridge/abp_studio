@@ -2,11 +2,11 @@ import type { Row, Table } from '../types.js'
 import { cellText } from './tables.js'
 
 // The software versions APB2 supports: each row of versions.csv with every level the
-// catalogue_table rows name for it, as the catalog derives them, joined with the rows that
+// catalog_table rows name for it, as the catalog derives them, joined with the rows that
 // name the same software, pattern and level.
 
 // What the chosen software version and level already say about each of its entries.
-const CHOSEN = ['source', 'software_version_pattern', 'level']
+const CHOSEN = ['source', 'version', 'software_version_pattern', 'level']
 
 function names (entry: Row, level: Row): boolean {
   return entry.source === level.software &&

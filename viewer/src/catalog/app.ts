@@ -1,5 +1,5 @@
 import './app.css'
-import { Bundle, Catalog, catalogue_table, catalogues, DataCatalog, MissingRequiredField, read_parsed_levels, rule_coverage, UnresolvedField } from '../shared/apb-catalog.js'
+import { Bundle, Catalog, catalog_table, DataCatalog, MissingRequiredField, read_parsed_levels, rule_coverage, sets, UnresolvedField } from '../shared/apb-catalog.js'
 import type { Tabulator } from '../shared/tabulator.js'
 import { appFields, COVERAGE_FIELDS, coverage, keyColumns } from './projections/coverage.js'
 import { softwareList, versionEntries } from './projections/software.js'
@@ -80,8 +80,8 @@ class BundleViews {
 
   constructor (bundle: Bundle) {
     this.bundle = bundle
-    this.sets = catalogues(bundle).map(row => cellText(row.catalogue))
-    this.resources = parseResources(bundle.json('catalogues', 'datapackage.json'))
+    this.sets = sets(bundle).map(row => cellText(row.set))
+    this.resources = parseResources(bundle.json('data', 'datapackage.json'))
   }
 
   get tabs (): Tab[] {
@@ -109,7 +109,7 @@ class BundleViews {
    * editor's draft. read_parsed_levels and DataCatalog read the converted results resultsScope
    * names. */
   get scope (): Record<string, unknown> {
-    return { bundle: this.bundle, Bundle, Catalog, DataCatalog, read_parsed_levels, catalogues, rule_coverage, catalogue_table, UnresolvedField, MissingRequiredField, editor: this.draft }
+    return { bundle: this.bundle, Bundle, Catalog, DataCatalog, read_parsed_levels, sets, rule_coverage, catalog_table, UnresolvedField, MissingRequiredField, editor: this.draft }
   }
 
   #draft: CatalogDraft | null = null
@@ -117,8 +117,8 @@ class BundleViews {
   /** The editor's draft: the stored tables as loaded, then as edited. */
   get draft (): CatalogDraft {
     this.#draft ??= new CatalogDraft(
-      parseSchemas(this.bundle.json('catalogues', 'datapackage.json')),
-      new Map(this.resources.map(({ name, path }) => [name, this.bundle.csv('catalogues', path).rows as Cells[]]))
+      parseSchemas(this.bundle.json('data', 'datapackage.json')),
+      new Map(this.resources.map(({ name, path }) => [name, this.bundle.csv('data', path).rows as Cells[]]))
     )
     return this.#draft
   }
@@ -126,7 +126,7 @@ class BundleViews {
   /** Save every set's tables with datapackage.json, or one set's tables, as a zip. */
   save (set: string): void {
     const files = this.draft.files(set)
-    if (set === '') files.push({ name: 'datapackage.json', text: `${JSON.stringify(this.bundle.json('catalogues', 'datapackage.json'), null, 2)}\n` })
+    if (set === '') files.push({ name: 'datapackage.json', text: `${JSON.stringify(this.bundle.json('data', 'datapackage.json'), null, 2)}\n` })
     download(set === '' ? 'apb-catalog-tables.zip' : `apb-catalog-${set}.zip`, files)
   }
 
@@ -141,16 +141,16 @@ class BundleViews {
     return this.#coverage
   }
 
-  /** catalogue_table over every set: one row per entry and software version it applies to. */
+  /** catalog_table over every set: one row per entry and software version it applies to. */
   get long (): Table {
-    this.#long ??= tableOf(catalogue_table(this.bundle))
+    this.#long ??= tableOf(catalog_table(this.bundle))
     return this.#long
   }
 
   views (tab: string, filter: Filter): TableView[] {
     switch (tab) {
       case 'overview': return [
-        tableView('sets', 'Catalogue sets', 'Each set of the bundle: its purpose, its users and how many entries it holds.', tableOf(catalogues(this.bundle))),
+        tableView('sets', 'Sets', 'Each set of the bundle: its purpose, its users and how many entries it holds.', tableOf(sets(this.bundle))),
         tableView('bundle', 'Bundle', this.bundle.url.href, {
           columns: ['key', 'value'],
           rows: Object.entries(this.bundle.manifest).map(([key, value]) => ({ key, value }))
@@ -159,11 +159,11 @@ class BundleViews {
       case 'meanings': return this.meanings(filter)
       case 'coverage': return [tableView('coverage', 'Coverage: what a converted result lacks', 'A gap report. Each row is one software version and level, checked against what its set requires (requirements.csv, per level and slot) and naming the keys it has no column for. Read Spectronaut, 19–20, peptidoform_fragment, warn, recommended peptidoform_fragment in var as: a Spectronaut 19–20 result, on its fragment level, has no var column for the key peptidoform_fragment, which apb recommends. Only sets with requirements appear, today apb and abundance; the columns a result does have are in Meanings.', coverage(chosen(this.coverage, filter)), COVERAGE_FIELDS)]
       case 'long': return [tableView('long', 'Long table', 'One row per entry and software version it applies to, as apb-catalog table prints it.', { columns: this.long.columns, rows: chosen(this.long.rows, filter) })]
-      case 'software': return [tableView('software', 'Software versions', 'The software versions APB2 supports, from versions.csv, one row per level. entries: how many catalogued columns that version writes on that level, in the chosen set and location; click a row to list them.', this.software(filter))]
+      case 'software': return [tableView('software', 'Software versions', 'The software versions APB2 supports, from versions.csv, one row per level. entries: how many cataloged columns that version writes on that level, in the chosen set and slot; click a row to list them.', this.software(filter))]
     }
     const resource = this.resources.find(({ name }) => tab === `table:${name}`)
     if (!resource) throw new Error(`No catalog tab ${tab}`)
-    return [storedView(resource, this.bundle.csv('catalogues', resource.path), filter)]
+    return [storedView(resource, this.bundle.csv('data', resource.path), filter)]
   }
 
   /** One set's answer to "what does each software version call each key?", and the fields its apps write. */
@@ -171,7 +171,7 @@ class BundleViews {
     const { set } = filter
     const rows = chosen(this.coverage, filter)
     const { table, keys } = keyColumns(rows)
-    const views = [tableView(`meanings:${set}`, `${set}: column per key`, 'What each software version calls each key of the set, on each level. Empty: not catalogued; missing required, recommended or optional: asked for by the set but not catalogued.', table, keys)]
+    const views = [tableView(`meanings:${set}`, `${set}: column per key`, 'What each software version calls each key of the set, on each level. Empty: not cataloged; missing required, recommended or optional: asked for by the set but not cataloged.', table, keys)]
     const apps = appFields(rows)
     if (apps.rows.length > 0) views.push(tableView(`apps:${set}`, `${set}: written by apps`, 'Fields an app writes after conversion, the same for every software version; they exist once the app has run.', apps))
     return views
@@ -180,7 +180,7 @@ class BundleViews {
   /** Each version's levels, the chosen level only; entries counts what the whole filter chooses. */
   software (filter: Filter): Table {
     const levels = chosen(this.long.rows, { set: '', level: filter.level, location: '' })
-    return softwareList(this.bundle.csv('catalogues', 'versions.csv'), levels, chosen(this.long.rows, filter))
+    return softwareList(this.bundle.csv('data', 'versions.csv'), levels, chosen(this.long.rows, filter))
   }
 
   detail (level: Row, filter: Filter): TableView[] {

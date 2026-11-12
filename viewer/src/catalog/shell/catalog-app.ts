@@ -14,14 +14,14 @@ const GROUPS: Array<{ group: TabGroup; label: string; description: string }> = [
   {
     group: 'views',
     label: 'Catalog Views',
-    description: 'Computed from the catalog tables, one question each. Overview: which catalogue sets are there? ' +
+    description: 'Computed from the catalog tables, one question each. Overview: which sets are there? ' +
       'Meanings: what does each software version call each key? Coverage: what does a converted result lack? ' +
-      'Long table: which entries apply to which software version? Software: which versions does APB2 convert, and which catalogued columns does each write?'
+      'Long table: which entries apply to which software version? Software: which versions does APB2 convert, and which cataloged columns does each write?'
   },
   {
     group: 'editor',
     label: 'Editor (demo)',
-    description: 'A demo, not for production: edit the catalog tables in this browser. Start with sets, name your catalog, then add its terms, ' +
+    description: 'A demo, not for production: edit the catalog tables in this browser. Start with sets, name your set, then add its terms, ' +
       'kinds and qualifiers, and map the terms in catalog. Foreign-key cells offer the values the referenced tables hold; red cells break a key. ' +
       'Edits stay in this page until you save every set, or the chosen set, as a zip of CSV tables; one set\'s zip is a plugin package\'s folder.'
   },
@@ -116,14 +116,14 @@ export class CatalogApp extends LitElement {
     `
   }
 
-  /** The pickers a tab takes: catalogue set, level and location. */
+  /** The pickers a tab takes: set, level and location. */
   filters (tab: Tab): TemplateResult {
     const shown = this.filterFor(tab)
     return html`
       <aside class="filters">
-        ${tab.sets === 'none' ? '' : this.picker('Catalogue set', tab.sets === 'any' ? 'every set' : null, this.sets, shown.set, set => { this.choose({ set }) })}
+        ${tab.sets === 'none' ? '' : this.picker('Set', tab.sets === 'any' ? 'every set' : null, this.sets, shown.set, set => { this.choose({ set }) })}
         ${tab.levels ? this.picker('Level', 'every level', this.levels, shown.level, level => { this.choose({ level }) }) : ''}
-        ${tab.locations ? this.picker('Location', 'every location', this.locations, shown.location, location => { this.choose({ location }) }) : ''}
+        ${tab.locations ? this.picker('Slot', 'every slot', this.locations, shown.location, location => { this.choose({ location }) }) : ''}
       </aside>
     `
   }

@@ -26,10 +26,10 @@ export type TabGroup = 'views' | 'tables' | 'editor' | 'console'
 /** How far an edited table is from loading: every key answered and every required cell filled,
  * a required description missing, or a key broken. */
 export type TableState = 'complete' | 'incomplete' | 'broken'
-/** How a tab picks catalogue sets: not at all, one set, or one or every set. */
+/** How a tab picks sets: not at all, one set, or one or every set. */
 export type SetPicker = 'none' | 'one' | 'any'
 
-/** One tab, and whether its rows belong to catalogue sets, levels and locations, so it shows
+/** One tab, and whether its rows belong to sets, levels and locations, so it shows
  * those pickers. */
 export interface Tab { id: string; label: string; group: TabGroup; sets: SetPicker; levels: boolean; locations: boolean; state?: TableState }
 

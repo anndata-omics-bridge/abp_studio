@@ -163,7 +163,7 @@ section.view p {
   padding: 2px 4px;
 }
 
-/* The pickers, catalogue set, level and location, as tabs down the left of the open tab;
+/* The pickers, set, level and location, as tabs down the left of the open tab;
    wrapping rows above it when narrow. */
 .workspace {
   display: flex;

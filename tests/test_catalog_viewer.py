@@ -14,14 +14,14 @@ from apb_studio.catalog_viewer.publish import publish_site, require_bundle
 from apb_studio.fixture_store import Store
 from apb_studio.fixture_viewer import server
 
-MANIFEST = '{"bundle_format": 2, "files": ["catalogues/entries.csv"]}'
+MANIFEST = '{"bundle_format": 2, "files": ["data/entries.csv"]}'
 
 
 def _bundle(tmp_path: Path) -> Path:
     bundle = tmp_path / "bundle"
-    (bundle / "catalogues").mkdir(parents=True)
+    (bundle / "data").mkdir(parents=True)
     (bundle / "manifest.json").write_text(MANIFEST, encoding="utf-8")
-    (bundle / "catalogues" / "entries.csv").write_text("set,entry_id\napb,a\n", encoding="utf-8")
+    (bundle / "data" / "entries.csv").write_text("set,entry_id\napb,a\n", encoding="utf-8")
     return bundle
 
 
@@ -45,7 +45,7 @@ def test_the_server_serves_the_viewer_at_root_and_the_bundle_under_data(tmp_path
             assert b"<catalog-app>" in response.read()
         with urlopen(f"{base}/data/manifest.json") as response:
             assert response.read().decode() == MANIFEST
-        with urlopen(f"{base}/data/catalogues/entries.csv") as response:
+        with urlopen(f"{base}/data/data/entries.csv") as response:
             assert response.read() == b"set,entry_id\napb,a\n"
     finally:
         httpd.shutdown()
@@ -60,7 +60,7 @@ def test_publish_copies_the_viewer_and_the_bundle_into_data(tmp_path: Path) -> N
     assert (site / "index.html").is_file()
     assert (site / "assets" / "catalog-a1.js").is_file()
     assert (site / "data" / "manifest.json").read_text(encoding="utf-8") == MANIFEST
-    assert (site / "data" / "catalogues" / "entries.csv").is_file()
+    assert (site / "data" / "data" / "entries.csv").is_file()
     with pytest.raises(ValueError, match="empty folder"):
         publish_site(_bundle(tmp_path / "again"), _web_root(tmp_path / "again"), site)
 

@@ -1,7 +1,7 @@
 import type { Field, Row, Table } from '../types.js'
 import { cellText } from './tables.js'
 
-// rule_coverage rows, one per catalogued or required field of each software version
+// rule_coverage rows, one per cataloged or required field of each software version
 // and level, regrouped two ways: which column each software version keeps each key in,
 // and which levels miss a required field. Each row carries the `set` it was asked for.
 
@@ -17,11 +17,18 @@ function written (row: Row): boolean {
   return row.producer !== null && row.producer !== undefined
 }
 
+/** A row's qualifier values, from its `qualifier.<name>` columns, as `name=value` sorted by name. */
+function qualifierPairs (row: Row): string[] {
+  return Object.entries(row)
+    .filter(([column, value]) => column.startsWith('qualifier.') && value !== null && value !== undefined)
+    .map(([column, value]) => `${column.slice('qualifier.'.length)}=${cellText(value)}`)
+    .sort()
+}
+
 /** What one key stands for: its kind, the qualifier values it fixes, and where it lives. */
 function keyMeaning (row: Row): string {
-  const qualifiers = cellText(row.qualifiers).replaceAll(';', ', ')
-  const location = cellText(row.location)
-  return [cellText(row.kind), qualifiers, location === '' ? '' : `in ${location}`].filter(part => part !== '').join(', ')
+  const slot = cellText(row.slot)
+  return [cellText(row.kind), ...qualifierPairs(row), slot === '' ? '' : `in ${slot}`].filter(part => part !== '').join(', ')
 }
 
 /** One set's keys as columns: one row per software version and level, each cell the column
@@ -37,7 +44,7 @@ export function keyColumns (rows: Row[]): { table: Table; keys: Field[] } {
     if (row.key === null || row.key === undefined) continue
     const key = cellText(row.key)
     if (!keys.has(key) || keys.get(key) === '') keys.set(key, keyMeaning(row))
-    const cell = row.column === null ? `missing ${cellText(row.requirement)}` : cellText(row.column)
+    const cell = row.name === null ? `missing ${cellText(row.requirement)}` : cellText(row.name)
     const before = cellText(line[key])
     line[key] = before === '' ? cell : `${before}, ${cell}`
   }
@@ -49,7 +56,7 @@ export function keyColumns (rows: Row[]): { table: Table; keys: Field[] } {
 
 /** The fields apps write: one row per key and column, its levels joined, whatever the version. */
 export function appFields (rows: Row[]): Table {
-  const columns = ['producer', 'key', 'location', 'table', 'column', 'needs']
+  const columns = ['producer', 'key', 'slot', 'table', 'name', 'needs']
   const lines = new Map<string, { row: Row; levels: string[] }>()
   for (const row of rows.filter(written)) {
     const key = keyOf(row, columns)
@@ -58,19 +65,19 @@ export function appFields (rows: Row[]): Table {
     lines.set(key, line)
   }
   return {
-    columns: ['producer', 'key', 'levels', 'location', 'table', 'column', 'needs'],
+    columns: ['producer', 'key', 'levels', 'slot', 'table', 'name', 'needs'],
     rows: [...lines.values()].map(({ row, levels }) => ({ ...row, levels: levels.join(', ') }))
   }
 }
 
 function missingText (row: Row): string {
-  return `${cellText(row.requirement)} ${cellText(row.key)} in ${cellText(row.location)}`
+  return `${cellText(row.requirement)} ${cellText(row.key)} in ${cellText(row.slot)}`
 }
 
 /** What each coverage column holds, for its header tooltip and legend. */
 export const COVERAGE_FIELDS: Field[] = [
-  { name: 'set', description: 'The catalogue set whose requirements.csv rows judge the result.' },
-  { name: 'software', description: 'The conversion software.' },
+  { name: 'set', description: 'The set whose requirements.csv rows judge the result.' },
+  { name: 'software', description: 'The quantification software.' },
   { name: 'version', description: 'The software versions one APB2 rule converts, as versions.csv labels them.' },
   { name: 'level', description: 'The quantification level of the converted result: requirements differ per level, since a protein row has no peptide sequence and a fragment row needs its fragment id.' },
   { name: 'verdict', description: 'fail: a required key is missing. warn: a recommended key is missing. pass: nothing required or recommended is missing; a missing optional key is still listed.' },
@@ -87,7 +94,7 @@ export function coverage (rows: Row[]): Table {
       row: { set: row.set ?? null, software: row.software ?? null, version: row.version ?? null, level: row.level ?? null, verdict: row.verdict },
       missing: []
     }
-    if (row.column === null && row.requirement !== null && row.requirement !== undefined) group.missing.push(missingText(row))
+    if (row.name === null && row.requirement !== null && row.requirement !== undefined) group.missing.push(missingText(row))
     groups.set(key, group)
   }
   return {
