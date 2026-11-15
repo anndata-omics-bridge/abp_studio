@@ -327,3 +327,67 @@ test('a failed run load clears previous evidence and retries the new combination
   assert.deepEqual(viewer.charts.at(-1), model.chartViews([newRow], new Map(), new Map()))
   assert.equal(viewer.timers.size, 1)
 })
+
+function unreadRun (count, hold = null) {
+  const directory = 'corpus/big/convert/hdf5'
+  const rows = Array.from({ length: count }, (_, index) => dataset(`Tool${String(index).padStart(2, '0')}`))
+  const records = new Map(rows.map(row => [`${directory}/${row.path}`, row.record]))
+  const viewer = controller({
+    async readStore (path) {
+      if (hold && path === `${directory}/${hold.row.path}`) {
+        hold.reached.resolve()
+        await hold.released.promise
+      }
+      return records.get(path) ?? null
+    }
+  })
+  viewer.state.run = directory
+  viewer.state.manifest = manifest('big', rows)
+  viewer.state.corpus = rows.map(row => ({
+    input_file: row.input_file, software_name: row.software_name, module: row.module,
+    input_file_size_bytes: String(row.input_file_size_bytes)
+  }))
+  const progress = []
+  const succeeded = []
+  Object.defineProperty(viewer.app, 'progress', { set (value) { progress.push(value) }, get () { return progress.at(-1) ?? '' } })
+  Object.defineProperty(viewer.app, 'fractions', { set (value) { succeeded.push(value.succeeded) }, get () { return {} } })
+  return { viewer, rows, progress, succeeded }
+}
+
+test('opening a run fills the dataset table batch by batch and says what it reads', async () => {
+  const { viewer, rows, progress, succeeded } = unreadRun(30)
+  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
+  assert.deepEqual(viewer.mounts.map(mount => mount.length), [12], 'the table appears with the first batch')
+  assert.deepEqual(viewer.replacements.map(rows => rows.length), [24, 30, 30, 30])
+  assert.deepEqual(inputFiles(viewer.mounts[0]), inputFiles(rows.slice(0, 12)), 'unread reports get no placeholder rows')
+  assert.deepEqual(Array.from(progress), ['Reading reports 12 / 30', 'Reading reports 24 / 30', 'Reading reports 30 / 30', ''])
+  assert.deepEqual(Array.from(succeeded), [0.4, 0.8, 1, 1], 'the status bar fills against the whole run')
+  assert.equal(viewer.charts.length, 1, 'charts draw once, after loading')
+  assert.equal(viewer.comparisons.length, 1)
+  assert.deepEqual(viewer.charts.at(-1), model.chartViews(viewer.app.datasets, new Map(), new Map()))
+
+  viewer.state.reports.delete(rows[5].path)
+  await viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
+  assert.deepEqual(progress.slice(4).filter(Boolean), [], 'polling a shown run reports no progress')
+  assert.equal(viewer.mounts.length, 1)
+  assert.deepEqual(viewer.replacements.map(rows => rows.length), [24, 30, 30, 30, 30])
+})
+
+test('a filter change while a run opens updates the table but draws no partial charts', async () => {
+  const hold = { reached: deferred(), released: deferred(), row: null }
+  const { viewer, rows } = unreadRun(20, hold)
+  hold.row = rows[15]
+  const loading = viewer.refreshRun(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
+  await hold.reached.promise
+  await settle()
+  viewer.app.datasetFilters = { ...filters.emptyDatasetFilters(), software_name: ['Tool00'] }
+  await viewer.renderSelection(viewer.app, viewer.detail, viewer.visualizations, viewer.scores)
+  assert.deepEqual(inputFiles(viewer.replacements.at(-1)), [rows[0].input_file])
+  assert.equal(viewer.charts.length, 0)
+  assert.equal(viewer.comparisons.length, 0)
+  hold.released.resolve()
+  await loading
+  assert.equal(viewer.charts.length, 1)
+  assert.deepEqual(viewer.charts.at(-1), model.chartViews([viewer.app.datasets[0]], new Map(), new Map()))
+  assert.deepEqual(inputFiles(viewer.comparisons.at(-1).rows), [rows[0].input_file])
+})

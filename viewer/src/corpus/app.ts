@@ -11,6 +11,7 @@ import {
 } from './model.js'
 import { createDetailPanel } from './panels/detail.js'
 import { createScoresPanel } from './panels/scores.js'
+import { createProteobenchScoresPanel } from './panels/proteobench-scores.js'
 import { representationScores } from './scores.js'
 import { validatedOddities, withOddities } from './oddities.js'
 import { renderOdditiesSummary } from './render/oddities.js'
@@ -57,6 +58,8 @@ interface ViewerState {
   searchSettings: RunSearchSettings | null
   searchSettingsStamp: string
   table: Tabulator | null
+  /** Set while a run's first load still reads the files that charts and scores need. */
+  chartsPending: boolean
 }
 interface ArtifactEntry { row: DatasetRow; artifact: Artifact }
 
@@ -82,7 +85,8 @@ const state: ViewerState = {
   odditiesStamp: '',
   searchSettings: null,
   searchSettingsStamp: '',
-  table: null
+  table: null,
+  chartsPending: false
 }
 
 let selectionRender = Promise.resolve()
@@ -92,6 +96,9 @@ let refreshPending = false
 let refreshTimer: number | undefined
 
 function host (app: CorpusApp, id: string) { return app.hostFor(id) }
+
+/** Score comparison and ProteoBench scores exist only for runs using apb-proteobench. */
+function proteobenchTab (app: CorpusApp) { return app.insightTab === 'scores' || app.insightTab === 'proteobench-scores' }
 
 function ionDimensions (): Map<string, number | null> {
   return new Map([...state.representationFiles].map(([path, summary]) => [path, summary?.ionVariables ?? null]))
@@ -117,13 +124,14 @@ function destroyTables () {
   state.table = null
 }
 
-function updateSummary (app: CorpusApp, status: string, rows: number, summary: Record<string, number>, steps: string[]) {
+/** The status bar measures against the run's whole inventory, so it fills while reports are read. */
+function updateSummary (app: CorpusApp, status: string, rows: number, summary: Record<string, number>, steps: string[], total = rows) {
   app.status = status
   app.counts = `${rows} datasets · ${Object.entries(summary)
     .map(([name, count]) => `${count} ${name}`)
     .join(' · ')}`
   app.steps = `Steps: ${steps.join(' → ') || 'none recorded'}`
-  app.fractions = statusFractions(summary, rows)
+  app.fractions = statusFractions(summary, total)
 }
 
 async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsPanel, visualizations: VisualizationPanel, scores: ScoresPanel, choice: RunChoice) {
@@ -152,7 +160,7 @@ async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsP
   state.operationStamp = ''
   const manifest = choice.manifest
   app.hasProteobench = Boolean(manifest.tools?.['apb-proteobench'])
-  if (!app.hasProteobench && app.insightTab === 'scores') app.selectInsight('results')
+  if (!app.hasProteobench && proteobenchTab(app)) app.selectInsight('results')
   updateSummary(app, 'Loading run…', 0, {}, [])
   settings.clear()
   host(app, 'scheduler-log').textContent = ''
@@ -185,18 +193,34 @@ async function loadRun (app: CorpusApp, detail: DetailPanel, settings: SettingsP
   await refreshRun(app, detail, visualizations, scores)
 }
 
+async function showDatasets (app: CorpusApp, detail: DetailPanel): Promise<DatasetRow[]> {
+  const rows = filterDatasets(state.rows, app.datasetFilters)
+  if (state.table) await state.table.replaceData(rows)
+  else state.table = await table(host(app, 'datasets'), rows, detail.columns(state.workflowRows))
+  return rows
+}
+
 /** Serialize panel updates; each update projects the latest records and filters. */
 function renderSelection (app: CorpusApp, detail: DetailPanel, visualizations: VisualizationPanel, scores: ScoresPanel): Promise<void> {
   selectionRender = selectionRender.catch(() => {}).then(async () => {
     if (!state.manifest) return
-    const rows = filterDatasets(state.rows, app.datasetFilters)
-    if (state.table) await state.table.replaceData(rows)
-    else state.table = await table(host(app, 'datasets'), rows, detail.columns(state.workflowRows))
+    const rows = await showDatasets(app, detail)
     await detail.refresh(state.rows, rows)
-    await visualizations.render(chartViews(rows, state.timingFiles, ionDimensions()))
-    await scores.render(state.run, rows, state.representationFiles, [...new Set(state.rows.map(row => row.software_name))].sort())
+    // Charts and scores draw once, after a first load has read their timing and representation files.
+    if (!state.chartsPending) {
+      await visualizations.render(chartViews(rows, state.timingFiles, ionDimensions()))
+      await scores.render(state.run, rows, state.representationFiles, [...new Set(state.rows.map(row => row.software_name))].sort())
+    }
     renderOdditiesSummary(host(app, 'oddities'), state.oddities)
     renderSearchSettings(host(app, 'search-settings'), state.searchSettings)
+  })
+  return selectionRender
+}
+
+/** Update only the dataset table, in turn with every other panel update. */
+function renderDatasets (app: CorpusApp, detail: DetailPanel): Promise<void> {
+  selectionRender = selectionRender.catch(() => {}).then(async () => {
+    if (state.manifest) await showDatasets(app, detail)
   })
   return selectionRender
 }
@@ -208,10 +232,11 @@ async function renderSchedulerLog (app: CorpusApp) {
   if (directory === state.run) host(app, 'scheduler-log').textContent = log ?? ''
 }
 
-/** Cap concurrent file reads so large corpuses do not flood the server. */
-async function inBatches<T> (items: T[], read: (item: T) => Promise<void>): Promise<void> {
+/** Cap concurrent file reads so large corpuses do not flood the server; report each finished batch. */
+async function inBatches<T> (items: T[], read: (item: T) => Promise<void>, after: (done: number) => Promise<void> | void): Promise<void> {
   for (let start = 0; start < items.length; start += 12) {
     await Promise.all(items.slice(start, start + 12).map(read))
+    await after(Math.min(start + 12, items.length))
   }
 }
 
@@ -225,9 +250,11 @@ function outputsWithRole (rows: DatasetRow[], role: string): ArtifactEntry[] {
 }
 
 async function readArtifactCache<T> (
-  entries: ArtifactEntry[], cache: Map<string, T | null>, validate: (document: unknown) => T | null, label: string
+  entries: ArtifactEntry[], cache: Map<string, T | null>, validate: (document: unknown) => T | null, label: string,
+  progress: (text: string) => void
 ): Promise<void> {
-  await inBatches(entries.filter(({ artifact }) => !cache.has(artifact.path)), async ({ row, artifact }) => {
+  const missing = entries.filter(({ artifact }) => !cache.has(artifact.path))
+  await inBatches(missing, async ({ row, artifact }) => {
     try {
       const path = artifactStorePath(state.run, row.output_dir, artifact.path)
       const document = await readStoreJson(path)
@@ -236,11 +263,28 @@ async function readArtifactCache<T> (
       cache.set(artifact.path, null)
       console.warn(`Cannot read ${label} ${artifact.path}: ${error}`)
     }
-  })
+  }, done => { progress(`Reading ${label} ${done} / ${missing.length} · charts and scores follow`) })
+}
+
+/** Dataset rows for the given report links, with dimensions, input kinds and oddities read so far. */
+function currentRows (manifest: RunManifest, progress: Map<string, DatasetReport | null>, operation: Operation | null): DatasetRow[] {
+  const rows = datasetRows(
+    manifest, state.corpus, state.inputMetadata, state.reports, progress,
+    operation, state.workflowRows, ionDimensions()
+  ).map(row => ({ ...row, input_file_kind: state.inputKinds[row.input_file] ?? null }))
+  return withOddities(rows, state.oddities)
+}
+
+function showRows (app: CorpusApp, rows: DatasetRow[], operation: Operation | null, total: number): void {
+  state.rows = rows
+  app.datasets = rows
+  app.outputExtensions = scientificOutputExtensions(rows.map(row => row.record))
+  updateSummary(app, operation?.status ?? 'prepared', rows.length, counts(rows), workflowSteps(rows), total)
 }
 
 async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: VisualizationPanel, scores: ScoresPanel) {
   if (!state.manifest) return
+  const manifest = state.manifest
   const operation = await readStore<Operation>(`${state.run}/operation.json`)
   const odditiesDocument = await readStoreJson(`${state.run}/oddities.json`)
   const odditiesStamp = JSON.stringify(odditiesDocument)
@@ -263,48 +307,48 @@ async function refreshRun (app: CorpusApp, detail: DetailPanel, visualizations: 
     state.operationStamp = operation?.updated_at ?? ''
   }
   const progress = new Map<string, DatasetReport | null>()
-  const pending = state.manifest.reports.filter(link => !state.reports.has(link.path))
-  await inBatches(pending, async link => {
-    const report = await readStore<DatasetReport>(`${state.run}/${link.path}`)
-    if (report) state.reports.set(link.path, report)
-    else progress.set(link.progress, await readStore<DatasetReport>(`${state.run}/${link.progress}`))
-  })
-  let rows = datasetRows(
-    state.manifest,
-    state.corpus,
-    state.inputMetadata,
-    state.reports,
-    progress,
-    operation,
-    state.workflowRows
+  const links = manifest.reports
+  const pending = links.filter(link => !state.reports.has(link.path))
+  // Opening a run, before its table exists, shows each batch of reports as it arrives;
+  // polls of a shown run read unfinished reports again and keep the table as it is until they end.
+  const opening = state.table === null
+  // Links not read yet get no row, rather than a pending placeholder.
+  const rowsRead = () => currentRows(
+    { ...manifest, reports: links.filter(link => state.reports.has(link.path) || progress.has(link.progress)) },
+    progress, operation
   )
-  await readArtifactCache(
-    outputsWithRole(rows, 'tool_timings'), state.timingFiles,
-    validatedToolTimings, 'tool timings'
-  )
-  await readArtifactCache(
-    outputsWithRole(rows, 'representation'), state.representationFiles,
-    document => ({
-      ionVariables: representationIonVariables(document),
-      scores: representationScores(validatedRepresentation(document))
-    }), 'representation scores and dimensions'
-  )
-  rows = datasetRows(
-    state.manifest, state.corpus, state.inputMetadata, state.reports, progress,
-    operation, state.workflowRows, ionDimensions()
-  ).map(row => ({ ...row, input_file_kind: state.inputKinds[row.input_file] ?? null }))
-  rows = withOddities(rows, state.oddities)
-  state.rows = rows
-  app.datasets = rows
-  app.outputExtensions = scientificOutputExtensions(rows.map(row => row.record))
-  const summary = counts(rows)
-  updateSummary(
-    app,
-    operation?.status ?? 'prepared',
-    rows.length,
-    summary,
-    workflowSteps(rows)
-  )
+  const say = (text: string) => { if (opening) app.progress = text }
+  state.chartsPending = opening
+  try {
+    await inBatches(pending, async link => {
+      const report = await readStore<DatasetReport>(`${state.run}/${link.path}`)
+      if (report) state.reports.set(link.path, report)
+      else progress.set(link.progress, await readStore<DatasetReport>(`${state.run}/${link.progress}`))
+    }, async done => {
+      if (!opening) return
+      say(`Reading reports ${done} / ${pending.length}`)
+      showRows(app, rowsRead(), operation, links.length)
+      await renderDatasets(app, detail)
+    })
+    // File details, Oddities and Search settings need only the reports.
+    if (opening && pending.length) await renderSelection(app, detail, visualizations, scores)
+    const rows = rowsRead()
+    await readArtifactCache(
+      outputsWithRole(rows, 'tool_timings'), state.timingFiles,
+      validatedToolTimings, 'tool timings', say
+    )
+    await readArtifactCache(
+      outputsWithRole(rows, 'representation'), state.representationFiles,
+      document => ({
+        ionVariables: representationIonVariables(document),
+        scores: representationScores(validatedRepresentation(document))
+      }), 'representations', say
+    )
+  } finally {
+    state.chartsPending = false
+    app.progress = ''
+  }
+  showRows(app, currentRows(manifest, progress, operation), operation, links.length)
   await renderSelection(app, detail, visualizations, scores)
   if (app.tab === 'insights' && app.insightTab === 'log') {
     await renderSchedulerLog(app)
@@ -398,7 +442,23 @@ async function main () {
     host(app, 'visualization-tabs'),
     host(app, 'visualization-chart-panel')
   )
-  const scores = createScoresPanel(host(app, 'scores'), readProteobenchReferences)
+  const comparison = createScoresPanel(host(app, 'scores'), readProteobenchReferences)
+  const ionScores = createProteobenchScoresPanel(host(app, 'proteobench-scores'))
+  // Both ProteoBench tabs show the same rows and score summaries; each draws only while visible.
+  const scores: ScoresPanel = {
+    async render (context, rows, files, names) {
+      await comparison.render(context, rows, files, names)
+      await ionScores.render(context, rows, files, names)
+    },
+    async activate () {
+      await comparison.activate()
+      await ionScores.activate()
+    },
+    resize () {
+      comparison.resize()
+      ionScores.resize()
+    }
+  }
   const detail = createDetailPanel(app, readRepresentation, () => state.run)
   const settings = createSettingsPanel(app)
   // A link's fragment is read once and then cleared, so the address bar never shows a stale view.
@@ -446,7 +506,7 @@ async function main () {
       if (state.table) state.table.redraw(true)
       settings.redraw()
       if (app.tab === 'insights' && app.insightTab === 'visualizations') visualizations.resize()
-      if (app.tab === 'insights' && app.insightTab === 'scores') void scores.activate()
+      if (app.tab === 'insights' && proteobenchTab(app)) void scores.activate()
     })
   })
   app.addEventListener('insight-tab-change', () => {
@@ -455,7 +515,7 @@ async function main () {
       if (state.table) state.table.redraw(true)
       settings.redraw()
       if (app.insightTab === 'visualizations') visualizations.resize()
-      if (app.insightTab === 'scores') void scores.activate()
+      if (proteobenchTab(app)) void scores.activate()
     })
   })
   app.addEventListener('settings-tab-change', () => {

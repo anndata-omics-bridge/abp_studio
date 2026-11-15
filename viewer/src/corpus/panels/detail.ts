@@ -271,12 +271,10 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
         panel.className = 'detail-panel'
         panel.hidden = true
         element('detail').append(panel)
-        const format = preferred.representation.artifact?.physical_format
-        const label = format === 'h5ad' || format === 'h5mu' ? 'AnnData' : 'Levels'
-        registerTab('anndata', label, panel, async host => {
+        registerTab('anndata', 'Levels', panel, async host => {
           host.replaceChildren()
           const rememberedObject = selectedObject
-          await renderTabs(host, `${label} objects`, objects.map(view => ({
+          await renderTabs(host, 'Levels and annotation tables', objects.map(view => ({
             label: view.label,
             render: (target: HTMLElement) => renderScientificView(target, view, preferred.artifact.step)
           })), (activePanel: HTMLElement) => {

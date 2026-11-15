@@ -1,4 +1,4 @@
-import type { ParameterValue, Representation, RunSearchSettings, SearchParametersRecord, SearchedModification } from './types.js'
+import type { ParameterValue, RecordedParameterFile, Representation, RunSearchSettings, SearchedModification } from './types.js'
 
 // The article's Figure S1 ramp, from no recorded dataset to all of them.
 const EMPTY = [0xF0, 0xF3, 0xF6]
@@ -35,9 +35,13 @@ export function searchSettingsRows (summary: RunSearchSettings): SearchSettingsR
 
 const ACRONYMS: Record<string, string> = { fdr: 'FDR', psm: 'PSM', mz: 'm/z' }
 
-/** The parameter file apb2 recorded in a result's root part, if it read one. */
-export function searchParametersRecord (representation: Representation): SearchParametersRecord | null {
-  return representation.root?.apb?.parse?.provenance?.search_parameters ?? null
+/** The search parameters apb2 recorded in a result's root part, with their parameter file entry. */
+export function searchParametersRecord (representation: Representation): RecordedParameterFile | null {
+  const provenance = representation.root?.apb?.parse?.provenance
+  const record = provenance?.search_parameters
+  if (!record) return null
+  const file = provenance.input_files?.find(entry => entry.role === 'parameter_file') ?? null
+  return { file, record }
 }
 
 /** One row per recorded field, in apb2's order, its value as text. */

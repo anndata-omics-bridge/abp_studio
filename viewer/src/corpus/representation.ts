@@ -15,6 +15,17 @@ export function fastaChecks (representation: Representation): FastaCheck[] {
   })
 }
 
+/**
+ * How a result stores its levels: an h5ad is one AnnData, an h5mu a MuData of AnnData objects;
+ * DuckDB and Parquet store levels as tables plus an APB2 manifest, which is no AnnData.
+ */
+export function structureLayout (representation: Representation | null | undefined): 'anndata' | 'mudata' | 'levels' {
+  const format = representation?.artifact?.physical_format
+  if (format === 'h5ad') return 'anndata'
+  if (format === 'h5mu') return 'mudata'
+  return 'levels'
+}
+
 function hierarchyOrder (representation: Representation | null | undefined): string[] {
   const hierarchy = representation?.root?.apb?.hierarchy ?? representation?.levels?.[0]?.apb?.hierarchy
   return (hierarchy?.identities ?? []).map(([name]) => name)
@@ -105,8 +116,6 @@ export function artifactAttemptStorePath (run: string, outputDirectory: string, 
 }
 
 export function representationViews (representation: Representation): RepresentationView[] {
-  const physicalFormat = representation?.artifact?.physical_format
-  const isAnnDataFormat = physicalFormat === 'h5ad' || physicalFormat === 'h5mu'
   const metadata: RepresentationView = {
     key: 'apb-metadata',
     kind: 'apb-metadata',
@@ -115,41 +124,35 @@ export function representationViews (representation: Representation): Representa
   }
   const order = hierarchyOrder(representation)
   const sourceLevels = [...(representation?.levels ?? [])]
-  if (isAnnDataFormat) {
-    sourceLevels.sort((left, right) => order.indexOf(left.name) - order.indexOf(right.name))
-  }
+    .sort((left, right) => order.indexOf(left.name) - order.indexOf(right.name))
   const levels: Extract<RepresentationView, { kind: 'level' }>[] = sourceLevels.map((level, index) => ({
     key: `level-${index}`,
     kind: 'level',
-    label: `${isAnnDataFormat ? 'AnnData' : 'Level'} · ${level.name}`,
+    label: level.name,
     representation,
     level
   }))
-  const annotations: RepresentationView[] = physicalFormat === 'h5mu'
-    ? (representation?.annotation_tables ?? []).map((annotationTable, index) => ({
-        key: `annotation-${index}`,
-        kind: 'annotation',
-        label: `AnnData · annotation/${annotationTable.name}`,
-        representation,
-        annotationTable,
-        referenceLevel: levels[0]?.level
-      }))
-    : []
+  const annotations: RepresentationView[] = (representation?.annotation_tables ?? []).map((annotationTable, index) => ({
+    key: `annotation-${index}`,
+    kind: 'annotation',
+    label: `annotation/${annotationTable.name}`,
+    representation,
+    annotationTable,
+    referenceLevel: levels[0]?.level
+  }))
   const raw: RepresentationView = {
     key: 'representation-json',
     kind: 'representation-json',
     label: 'Representation JSON',
     representation
   }
-  const structure: RepresentationView[] = isAnnDataFormat
-    ? [{
-        key: 'anndata-structure',
-        kind: 'anndata-structure',
-        label: 'Structure',
-        representation
-      }]
-    : []
-  return [metadata, ...levels, ...annotations, ...structure, raw]
+  const structure: RepresentationView = {
+    key: 'anndata-structure',
+    kind: 'anndata-structure',
+    label: 'Structure',
+    representation
+  }
+  return [metadata, ...levels, ...annotations, structure, raw]
 }
 
 export function annDataDiagram (level: Partial<Level> | null | undefined): AnnDataDiagram {
@@ -170,13 +173,34 @@ export function annDataDiagram (level: Partial<Level> | null | undefined): AnnDa
   }
 }
 
-/** Project each physical AnnData separately from its MuData container. */
+/**
+ * Project each physical AnnData separately from its MuData container; a DuckDB or Parquet result
+ * projects its root and each level, with no AnnData paths.
+ */
 export function structureViews (representation: Representation): StructureView[] {
-  const format = representation.artifact?.physical_format
   const order = hierarchyOrder(representation)
   const levels = [...(representation.levels ?? [])]
     .sort((left, right) => order.indexOf(left.name) - order.indexOf(right.name))
-  const embedded = format === 'h5mu'
+  const layout = structureLayout(representation)
+  if (layout === 'levels') {
+    return [{
+      kind: 'result',
+      label: 'Result root',
+      uns: representation.root?.apb ?? {},
+      levels: levels.map(level => ({ name: level.name, dimensions: annDataDiagram(level).dimensions })),
+      annotationTables: representation.annotation_tables ?? [],
+      relations: representation.feature_relations ?? []
+    }, ...levels.map((level): AnnDataStructure => ({
+      kind: 'anndata',
+      label: `Level · ${level.name}`,
+      objectPath: null,
+      unsKey: 'apb',
+      diagram: annDataDiagram(level),
+      hasStorage: false,
+      annotation: false
+    }))]
+  }
+  const embedded = layout === 'mudata'
   const modalities: AnnDataStructure[] = levels.map(level => ({
     kind: 'anndata',
     label: `AnnData · ${level.name}`,
@@ -223,7 +247,6 @@ export function structureViews (representation: Representation): StructureView[]
     hasStorage: true,
     modalities: modalities.map(view => ({
       name: view.diagram.name,
-      objectPath: view.objectPath,
       dimensions: view.diagram.dimensions
     })),
     relations: representation.feature_relations ?? []
@@ -276,31 +299,15 @@ export function alignedSummary (value: Partial<NamedTable> = {}) {
 }
 
 export function apbMetadataScopes (representation: Representation) {
-  const physicalFormat = representation?.artifact?.physical_format
+  const layout = structureLayout(representation)
   const levels = representation?.levels ?? []
-  const rootLabel = physicalFormat === 'h5mu'
-    ? 'MuData'
-    : physicalFormat === 'h5ad' ? 'AnnData root' : 'Result · root APB metadata'
+  const rootLabel = layout === 'mudata' ? 'MuData' : layout === 'anndata' ? 'AnnData root' : 'Root'
+  // AnnData objects keep each part in uns["apb"]; a DuckDB or Parquet manifest keeps it as apb.
+  const scoped = (value: ApbMetadata = {}) => layout === 'levels' ? { apb: value } : { uns: { apb: value } }
   return [
-    {
-      label: rootLabel,
-      value: apbNamespace(representation.root?.apb)
-    },
-    ...levels.map(level => ({
-      label: physicalFormat === 'h5mu' || physicalFormat === 'h5ad'
-        ? level.name
-        : `Level "${level.name}" · APB metadata`,
-      value: apbNamespace(level.apb)
-    }))
+    { label: rootLabel, value: scoped(representation.root?.apb) },
+    ...levels.map(level => ({ label: level.name, value: scoped(level.apb) }))
   ]
-}
-
-function apbNamespace (value: ApbMetadata = {}) {
-  return {
-    uns: {
-      apb: value
-    }
-  }
 }
 
 export function preferredLoadedRepresentation (row: DatasetRow | null | undefined, loadedRepresentations: LoadedRepresentation[]): (LoadedRepresentation & { representation: Representation }) | null {

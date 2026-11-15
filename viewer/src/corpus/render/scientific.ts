@@ -2,7 +2,7 @@ import type { AlignedTables, Layer, Level, NamedTable, Representation, Statistic
 import type { Layout } from '../../shared/plotly.js'
 import type { TabSection } from './tabs.js'
 import { formatBytes } from '../model.js'
-import { apbMetadataScopes, fastaChecks, layerChart } from '../representation.js'
+import { apbMetadataScopes, fastaChecks, layerChart, structureLayout } from '../representation.js'
 import { dataTable, jsonTree, metadataCards, node } from './dom.js'
 import { renderScalePlot, resizeScalePlot } from './plotly.js'
 import { renderTabs } from './tabs.js'
@@ -228,7 +228,7 @@ export async function renderApbMetadata (host: HTMLElement, representation: Repr
   article.className = 'representation'
   article.append(
     node('h3', 'APB provenance and extension metadata'),
-    node('p', 'Metadata is grouped by tool in a root part and one part per level, never merged: a MuData\'s uns["apb"] and each modality\'s, or a standalone AnnData\'s uns["apb"] and uns[level]["apb"]. The storage reconstruction descriptor is omitted.', 'structure-intro'),
+    node('p', 'Metadata is grouped by tool in a root part and one part per level, never merged. An H5MU keeps them in the MuData\'s uns["apb"] and each modality\'s, an H5AD in uns["apb"] and uns[level]["apb"], and a DuckDB or Parquet result as root and level apb in its manifest. The storage reconstruction descriptor is omitted.', 'structure-intro'),
     metadataCards([
       ['Workflow step', step],
       ['Source artifact', representation.artifact?.name],
@@ -242,7 +242,7 @@ export async function renderApbMetadata (host: HTMLElement, representation: Repr
     'APB metadata scopes',
     apbMetadataScopes(representation).map(scope => ({
       label: scope.label,
-      render: panel => panel.append(jsonTree(scope.value, ['uns', 'uns.apb']))
+      render: panel => panel.append(jsonTree(scope.value, ['uns', 'uns.apb', 'apb']))
     }))
   )
 }
@@ -255,12 +255,12 @@ export function renderRepresentationJson (host: HTMLElement, representation: Rep
   host.append(article)
 }
 
-/** Render one quantitative AnnData level. */
+/** Render one quantitative level, whatever format stores it. */
 export async function renderAnnData (host: HTMLElement, level: Level): Promise<void> {
   const article = document.createElement('article')
   article.className = 'representation'
   article.append(
-    node('h3', `AnnData · ${level.name}`),
+    node('h3', `Level · ${level.name}`),
     metadataCards([
       ['Shape', `${level.dimensions.observations} observations × ${level.dimensions.variables} variables`],
       ['Primary layer', level.primary_layer],
@@ -268,7 +268,7 @@ export async function renderAnnData (host: HTMLElement, level: Level): Promise<v
     ])
   )
   host.append(article)
-  await renderNestedTabs(article, `${level.name} AnnData sections`, [
+  await renderNestedTabs(article, `${level.name} level sections`, [
     {
       label: 'Axes',
       render: panel => {
@@ -292,7 +292,7 @@ export async function renderAnnData (host: HTMLElement, level: Level): Promise<v
   ])
 }
 
-/** Render one annotation table as its AnnData projection. */
+/** Render one annotation table: as its AnnData projection in an H5MU, as a table in DuckDB or Parquet. */
 export async function renderAnnotationAnnData (
   host: HTMLElement,
   representation: Representation,
@@ -310,34 +310,51 @@ export async function renderAnnotationAnnData (
     key_columns: annotationTable.key_columns ?? [],
     columns: annotationTable.columns ?? []
   }
+  const modality = structureLayout(representation) === 'mudata'
   const article = document.createElement('article')
   article.className = 'representation'
   article.append(
-    node('h3', `AnnData · annotation/${annotationTable.name}`),
-    metadataCards([
-      ['Modality role', 'annotation table'],
-      ['Shape', `${observationCount} observations × ${annotationTable.row_count} variables`]
-    ])
+    node('h3', `Annotation table · ${annotationTable.name}`),
+    metadataCards(modality
+      ? [
+          ['Modality role', 'annotation table'],
+          ['Shape', `${observationCount} observations × ${annotationTable.row_count} variables`]
+        ]
+      : [
+          ['Rows', annotationTable.row_count],
+          ['Columns', variables.columns.length],
+          ['Keys', variables.key_columns.join(', ') || 'none']
+        ])
   )
   const relations = (representation.feature_relations ?? []).flatMap(relation =>
     relation.blocks
       .filter(block => block.source === annotationTable.name)
       .map(block => ({ name: relation.name, ...block })))
   host.append(article)
-  await renderNestedTabs(article, `${annotationTable.name} annotation AnnData sections`, [
-    {
-      label: 'Axes',
-      render: panel => {
-        const axes = document.createElement('div')
-        axes.className = 'scientific-grid'
-        axes.append(
-          tableDescription('Observations', observations),
-          tableDescription('Variables', variables)
-        )
-        panel.append(axes)
-        if (reference) panel.append(observationIdentities(reference))
-      }
-    },
+  await renderNestedTabs(article, `${annotationTable.name} annotation table sections`, [
+    modality
+      ? {
+          label: 'Axes',
+          render: panel => {
+            const axes = document.createElement('div')
+            axes.className = 'scientific-grid'
+            axes.append(
+              tableDescription('Observations', observations),
+              tableDescription('Variables', variables)
+            )
+            panel.append(axes)
+            if (reference) panel.append(observationIdentities(reference))
+          }
+        }
+      : {
+          label: 'Columns',
+          render: panel => {
+            const columns = document.createElement('div')
+            columns.className = 'scientific-grid'
+            columns.append(tableDescription('Annotation table', variables))
+            panel.append(columns)
+          }
+        },
     {
       label: 'Feature relations',
       render: panel => {

@@ -45,10 +45,11 @@ export function tracesForScale (traces: PlotTrace[], scale: ValueScale): PlotTra
   return traces.map(trace => trace.type === 'box' ? logarithmicBoxTrace(trace) : trace)
 }
 
-/** Apply one selected scale to every y-axis, including timing facets. */
-export function yAxesForScale (layout: Partial<Layout>, scale: ValueScale): Partial<Layout> {
+/** Apply one selected scale to every x- or y-axis, including timing facets. */
+export function axesForScale (layout: Partial<Layout>, axis: 'x' | 'y', scale: ValueScale): Partial<Layout> {
+  const name = new RegExp(`^${axis}axis\\d*$`)
   return Object.fromEntries(Object.entries(layout)
-    .filter(([key]) => /^yaxis\d*$/.test(key))
+    .filter(([key]) => name.test(key))
     .map(([key, axis]) => {
       const scaled: Partial<LayoutAxis> = { ...axis as Partial<LayoutAxis>, type: scale, autorange: true }
       if (scale === 'log') delete scaled.rangemode

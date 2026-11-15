@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { timingFacetFigure } from '../../viewer/src/corpus/render/timing-facets.ts'
-import { yAxesForScale } from '../../viewer/src/corpus/render/scale.ts'
+import { axesForScale } from '../../viewer/src/corpus/render/scale.ts'
 import { xAxisChoices } from '../../viewer/src/corpus/render/x-axis.ts'
 
 function point (phase, software, seconds) {
@@ -53,8 +53,9 @@ test('timing facets can compare phases against persisted peptidoform_ion variabl
 
 test('linear and log controls update every facet axis without invalid log-to-zero range', () => {
   const { layout } = timingFacetFigure([point('read', 'DIA-NN', 1), point('write', 'DIA-NN', 2)])
-  const linear = yAxesForScale(layout, 'linear')
-  const logarithmic = yAxesForScale(layout, 'log')
+  const linear = axesForScale(layout, 'y', 'linear')
+  const logarithmic = axesForScale(layout, 'y', 'log')
+  const logarithmicX = axesForScale(layout, 'x', 'log')
 
   assert.deepEqual(Object.keys(linear), ['yaxis', 'yaxis2'])
   assert.equal(linear.yaxis.type, 'linear')
@@ -63,4 +64,8 @@ test('linear and log controls update every facet axis without invalid log-to-zer
   assert.equal(logarithmic.yaxis2.type, 'log')
   assert.equal(logarithmic.yaxis2.rangemode, undefined)
   assert.equal(logarithmic.yaxis2.title.text, 'Seconds')
+  assert.deepEqual(Object.keys(logarithmicX), ['xaxis', 'xaxis2'])
+  assert.equal(logarithmicX.xaxis.type, 'log')
+  assert.equal(logarithmicX.xaxis2.type, 'log')
+  assert.equal(logarithmicX.xaxis2.matches, 'x')
 })

@@ -153,7 +153,7 @@ const activeTab = hosts => hosts['detail-tabs'].children
   .find(button => button.getAttribute('aria-selected') === 'true')?.dataset.detailTab
 const settle = async () => { for (let index = 0; index < 12; index += 1) await Promise.resolve() }
 
-test('sidebar starts with a scientific file and Show more opens AnnData directly', async () => {
+test('sidebar starts with a scientific file and Show more opens Levels directly', async () => {
   const { panel, hosts, calls } = controller()
   const pending = { ...row('pending'), status: 'pending', record: null }
   const maxquant = row('MaxQuant')
@@ -164,10 +164,10 @@ test('sidebar starts with a scientific file and Show more opens AnnData directly
   assert.equal(hosts['file-list'].children[1].getAttribute('aria-current'), 'true')
   assert.equal(activeTab(hosts), 'anndata')
   assert.deepEqual(hosts['detail-tabs'].children.map(button => button.textContent), [
-    'AnnData', 'Structure', 'Inputs & outputs', 'Oddities', 'APB metadata', 'Representation JSON'
+    'Levels', 'Structure', 'Inputs & outputs', 'Oddities', 'APB metadata', 'Representation JSON'
   ])
   const objectTabs = hosts.detail.querySelector('.representation-tabs')
-  assert.deepEqual(objectTabs.children.map(button => button.textContent), ['AnnData · peptidoform_ion', 'AnnData · protein'])
+  assert.deepEqual(objectTabs.children.map(button => button.textContent), ['peptidoform_ion', 'protein'])
   assert.doesNotMatch(hosts.detail.textContent, /Loading view/)
   hosts['detail-tabs'].children.find(button => button.textContent === 'Inputs & outputs').click()
   const action = panel.columns([])[0]
@@ -218,10 +218,13 @@ test('FASTA check tab shows the recorded reference beside counts and keeps unrec
 
 test('Search parameters tab lists the recorded file and its fields; a result without one has no tab', async () => {
   const result = scientific(['peptidoform_ion'])
-  result.root.apb.parse = { provenance: { search_parameters: {
-    file_name: 'params.json', sha256: 'abcdef0123456789'.repeat(4),
-    parameters: { enzyme: 'Trypsin/P', fixed_mods: [], ident_fdr_psm: 0.01 }
-  } } }
+  result.root.apb.parse = { provenance: {
+    search_parameters: { parameters: { enzyme: 'Trypsin/P', fixed_mods: [], ident_fdr_psm: 0.01 } },
+    input_files: [
+      { role: 'table', file_name: 'input.tsv', sha256: '0'.repeat(64) },
+      { role: 'parameter_file', file_name: 'params.json', sha256: 'abcdef0123456789'.repeat(4) }
+    ]
+  } }
   const { panel, hosts } = controller(async () => result)
   await panel.refresh([{ ...row('Sage'), vendor_parameter_file: 'submissions/hash/params.json' }])
   assert.deepEqual(hosts['detail-tabs'].children.map(button => button.dataset.detailTab).slice(0, 3), [
@@ -232,6 +235,7 @@ test('Search parameters tab lists the recorded file and its fields; a result wit
   const source = hosts.detail.querySelector('.empty-note')
   assert.equal(source.children[0].tag, 'a', 'the stored parameter file is linked')
   assert.equal(source.children[0].textContent, 'params.json')
+  assert.equal(source.title, 'abcdef0123456789'.repeat(4))
   const table = hosts.detail.querySelector('.scientific-table')
   assert.deepEqual(table.children[1].children.map(line => line.children.map(cell => cell.textContent)), [
     ['Enzyme', 'Trypsin/P'], ['Fixed mods', 'None listed'], ['Ident FDR PSM', '0.01']
@@ -349,7 +353,7 @@ test('polling retains file, detail tab and object selection; sidebar uses the ne
   assert.equal(hosts['file-list'].children[0].getAttribute('aria-current'), 'true')
 })
 
-test('chooser filters preserve the opened file, scientific tab and AnnData object', async () => {
+test('chooser filters preserve the opened file, scientific tab and level', async () => {
   const { panel, hosts, calls } = controller()
   const maxquant = row('MaxQuant')
   const sage = row('Sage')
@@ -367,7 +371,7 @@ test('chooser filters preserve the opened file, scientific tab and AnnData objec
   assert.match(hosts['detail-title'].textContent, /MaxQuant/)
   assert.equal(activeTab(hosts), 'scientific-anndata-structure')
   assert.match(hosts['detail-diagnostics'].textContent, /hidden file updated/)
-  hosts['detail-tabs'].children.find(button => button.textContent === 'AnnData').click()
+  hosts['detail-tabs'].children.find(button => button.textContent === 'Levels').click()
   await settle()
   assert.equal(hosts.detail.querySelector('.representation-tabs').children[1].getAttribute('aria-selected'), 'true')
   assert.deepEqual(calls, [], 'filtering must leave the current main tab alone')
@@ -428,7 +432,7 @@ test('empty levels default to Structure and stale loads cannot replace a newer f
   await oldLoad
   await settle()
   assert.match(hosts['detail-title'].textContent, /new/)
-  assert.equal(hosts.detail.querySelector('.representation-tabs').children[0].textContent, 'AnnData · new')
+  assert.equal(hosts.detail.querySelector('.representation-tabs').children[0].textContent, 'new')
   let resolveRun
   const pending = controller(() => new Promise(resolve => { resolveRun = resolve }))
   const load = pending.panel.show(row('old-run'))

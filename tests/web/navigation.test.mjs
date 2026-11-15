@@ -113,20 +113,25 @@ test('choosing another run opens its dataset insights and emits the selected com
   assert.equal(event.bubbles, true)
 })
 
-test('score comparison is available only for runs using ProteoBench, with keyboard navigation', () => {
+test('score comparison and ProteoBench scores are available only for runs using ProteoBench, with keyboard navigation', () => {
   const app = createShell()
   assert.ok(!ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab').includes('scores'))
+  assert.ok(!ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab').includes('proteobench-scores'))
   app.hasProteobench = true
   assert.deepEqual(ids(tabButtons(app, 'data-insight-tab'), 'data-insight-tab'), [
-    'results', 'visualizations', 'scores', 'oddities', 'search-settings', 'settings', 'log'
+    'results', 'visualizations', 'scores', 'proteobench-scores', 'oddities', 'search-settings', 'settings', 'log'
   ])
   app.selectInsight('visualizations')
   const press = keyboard(app, 'data-insight-tab')
   press('ArrowRight')
   assert.equal(app.insightTab, 'scores')
   assert.match(markup(app.render()), /id="scores"[^>]*\?hidden=false/)
+  press('ArrowRight')
+  assert.equal(app.insightTab, 'proteobench-scores')
+  assert.match(markup(app.render()), /id="proteobench-scores"[^>]*\?hidden=false/)
   app.hasProteobench = false
   assert.match(markup(app.render()), /id="scores"[^>]*\?hidden=true/)
+  assert.match(markup(app.render()), /id="proteobench-scores"[^>]*\?hidden=true/)
 })
 
 test('insight subtabs stay separate from workspace navigation and retain their selection', () => {

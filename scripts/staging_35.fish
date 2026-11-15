@@ -1,6 +1,7 @@
 #!/usr/bin/env fish
-# STAGING ON fgcz-r-035: this file alone builds what https://fgcz-ms.uzh.ch/public/apb-studio/
-# serves. Its runs, the site copy and the upload are the lines below; nothing else goes there.
+# STAGING ON fgcz-r-035: this file builds what https://fgcz-ms.uzh.ch/public/apb-studio/
+# serves. Its runs, the site copy and the upload are the lines below; nothing else goes there,
+# except that staging_35_viewer.fish replaces only the viewer, without runs.
 # Every other corpus run is in collected_other_options.fish.
 #
 # Run from the apb_studio folder, with the laptop kept awake:

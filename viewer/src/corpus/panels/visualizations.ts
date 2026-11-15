@@ -1,4 +1,5 @@
 import type { Layout } from '../../shared/plotly.js'
+import type { AxisScales } from '../render/plotly.js'
 import type { PlotTrace } from '../render/scale.js'
 import type { ChartPoint, ChartView, TimingPoint, TimingView, XAxis } from '../types.js'
 
@@ -12,7 +13,7 @@ type Chart = ResourceChart | TimingChart
 interface TraceOptions { artifact?: boolean; stepSeries?: boolean; xAxis?: XAxis }
 
 import { node } from '../render/dom.js'
-import { renderScalePlot, resizeScalePlot } from '../render/plotly.js'
+import { renderPlot, resizeScalePlot } from '../render/plotly.js'
 import { timingFacetFigure } from '../render/timing-facets.js'
 import { xAxisChoices, xLabel, xValue } from '../render/x-axis.js'
 
@@ -148,6 +149,9 @@ function mountGrid (host: HTMLElement, view: ChartView, subtab: string, charts: 
     const chartHost = document.createElement('div')
     chartHost.className = 'chart'
     chartHost.dataset.chart = chart.key
+    const plot = document.createElement('div')
+    plot.className = 'plotly-chart'
+    chartHost.append(plot)
     section.append(node('h3', chart.title), chartHost)
     grid.append(section)
   }
@@ -164,6 +168,23 @@ export function createVisualizationPanel (tabs: HTMLElement, panel: HTMLElement)
   if (!selector) throw new Error('Missing resource-profile x-axis selector')
   const axisSelect = selector
   axisSelect.addEventListener('change', () => { void activate() })
+  // One scale pair per axis applies to every chart in the panel.
+  const scales: AxisScales = { x: 'linear', y: 'linear' }
+  const toolbar = axisSelect.closest<HTMLElement>('.visualization-toolbar')
+  const scaleButtons = [...toolbar?.querySelectorAll<HTMLButtonElement>('[data-scale-axis]') ?? []]
+  const scaleNote = toolbar?.querySelector<HTMLElement>('#visualization-scale-note')
+  if (!scaleButtons.length || !scaleNote) throw new Error('Missing resource-profile scale controls')
+  const axisOf = (button: HTMLButtonElement): 'x' | 'y' => button.dataset.scaleAxis === 'x' ? 'x' : 'y'
+  for (const button of scaleButtons) {
+    button.addEventListener('click', () => {
+      scales[axisOf(button)] = button.dataset.scale === 'log' ? 'log' : 'linear'
+      for (const other of scaleButtons) {
+        other.setAttribute('aria-pressed', String(scales[axisOf(other)] === other.dataset.scale))
+      }
+      scaleNote.hidden = scales.x !== 'log' && scales.y !== 'log'
+      void activate()
+    })
+  }
 
   function timingContent (view: ChartView): { host: HTMLElement; timingView: TimingView | null; subtab: string } {
     const timingViews = view.timingViews ?? []
@@ -250,18 +271,18 @@ export function createVisualizationPanel (tabs: HTMLElement, panel: HTMLElement)
     mountGrid(host, view, subtab, charts, xAxis)
     try {
       await Promise.all(charts.map(chart => {
-        const chartHost = host.querySelector<HTMLElement>(`[data-chart="${chart.key}"]`)
-        if (!chartHost) throw new Error(`Missing resource-profile chart: ${chart.key}`)
+        const plot = host.querySelector<HTMLElement>(`[data-chart="${chart.key}"] > .plotly-chart`)
+        if (!plot) throw new Error(`Missing resource-profile chart: ${chart.key}`)
         if (chart.faceted) {
           const figure = timingFacetFigure(chart.points, xAxis)
-          return renderScalePlot(chartHost, figure.traces, figure.layout)
+          return renderPlot(plot, figure.traces, figure.layout, scales)
         }
         const traces = tracesFor(chart.points, chart.field, chart.label, {
           artifact: chart.artifact,
           stepSeries: chart.stepSeries,
           xAxis
         })
-        return renderScalePlot(chartHost, traces, chartLayout(chart.x, chart.y, Boolean(traces.length)))
+        return renderPlot(plot, traces, chartLayout(chart.x, chart.y, Boolean(traces.length)), scales)
       }))
     } finally {
       panel.removeAttribute('aria-busy')

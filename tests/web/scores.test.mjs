@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { compareScores, referenceScores, representationScores } from '../../viewer/src/corpus/scores.ts'
-import { scoreFacetFigure } from '../../viewer/src/corpus/render/score-facets.ts'
+import { compareScores, completenessCutoffs, ionScorePoints, orderedScores, referenceScores, representationScores, scoreGroups } from '../../viewer/src/corpus/scores.ts'
+import { ionScoreFigure, scoreFacetFigure } from '../../viewer/src/corpus/render/score-facets.ts'
 import { runInNewContext } from 'node:vm'
 import { isolatedSource } from './source.mjs'
 
@@ -43,6 +43,24 @@ test('pairing uses exact input, metric and completeness cutoff without coercing 
   assert.equal(comparison.unmatched[0].input, b.input_file)
   assert.equal(compareScores([a], apb, references, 'q_value', '2').points.length, 1)
   assert.equal(referenceScores({ results: { 1: { missing: null, nonfinite: NaN } } }), null)
+})
+
+test('ProteoBench plasma names pair with apb-proteobench\'s generic names; its duplicates pair with nothing', () => {
+  const a = row()
+  const apb = new Map([[`${a.input_file}.apb.json`, { scores: scores({ 1: {
+    median_abs_epsilon_changed_global: 0.61, nr_quantified_changed: 30,
+    dynamic_range_HUMAN_A: 3.1, dynamic_range_HUMAN: 2.1, median_abs_epsilon_HUMAN: 0.31
+  } }) }]])
+  const references = new Map([[a.input_file, referenceScores({ results: { 1: {
+    median_abs_log2_fc_error_spike_ins_global: 0.6, median_abs_log2_fc_error_spike_ins: 0.6,
+    nr_quantified_spike_ins: 29, dynamic_range_human_plasma_A: 3.2, dynamic_range_human_plasma_mean: 2.0,
+    median_abs_epsilon_human_plasma: 0.3, median_abs_epsilon_HUMAN: 0.3
+  } } })]])
+  const comparison = compareScores([a], apb, references)
+  assert.deepEqual(comparison.points.map(point => [point.metric, point.reference, point.apb]), [
+    ['median_abs_epsilon_changed_global', 0.6, 0.61], ['nr_quantified_changed', 29, 30],
+    ['dynamic_range_HUMAN_A', 3.2, 3.1], ['dynamic_range_HUMAN', 2.0, 2.1], ['median_abs_epsilon_HUMAN', 0.3, 0.31]
+  ])
 })
 
 test('failed scoring never reuses declared outputs or scores from converted intermediates', () => {
@@ -194,4 +212,49 @@ test('score panel reads references lazily, defaults to cutoff 1 after an empty l
   await panel.render('second', [a], cache, ['DIA-NN'])
   assert.equal(reads.length, 2, 'a new run reloads its own references')
   assert.equal(host.querySelectorAll('select')[0].value, '1')
+})
+
+test('ion scores plot each APB score of one cutoff against that cutoff\'s nr_feature, never a reference', () => {
+  const a = row()
+  const b = row('submissions/other/a/input.csv')
+  const c = row('submissions/third/a/input.csv')
+  const entrapment = representationScores(representation({ entrapment: { q_value: { combined_FDP: 0.01 } } }))
+  const cache = new Map([
+    [`${a.input_file}.apb.json`, { scores: [...scores({ 1: { CV_median: 0.2, nr_feature: 900 }, 2: { CV_median: 0.15, nr_feature: 700 } }), ...entrapment] }],
+    [`${b.input_file}.apb.json`, { scores: scores({ 1: { CV_median: 0.3 } }) }],
+    [`${c.input_file}.apb.json`, { scores: scores({ 1: { CV_median: 0.25, roc_auc: 0.9, nr_feature: 1200 } }) }]
+  ])
+  const points = ionScorePoints([a, b, c], cache, '1')
+  assert.deepEqual(points.map(point => [point.input, point.metric, point.features, point.score]), [
+    [a.input_file, 'CV_median', 900, 0.2],
+    [c.input_file, 'CV_median', 1200, 0.25],
+    [c.input_file, 'roc_auc', 1200, 0.9]
+  ], 'a cutoff without nr_feature, nr_feature itself and entrapment scores are not plotted')
+  assert.deepEqual(ionScorePoints([a], cache, '2').map(point => point.features), [700])
+  assert.deepEqual(completenessCutoffs([a, b, c], cache).map(cutoff => cutoff.key), ['1', '2'])
+
+  const figure = ionScoreFigure(points.filter(point => point.metric === 'CV_median'), ['DIA-NN'])
+  assert.equal(figure.traces.length, 1, 'no identity or reference line')
+  assert.deepEqual(Array.from(figure.traces[0].x), [0.2, 0.25], 'the score is on X')
+  assert.deepEqual(Array.from(figure.traces[0].y), [900, 1200], 'the ions scored are on Y')
+  assert.equal(figure.layout.yaxis.title.text, 'Ions scored (nr_feature)')
+})
+
+test('ProteoBench main-plot scores lead the ion-score facets in its menu order; the rest follow alphabetically', () => {
+  assert.deepEqual(orderedScores([
+    'CV_median', 'roc_auc', 'mean_abs_epsilon_global', 'nr_quantified_HUMAN',
+    'median_abs_epsilon_eq_species', 'median_abs_epsilon_global', 'CV_median'
+  ]), [
+    'median_abs_epsilon_global', 'mean_abs_epsilon_global', 'median_abs_epsilon_eq_species', 'roc_auc',
+    'CV_median', 'nr_quantified_HUMAN'
+  ])
+})
+
+test('ion scores split into ProteoBench main-plot scores and the rest; an empty group is left out', () => {
+  assert.deepEqual(scoreGroups(['CV_median', 'roc_auc', 'median_abs_epsilon_global', 'nr_quantified_HUMAN']), [
+    { kind: 'main', metrics: ['median_abs_epsilon_global', 'roc_auc'] },
+    { kind: 'other', metrics: ['CV_median', 'nr_quantified_HUMAN'] }
+  ])
+  assert.deepEqual(scoreGroups(['CV_median']), [{ kind: 'other', metrics: ['CV_median'] }])
+  assert.deepEqual(scoreGroups([]), [])
 })

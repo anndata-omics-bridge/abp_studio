@@ -1,5 +1,19 @@
 # Changes
 
+- 2026-11-15: Score comparison reads ProteoBench's plasma score names under the generic names apb-proteobench now stores, such as `median_abs_log2_fc_error_spike_ins_global` as `median_abs_epsilon_changed_global` and `dynamic_range_human_plasma_A` as `dynamic_range_HUMAN_A`, so plasma submissions keep these pairs. ProteoBench's duplicates `*_abs_log2_fc_error_spike_ins` and `*_abs_epsilon_human_plasma` pair with nothing. Runs scored before apb-proteobench's rename pair these scores again once rescored
+
+- 2026-11-13: Corpus viewer: runs using apb-proteobench get a ProteoBench scores tab in Run overview beside Score comparison. It plots one APB score at a time on X against the ions passing the selected completeness cutoff (`nr_feature`) on Y, coloured by software, with the same cutoff selector and dataset filters. A Main scores tab offers ProteoBench's main-plot scores in a dropdown, an Other scores tab the rest
+
+- 2026-11-13: Corpus viewer: opening a run shows the Datasets table after the first 12 reports and fills it as the rest arrive, instead of after every report, tool timing and representation is read. The selected-run banner says what is being read, such as `Reading reports 84 / 197`, and the status bar fills against the whole run. Visualizations and Score comparison draw once, when their files are in
+
+- 2026-11-13: Corpus viewer: File details names its tabs Levels and Structure for every format; subtabs are the level and annotation-table names, in hierarchy order. DuckDB and Parquet results, which had no Structure tab, now get one without AnnData wording: a result root listing levels, annotation tables, root `apb` metadata and feature relations, then each level's slot diagram with key columns and its `apb` metadata. H5AD and H5MU keep their AnnData and MuData diagrams and paths
+
+- 2026-11-13: Search settings and the File details Search parameters tab read apb2's current provenance again: settings from `search_parameters`, the parameter file's name and SHA-256 from its `parameter_file` entry in `input_files`, where apb2 moved them on 2026-10-23. Since then every run's summary had counted no dataset, and the Search parameters tab failed. A result with parameters but no such entry is listed with a note, not counted
+
+- 2026-11-13: Corpus viewer: the Visualizations tab has one X scale and one Y scale Linear/Log pair beside the X axis selector, applied to every chart in the tab, timing facets included; the per-chart Y toggles there are gone. Layer box plots keep their own Y toggle
+
+- 2026-11-13: `scripts/staging_35_viewer.fish` rebuilds the viewers and uploads only the corpus viewer, `index.html` and `assets/`, to fgcz-r-035, leaving the published runs and fixture store in place
+
 - 2026-11-09: Rules viewer: DIA-NN's new `gene` level comes after `protein` in every level list, and the Levels table shows the column with the `gene_assignment` role, which links an ion or protein to its gene
 
 - 2026-11-05: Rules viewer: the Rule tab lists the rules on the left, each with its software and version pattern, path, levels, acquisition methods, shape, extensions and parameter file, replacing the rule dropdown. The open level shows one table at a time, in tabs: Settings, Variants, Quantity layers, Feature table (var), Sample table (obs), Modification map and As stored. The open tab stays open when another rule or level has it

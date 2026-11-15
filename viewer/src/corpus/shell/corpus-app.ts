@@ -7,7 +7,7 @@ import {
 import type { RunFilters, DatasetFilters } from '../filters.js'
 
 export type MainTab = 'runs' | 'insights' | 'files'
-export type InsightTab = 'results' | 'visualizations' | 'scores' | 'oddities' | 'search-settings' | 'settings' | 'log'
+export type InsightTab = 'results' | 'visualizations' | 'scores' | 'proteobench-scores' | 'oddities' | 'search-settings' | 'settings' | 'log'
 export type SettingsTab = 'execution-settings' | 'saved-run' | 'corpus-input' | 'input-metadata' | 'workflow-input' | 'workflow-source'
 
 // Global selectors, faceted sidebars, tabs and one light-DOM host per panel.
@@ -29,11 +29,15 @@ const INSIGHT_TABS = [
   ['results', 'Datasets'],
   ['visualizations', 'Visualizations'],
   ['scores', 'Score comparison'],
+  ['proteobench-scores', 'ProteoBench scores'],
   ['oddities', 'Oddities'],
   ['search-settings', 'Search settings'],
   ['settings', 'Settings & inputs'],
   ['log', 'Scheduler log']
 ] as const
+
+/** Insight tabs shown only for runs whose workflow uses apb-proteobench. */
+const PROTEOBENCH_TABS: readonly InsightTab[] = ['scores', 'proteobench-scores']
 
 const SETTINGS_TABS = [
   ['execution-settings', 'Execution settings'],
@@ -58,6 +62,7 @@ export class CorpusApp extends LitElement {
     error: { type: String },
     status: { type: String },
     counts: { type: String },
+    progress: { type: String },
     steps: { type: String },
     fractions: { type: Object },
     runValue: { type: String },
@@ -79,6 +84,8 @@ export class CorpusApp extends LitElement {
   error = ''
   status = 'Waiting for a run'
   counts = 'No saved run selected'
+  /** What a run load is reading now, such as ``Reading reports 84 / 197``; empty when idle. */
+  progress = ''
   steps = 'Steps: none recorded'
   fractions: Record<string, number> = {}
   runValue = ''
@@ -199,7 +206,7 @@ export class CorpusApp extends LitElement {
   }
 
   get insightTabs () {
-    return INSIGHT_TABS.filter(([id]) => id !== 'scores' || this.hasProteobench)
+    return INSIGHT_TABS.filter(([id]) => !PROTEOBENCH_TABS.includes(id) || this.hasProteobench)
   }
 
   sortRuns (key: RunSort) {
@@ -319,6 +326,7 @@ export class CorpusApp extends LitElement {
             <div><dt>Output</dt><dd>${this.selectedOutputExtensions.join(', ') || '—'}</dd></div>
           </dl>
           <span class="run-banner-counts">${this.counts}</span>
+          ${this.progress ? html`<span class="run-progress" role="status">${this.progress}</span>` : ''}
         ` : html`<strong>Choose a run from Runs</strong>`}
       </section>
     `
@@ -458,15 +466,26 @@ export class CorpusApp extends LitElement {
       <section id="results" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-results" ?hidden=${this.insightTab !== 'results'}><div id="datasets"></div></section>
       <section id="visualizations" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-visualizations" ?hidden=${this.insightTab !== 'visualizations'}>
         <h2>Corpus resource profiles</h2>
-        <label class="visualization-x-axis">X axis
-          <select id="visualization-x-axis" aria-label="Resource profile x axis">
-            <option value="input_size_mib">Vendor input size (MiB)</option>
-          </select>
-        </label>
+        <div class="visualization-toolbar">
+          <label class="visualization-x-axis">X axis
+            <select id="visualization-x-axis" aria-label="Resource profile x axis">
+              <option value="input_size_mib">Vendor input size (MiB)</option>
+            </select>
+          </label>
+          ${(['x', 'y'] as const).map(axis => html`
+            <div class="scale-controls" role="group" aria-label=${`Resource profile ${axis} axis scale`}>
+              <span>${axis.toUpperCase()} scale</span>
+              <button type="button" data-scale-axis=${axis} data-scale="linear" aria-pressed="true">Linear</button>
+              <button type="button" data-scale-axis=${axis} data-scale="log" aria-pressed="false">Log</button>
+            </div>
+          `)}
+          <span id="visualization-scale-note" class="scale-note" hidden>Non-positive values hidden.</span>
+        </div>
         <nav id="visualization-tabs" class="tabs subtabs visualization-tabs" aria-label="Workflow visualization views" role="tablist"></nav>
         <section id="visualization-chart-panel" class="visualization-chart-panel" role="tabpanel"></section>
       </section>
       <section id="scores" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-scores" ?hidden=${this.insightTab !== 'scores' || !this.hasProteobench}></section>
+      <section id="proteobench-scores" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-proteobench-scores" ?hidden=${this.insightTab !== 'proteobench-scores' || !this.hasProteobench}></section>
       <section id="oddities" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-oddities" ?hidden=${this.insightTab !== 'oddities'}></section>
       <section id="search-settings" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-search-settings" ?hidden=${this.insightTab !== 'search-settings'}></section>
       <section id="settings" class="view insight-panel" role="tabpanel" aria-labelledby="insight-tab-settings" ?hidden=${this.insightTab !== 'settings'}>

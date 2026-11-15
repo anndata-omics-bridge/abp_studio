@@ -1,4 +1,4 @@
-import type { RunSearchSettings, SearchParametersRecord } from '../types.js'
+import type { RecordedParameterFile, RunSearchSettings } from '../types.js'
 import { parameterRows, searchSettingsRows } from '../search-settings.js'
 import { dataTable, jsonTree, node } from './dom.js'
 import { fileLink } from './links.js'
@@ -44,13 +44,17 @@ export function renderSearchSettings (host: HTMLElement, summary: RunSearchSetti
 }
 
 /** One result's recorded parameter file: where it came from, each field, then the whole record. */
-export function renderSearchParameters (host: HTMLElement, record: SearchParametersRecord, href: string): void {
+export function renderSearchParameters (host: HTMLElement, { file, record }: RecordedParameterFile, href: string): void {
   const source = node('p', 'Parameter file: ', 'empty-note')
-  source.append(
-    href ? fileLink(href, record.file_name) : node('span', record.file_name),
-    node('span', ` · SHA-256 ${record.sha256.slice(0, 12)}…`)
-  )
-  source.title = record.sha256
+  if (file) {
+    source.append(
+      href ? fileLink(href, file.file_name) : node('span', file.file_name),
+      node('span', ` · SHA-256 ${file.sha256.slice(0, 12)}…`)
+    )
+    source.title = file.sha256
+  } else {
+    source.append(node('span', 'not recorded'))
+  }
   host.replaceChildren(
     node('h3', 'Search parameters'),
     source,

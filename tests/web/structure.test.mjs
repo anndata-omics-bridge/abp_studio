@@ -98,6 +98,37 @@ test('custom hierarchy determines embedded AnnData order', () => {
   assert.deepEqual(root.modalities.map(item => item.name), ['peptidoform', 'multisite', 'site'])
 })
 
+test('DuckDB and Parquet results project a result root and levels, with no AnnData paths', () => {
+  for (const format of ['duckdb', 'parquet']) {
+    const representation = {
+      artifact: { physical_format: format },
+      root: { apb: { ...provenance, hierarchy: { name: 'lfq', identities: [['peptidoform_ion', 'peptidoform_ion'], ['protein', 'protein']] } } },
+      levels: [protein, ion], annotation_tables: [annotation], feature_relations: [relation]
+    }
+    const [root, ions, proteins, ...rest] = structureViews(representation)
+    assert.equal(rest.length, 0, `${format}: annotation tables are listed in the root, not drawn as AnnData`)
+    assert.equal(root.kind, 'result')
+    assert.equal(root.label, 'Result root')
+    assert.equal(root.uns, representation.root.apb)
+    assert.deepEqual(root.levels, [
+      { name: 'peptidoform_ion', dimensions: ion.dimensions },
+      { name: 'protein', dimensions: protein.dimensions }
+    ])
+    assert.deepEqual(root.annotationTables, [annotation])
+    assert.deepEqual(root.relations, [relation])
+    assert.deepEqual([ions.label, proteins.label], ['Level · peptidoform_ion', 'Level · protein'])
+    assert.equal(ions.objectPath, null)
+    assert.equal(ions.unsKey, 'apb')
+    assert.equal(ions.hasStorage, false)
+    assert.equal('rootUns' in ions, false)
+    assert.equal(ions.diagram.uns, ion.apb)
+    const scopes = apbMetadataScopes(representation)
+    assert.deepEqual(scopes.map(scope => scope.label), ['Root', 'protein', 'peptidoform_ion'])
+    assert.deepEqual(scopes[0].value, { apb: representation.root.apb })
+    assert.deepEqual(scopes[2].value, { apb: ion.apb })
+  }
+})
+
 test('FASTA check counts and source stay paired in standalone AnnData', () => {
   const representation = { artifact: { physical_format: 'h5ad' }, root: { apb: provenance }, levels: [ion] }
   assert.deepEqual(fastaChecks(representation), [{

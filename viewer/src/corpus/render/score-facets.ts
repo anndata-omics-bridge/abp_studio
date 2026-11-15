@@ -1,6 +1,6 @@
 import type { Layout } from '../../shared/plotly.js'
 import type { PlotTrace } from './scale.js'
-import type { ScorePoint } from '../scores.js'
+import type { IonScorePoint, ScorePoint } from '../scores.js'
 
 export const SCORE_COLORS = [
   '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b',
@@ -55,6 +55,36 @@ export function scoreFacetFigure (points: ScorePoint[], software: string[], mode
       font: { family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 11 },
       xaxis: { title: { text: mode === 'ma' ? 'Mean score' : 'ProteoBench' }, range: xLimits, zeroline: false, automargin: true },
       yaxis: { title: { text: mode === 'ma' ? 'APB − ProteoBench' : 'APB' }, range: yLimits, zeroline: false, automargin: true }
+    }
+  }
+}
+
+/** The features scored at the selected cutoff against one APB score, coloured by software. */
+export function ionScoreFigure (points: IonScorePoint[], software: string[]): { traces: PlotTrace[]; layout: Partial<Layout> } {
+  const traces: PlotTrace[] = []
+  for (const [index, name] of software.entries()) {
+    const selected = points.filter(point => point.software === name)
+    if (!selected.length) continue
+    traces.push({
+      type: 'scatter', mode: 'markers', name, showlegend: false,
+      x: selected.map(point => point.score),
+      y: selected.map(point => point.features),
+      marker: { size: 7, opacity: 0.75, color: SCORE_COLORS[index % SCORE_COLORS.length] },
+      text: selected.map(point => point.input),
+      customdata: selected.map(point => [point.module, point.level, point.quantity, point.sliceLabel]),
+      hovertemplate: '<b>%{text}</b><br>software=%{fullData.name}<br>module=%{customdata[0]}' +
+        '<br>level=%{customdata[1]} · quantity=%{customdata[2]}<br>%{customdata[3]}' +
+        '<br>score=%{x:.7g}<br>nr_feature=%{y:,}<extra></extra>'
+    })
+  }
+  return {
+    traces,
+    layout: {
+      height: 300, margin: { l: 65, r: 15, t: 8, b: 55 },
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 11 },
+      xaxis: { title: { text: 'APB score' }, zeroline: false, automargin: true },
+      yaxis: { title: { text: 'Ions scored (nr_feature)' }, zeroline: false, automargin: true }
     }
   }
 }

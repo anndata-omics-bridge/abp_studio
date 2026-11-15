@@ -1,6 +1,7 @@
 #!/usr/bin/env fish
 # Every corpus run that is not staging, one command per line, into the configured output root.
-# Nothing here reaches fgcz-r-035: that site is built by staging_35.fish alone.
+# Nothing here reaches fgcz-r-035: that site is built by staging_35.fish, and its viewer alone
+# is replaced by staging_35_viewer.fish.
 # Run the lines you need from the apb_studio folder.
 # Defaults: --format hdf5, --cores 3, --force. --strict refuses a corpus with missing datasets.
 

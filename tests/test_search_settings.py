@@ -29,9 +29,18 @@ PARAMETERS: dict[str, Any] = {
 }
 
 
-def _sidecar(path: Path, record: dict[str, Any] | None) -> Artifact:
+TABLE = {
+    "role": "table",
+    "file_name": "input.tsv",
+    "size_bytes": 10,
+    "sha256": "1" * 64,
+    "compression": "none",
+    "format": "tsv",
+}
+
+
+def _sidecar(path: Path, provenance: dict[str, Any]) -> Artifact:
     sidecar = path.with_name(f"{path.name}.apb.json")
-    provenance = {"search_parameters": record} if record else {}
     sidecar.write_text(
         json.dumps({
             "format": "apb2-result-representation",
@@ -60,17 +69,33 @@ def _report(name: str, software: str, steps: list[StepResult]) -> DatasetReport:
     )
 
 
-def _converted(folder: Path, name: str, record: dict[str, Any] | None) -> list[StepResult]:
+def _converted(folder: Path, name: str, provenance: dict[str, Any]) -> list[StepResult]:
     """One conversion writing two split outputs, each with its own sidecar."""
     outputs: list[Artifact] = []
     for part in ("peptidoform_ion", "protein"):
         path = folder / f"{name}_{part}.h5ad"
-        outputs += [Artifact(role="converted", path=path, size_bytes=10), _sidecar(path, record)]
+        outputs += [
+            Artifact(role="converted", path=path, size_bytes=10),
+            _sidecar(path, provenance),
+        ]
     return [StepResult(name="convert", command=["apb2"], status="succeeded", outputs=outputs)]
 
 
 def _record(**changes: Any) -> dict[str, Any]:
-    return {"file_name": "params.txt", "sha256": "0" * 64, "parameters": PARAMETERS | changes}
+    """apb2's provenance: parameters, and the parameter file among the files read."""
+    parameter_file = TABLE | {
+        "role": "parameter_file",
+        "file_name": "params.txt",
+        "sha256": "0" * 64,
+    }
+    return {
+        "search_parameters": {"parameters": PARAMETERS | changes},
+        "input_files": [parameter_file, TABLE],
+    }
+
+
+UNRECORDED = {"input_files": [TABLE]}
+"""A conversion without a parameter file: its provenance lists only the table."""
 
 
 def test_the_article_rule_decides_what_counts_as_recovered(tmp_path: Path) -> None:
@@ -80,6 +105,7 @@ def test_the_article_rule_decides_what_counts_as_recovered(tmp_path: Path) -> No
 
     assert result.parameters is not None
     assert result.parameters.file_name == "params.txt"
+    assert result.parameters.sha256 == "0" * 64
     assert result.parameters.recovered == [
         "software_version",
         "enzyme",
@@ -95,7 +121,9 @@ def test_the_article_rule_decides_what_counts_as_recovered(tmp_path: Path) -> No
 def test_a_result_without_a_record_or_a_representation_is_listed_not_counted(
     tmp_path: Path,
 ) -> None:
-    unrecorded = dataset_search_settings(_report("b", "Free", _converted(tmp_path, "b", None)))
+    unrecorded = dataset_search_settings(
+        _report("b", "Free", _converted(tmp_path, "b", UNRECORDED))
+    )
     failed = dataset_search_settings(
         _report("c", "Synthetic", [StepResult(name="convert", command=["apb2"], status="failed")])
     )
@@ -108,12 +136,26 @@ def test_a_result_without_a_record_or_a_representation_is_listed_not_counted(
     ]
 
 
+def test_parameters_without_their_parameter_file_are_listed_not_counted(tmp_path: Path) -> None:
+    provenance = _record() | {"input_files": [TABLE]}
+
+    result = dataset_search_settings(
+        _report("e", "Synthetic", _converted(tmp_path, "e", provenance))
+    )
+
+    assert result.parameters is None
+    assert result.notes == [
+        "The displayed result records search parameters but no parameter file among its input "
+        "files."
+    ]
+
+
 def test_software_rows_count_each_recorded_dataset_once(tmp_path: Path) -> None:
     reports = [
         _report("a", "Synthetic", _converted(tmp_path, "a", _record())),
         _report("b", "Synthetic", _converted(tmp_path, "b", _record(acquisition_method="DDA"))),
         _report("c", "Synthetic", [StepResult(name="convert", command=["apb2"], status="failed")]),
-        _report("d", "Free", _converted(tmp_path, "d", None)),
+        _report("d", "Free", _converted(tmp_path, "d", UNRECORDED)),
     ]
     manifest = RunManifest.model_construct(run_id="test")
 

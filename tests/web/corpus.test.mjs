@@ -254,9 +254,9 @@ test('representation views separate APB metadata, scientific levels and raw JSON
   const h5muViews = representationViews(h5mu)
   assert.deepEqual(h5muViews.map(({ key, kind, label }) => ({ key, kind, label })), [
     { key: 'apb-metadata', kind: 'apb-metadata', label: 'APB metadata' },
-    { key: 'level-0', kind: 'level', label: 'AnnData · peptidoform_ion' },
-    { key: 'level-1', kind: 'level', label: 'AnnData · protein' },
-    { key: 'annotation-0', kind: 'annotation', label: 'AnnData · annotation/proteins' },
+    { key: 'level-0', kind: 'level', label: 'peptidoform_ion' },
+    { key: 'level-1', kind: 'level', label: 'protein' },
+    { key: 'annotation-0', kind: 'annotation', label: 'annotation/proteins' },
     { key: 'anndata-structure', kind: 'anndata-structure', label: 'Structure' },
     { key: 'representation-json', kind: 'representation-json', label: 'Representation JSON' }
   ])
@@ -273,21 +273,31 @@ test('representation views separate APB metadata, scientific levels and raw JSON
     representationViews(h5ad).map(({ kind, label }) => ({ kind, label })),
     [
       { kind: 'apb-metadata', label: 'APB metadata' },
-      { kind: 'level', label: 'AnnData · peptidoform_ion' },
+      { kind: 'level', label: 'peptidoform_ion' },
       { kind: 'anndata-structure', label: 'Structure' },
       { kind: 'representation-json', label: 'Representation JSON' }
     ]
   )
 
-  const parquet = {
-    artifact: { name: 'result.parquet', physical_format: 'parquet' },
+  for (const format of ['duckdb', 'parquet']) {
+    const tables = { ...h5mu, artifact: { name: `aggregated.${format}`, physical_format: format } }
+    assert.deepEqual(
+      representationViews(tables).map(({ key, kind, label }) => ({ key, kind, label })),
+      h5muViews.map(({ key, kind, label }) => ({ key, kind, label })),
+      `${format} shows the same objects as h5mu`
+    )
+  }
+
+  const unknown = {
+    artifact: { name: 'result.bin', physical_format: 'bin' },
     levels: [{ name: 'peptide' }]
   }
   assert.deepEqual(
-    representationViews(parquet).map(({ kind, label }) => ({ kind, label })),
+    representationViews(unknown).map(({ kind, label }) => ({ kind, label })),
     [
       { kind: 'apb-metadata', label: 'APB metadata' },
-      { kind: 'level', label: 'Level · peptide' },
+      { kind: 'level', label: 'peptide' },
+      { kind: 'anndata-structure', label: 'Structure' },
       { kind: 'representation-json', label: 'Representation JSON' }
     ]
   )
@@ -703,7 +713,7 @@ test('viewer exposes corpus charts and frozen input metadata', () => {
   assert.match(shell, /id="visualization-chart-panel"[^>]*role="tabpanel"/)
   assert.match(shell, /\['input-metadata', 'Input sizes'\]/)
   assert.match(application, /manifest\.input_metadata/)
-  assert.match(visualizations, /renderScalePlot/)
+  assert.match(visualizations, /renderPlot\(/)
   assert.match(visualizations, /timingFacetFigure\(chart\.points, xAxis\)/)
   assert.match(plotly, /Plotly\.react/)
   assert.match(visualizations, /xAxisChoices\(views\)/)
@@ -758,7 +768,7 @@ test('dataset table stays compact while show more exposes every artifact and the
   assert.doesNotMatch(application, /datasetArtifacts|Complete execution report/)
 })
 
-test('file details group AnnData objects into subtabs and open their scientific view directly', () => {
+test('file details group levels into subtabs and open their scientific view directly', () => {
   const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
   const detail = readFileSync('viewer/src/corpus/panels/detail.ts', 'utf8')
   const scientific = readFileSync('viewer/src/corpus/render/scientific.ts', 'utf8')
@@ -771,12 +781,12 @@ test('file details group AnnData objects into subtabs and open their scientific 
   assert.match(detail, /artifactStorePath\(selectedRun, row\.output_dir, artifact\.path\)/)
   assert.match(detail, /representationViews\(preferred\.representation\)/)
   assert.match(detail, /registerTab\(`scientific-\$\{view\.key\}`, view\.label/)
-  assert.match(detail, /registerTab\('anndata', label, panel/)
-  assert.match(detail, /renderTabs\(host, `\$\{label\} objects`, objects\.map/)
+  assert.match(detail, /registerTab\('anndata', 'Levels', panel/)
+  assert.match(detail, /renderTabs\(host, 'Levels and annotation tables', objects\.map/)
   assert.match(detail, /defaultTab = objects\.length \? 'anndata'/)
   assert.match(detail, /app\.select\('files'\)/)
   assert.match(detail, /panel\.setAttribute\('aria-busy', 'true'\)/)
-  assert.match(scientific, /renderNestedTabs\(article, `\$\{level\.name\} AnnData sections`/)
+  assert.match(scientific, /renderNestedTabs\(article, `\$\{level\.name\} level sections`/)
   assert.match(scientific, /renderNestedTabs\([\s\S]*'APB metadata scopes'/)
   assert.match(scientific, /\.\.\.level\.layers\.map\(layer => \(\{/)
   assert.match(scientific, /resizeScalePlot\(chart\)/)
@@ -794,7 +804,7 @@ test('structured JSON uses the locally bundled tree-viewer component', () => {
   assert.match(dom, /document\.createElement\('json-viewer'\)/)
   assert.match(dom, /viewer\.expandAll\(\)/)
   assert.match(dom, /viewer\.collapseAll\(\)/)
-  assert.match(scientific, /jsonTree\(scope\.value, \['uns', 'uns\.apb'\]\)/)
+  assert.match(scientific, /jsonTree\(scope\.value, \['uns', 'uns\.apb', 'apb'\]\)/)
   assert.match(adapter, /import '@alenaksu\/json-viewer'/)
 })
 
@@ -824,12 +834,22 @@ test('corpus composition keeps rendering inside its panels and adapters', () => 
 test('every quantitative Plotly chart switches its value axis between linear and log', () => {
   const plotly = readFileSync('viewer/src/corpus/render/plotly.ts', 'utf8')
   const scientific = readFileSync('viewer/src/corpus/render/scientific.ts', 'utf8')
-  const visualizations = readFileSync('viewer/src/corpus/panels/visualizations.ts', 'utf8')
   assert.match(plotly, /\['linear', 'Linear'\], \['log', 'Log'\]/)
   assert.match(plotly, /tracesForScale\(state\.traces, scale\)/)
-  assert.match(plotly, /yAxesForScale\(state\.layout, scale\)/)
+  assert.match(plotly, /axesForScale\(state\.layout, 'y', scale\)/)
   assert.match(plotly, /Non-positive values hidden; affected whiskers start at Q1/)
   assert.match(plotly, /button\.disabled = !hasData/)
   assert.match(scientific, /renderScalePlot/)
-  assert.match(visualizations, /renderScalePlot/)
+})
+
+test('resource profiles share one x and one y scale control across every chart', () => {
+  const plotly = readFileSync('viewer/src/corpus/render/plotly.ts', 'utf8')
+  const visualizations = readFileSync('viewer/src/corpus/panels/visualizations.ts', 'utf8')
+  const shell = readFileSync('viewer/src/corpus/shell/corpus-app.ts', 'utf8')
+  assert.match(shell, /class="visualization-toolbar"[\s\S]*\['x', 'y'\][\s\S]*data-scale-axis=\$\{axis\} data-scale="log"/)
+  assert.match(plotly, /axesForScale\(layout, 'x', scales\.x\)/)
+  assert.match(plotly, /axesForScale\(layout, 'y', scales\.y\)/)
+  assert.match(visualizations, /renderPlot\(plot, traces, chartLayout\(chart\.x, chart\.y, Boolean\(traces\.length\)\), scales\)/)
+  assert.match(visualizations, /renderPlot\(plot, figure\.traces, figure\.layout, scales\)/)
+  assert.doesNotMatch(visualizations, /renderScalePlot/)
 })

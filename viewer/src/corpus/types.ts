@@ -249,15 +249,24 @@ export interface FastaCheck extends PeptideVerification, FastaVerificationProven
 export interface SearchedModification { name: string; target?: string | null; position?: string | null }
 export interface MassTolerance { mode: 'absolute' | 'automatic'; value?: number | null; unit?: string | null }
 export type ParameterValue = string | number | boolean | null | MassTolerance | SearchedModification[]
-/** apb2's record of the parameter file a result was converted with. */
+/** apb2's record of the search parameters a result was converted with. */
 export interface SearchParametersRecord {
+  parameters: Record<string, ParameterValue>
+}
+/** One file apb2 read for a result; the parameter file has role `parameter_file`. */
+export interface InputFileRecord {
+  role: string
   file_name: string
   sha256: string
-  parameters: Record<string, ParameterValue>
+}
+/** A result's recorded search parameters and the parameter file entry they came from. */
+export interface RecordedParameterFile {
+  file: InputFileRecord | null
+  record: SearchParametersRecord
 }
 export interface ApbMetadata extends Record<string, unknown> {
   hierarchy?: { identities?: [string, string][] }
-  parse?: { provenance?: { search_parameters?: SearchParametersRecord } }
+  parse?: { provenance?: { search_parameters?: SearchParametersRecord; input_files?: InputFileRecord[] } }
   fasta?: {
     provenance?: { peptide_verification?: FastaVerificationProvenance }
     result?: { peptide_verification?: PeptideVerification }
@@ -314,11 +323,13 @@ export interface AnnDataDiagram {
   aligned: Record<AlignedSlot, NamedTable[]>
   uns: ApbMetadata
 }
+/** One level's slots: an AnnData in h5ad and h5mu, a level of tables in DuckDB and Parquet. */
 export interface AnnDataStructure {
   kind: 'anndata'
   label: string
-  objectPath: string
-  /** Where this AnnData keeps its level part: ``uns["apb"]``, or ``uns["peptidoform_ion"]["apb"]`` in H5AD. */
+  /** The AnnData's path; null for a DuckDB or Parquet level, which is no AnnData object. */
+  objectPath: string | null
+  /** Where the level part is kept: ``uns["apb"]``, ``uns["peptidoform_ion"]["apb"]`` in H5AD, or the manifest's ``apb``. */
   unsKey: string
   /** A standalone H5AD's root part, kept apart in ``uns["apb"]``. */
   rootUns?: ApbMetadata
@@ -332,7 +343,16 @@ export interface MuDataStructure {
   objectPath: string
   uns: ApbMetadata
   hasStorage: boolean
-  modalities: { name: string; objectPath: string; dimensions: Dimensions }[]
+  modalities: { name: string; dimensions: Dimensions }[]
   relations: FeatureRelation[]
 }
-export type StructureView = AnnDataStructure | MuDataStructure
+/** The root of a DuckDB or Parquet result: its manifest's root ``apb``, levels, annotation tables and relations. */
+export interface ResultStructure {
+  kind: 'result'
+  label: string
+  uns: ApbMetadata
+  levels: { name: string; dimensions: Dimensions }[]
+  annotationTables: NamedTable[]
+  relations: FeatureRelation[]
+}
+export type StructureView = AnnDataStructure | MuDataStructure | ResultStructure

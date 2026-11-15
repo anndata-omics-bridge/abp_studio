@@ -1,9 +1,12 @@
 import type { Layout, PlotlyHTMLElement } from '../../shared/plotly.js'
 import type { PlotTrace, ValueScale } from './scale.js'
 import { Plotly } from '../../shared/plotly.js'
-import { tracesForScale, yAxesForScale } from './scale.js'
+import { axesForScale, tracesForScale } from './scale.js'
 
 export const PLOT_CONFIG = { displayModeBar: false, responsive: true }
+
+/** X and y scales chosen by a control outside the chart. */
+export interface AxisScales { x: ValueScale; y: ValueScale }
 const plotStates = new WeakMap<HTMLElement, { plot: HTMLElement; traces: PlotTrace[]; layout: Partial<Layout> }>()
 
 function updateControls (host: HTMLElement, scale: ValueScale): void {
@@ -23,7 +26,21 @@ async function draw (host: HTMLElement, scale: ValueScale): Promise<void> {
     tracesForScale(state.traces, scale),
     {
       ...state.layout,
-      ...yAxesForScale(state.layout, scale)
+      ...axesForScale(state.layout, 'y', scale)
+    },
+    PLOT_CONFIG
+  )
+}
+
+/** Render a Plotly chart at x and y scales chosen outside it. */
+export async function renderPlot (plot: HTMLElement, traces: PlotTrace[], layout: Partial<Layout>, scales: AxisScales): Promise<void> {
+  await Plotly.react(
+    plot,
+    tracesForScale(traces, scales.y),
+    {
+      ...layout,
+      ...axesForScale(layout, 'x', scales.x),
+      ...axesForScale(layout, 'y', scales.y)
     },
     PLOT_CONFIG
   )

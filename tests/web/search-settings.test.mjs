@@ -67,10 +67,13 @@ test('each recorded parameter reads as text, in apb2 order', () => {
 })
 
 test('the record lives in the root part; a parameter-free result has none', () => {
-  const record = { file_name: 'params.json', sha256: '0'.repeat(64), parameters: {} }
-  const result = { root: { apb: { parse: { provenance: { search_parameters: record } } } }, levels: [] }
+  const record = { parameters: {} }
+  const table = { role: 'table', file_name: 'input.tsv', sha256: '1'.repeat(64) }
+  const file = { role: 'parameter_file', file_name: 'params.json', sha256: '0'.repeat(64) }
+  const root = provenance => ({ root: { apb: { parse: { provenance } } }, levels: [] })
 
-  assert.equal(searchParametersRecord(result), record)
-  assert.equal(searchParametersRecord({ root: { apb: { parse: { provenance: {} } } }, levels: [] }), null)
+  assert.deepEqual(searchParametersRecord(root({ search_parameters: record, input_files: [table, file] })), { file, record })
+  assert.deepEqual(searchParametersRecord(root({ search_parameters: record, input_files: [table] })), { file: null, record })
+  assert.equal(searchParametersRecord(root({ input_files: [table] })), null)
   assert.equal(searchParametersRecord({ levels: [] }), null)
 })

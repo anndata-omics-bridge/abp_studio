@@ -45,9 +45,29 @@ function scoreSlices (results: unknown): ScoreSlice[] {
     .filter(slice => Object.keys(slice.values).length)
 }
 
+/**
+ * ProteoBench plasma score names and the generic names apb-proteobench stores them under; its
+ * docs/compatibility.md lists them. ProteoBench's duplicates (`*_abs_log2_fc_error_spike_ins`,
+ * `*_abs_epsilon_human_plasma`) are left out, so they pair with nothing.
+ */
+const PROTEOBENCH_SCORE_NAMES: Record<string, string> = {
+  median_abs_log2_fc_error_spike_ins_global: 'median_abs_epsilon_changed_global',
+  mean_abs_log2_fc_error_spike_ins_global: 'mean_abs_epsilon_changed_global',
+  median_abs_log2_fc_error_spike_ins_eq_species: 'median_abs_epsilon_changed_eq_species',
+  mean_abs_log2_fc_error_spike_ins_eq_species: 'mean_abs_epsilon_changed_eq_species',
+  nr_quantified_spike_ins: 'nr_quantified_changed',
+  dynamic_range_human_plasma_A: 'dynamic_range_HUMAN_A',
+  dynamic_range_human_plasma_B: 'dynamic_range_HUMAN_B',
+  dynamic_range_human_plasma_mean: 'dynamic_range_HUMAN'
+}
+
+/** A downloaded ProteoBench datapoint, its scores under the names APB stores them by. */
 export function referenceScores (document: unknown): ReferenceScores | null {
   const value = object(document)
-  const slices = scoreSlices(value.results)
+  const slices = scoreSlices(value.results).map(slice => ({
+    ...slice,
+    values: Object.fromEntries(Object.entries(slice.values).map(([name, score]) => [PROTEOBENCH_SCORE_NAMES[name] ?? name, score]))
+  }))
   return slices.length ? { id: typeof value.id === 'string' ? value.id : '', slices } : null
 }
 
@@ -124,4 +144,67 @@ export function compareScores (
     })
   }
   return { points, unmatched, matchedInputs: matched.size }
+}
+
+/** One APB score of one dataset, beside the features ProteoBench scored at that completeness cutoff. */
+export interface IonScorePoint {
+  input: string; software: string; module: string; level: string; quantity: string
+  slice: string; sliceLabel: string; metric: string; features: number; score: number; artifact: string
+}
+
+/** ProteoBench's count of the features passing a completeness cutoff; the y of every ion-score facet. */
+export const FEATURE_COUNT = 'nr_feature'
+
+/** The scores ProteoBench's quantification main plot offers on X, in its menu order. */
+export const MAIN_PLOT_SCORES = [
+  'median_abs_epsilon_global', 'mean_abs_epsilon_global',
+  'median_abs_epsilon_eq_species', 'mean_abs_epsilon_eq_species', 'roc_auc'
+]
+
+/** Main-plot scores first, in ProteoBench's order; every other score after them, alphabetically. */
+export function orderedScores (metrics: string[]): string[] {
+  const rank = (metric: string) => {
+    const index = MAIN_PLOT_SCORES.indexOf(metric)
+    return index < 0 ? MAIN_PLOT_SCORES.length : index
+  }
+  return [...new Set(metrics)].sort((first, second) => rank(first) - rank(second) || first.localeCompare(second))
+}
+
+/**
+ * APB's own quantification scores at one completeness cutoff, each against that cutoff's
+ * ``nr_feature``. Entrapment scores and cutoffs without ``nr_feature`` are left out.
+ */
+export function ionScorePoints (
+  rows: DatasetRow[], summaries: Map<string, RepresentationSummary | null>, sliceKey: string
+): IonScorePoint[] {
+  return rows.flatMap(row => {
+    const { artifact, quantities } = scoresForRow(row, summaries)
+    return quantities.filter(quantity => quantity.kind === 'quantification').flatMap(quantity =>
+      quantity.slices.filter(slice => slice.key === sliceKey && slice.values[FEATURE_COUNT] != null).flatMap(slice =>
+        Object.entries(slice.values).filter(([metric]) => metric !== FEATURE_COUNT).map(([metric, score]) => ({
+          input: row.input_file, software: row.software_name, module: row.module,
+          level: quantity.level, quantity: quantity.quantity, slice: slice.key, sliceLabel: slice.label,
+          metric, features: slice.values[FEATURE_COUNT], score, artifact
+        }))))
+  })
+}
+
+/** The completeness cutoffs any dataset's quantification scores carry, in numeric order. */
+export function completenessCutoffs (rows: DatasetRow[], summaries: Map<string, RepresentationSummary | null>): { key: string; label: string }[] {
+  const cutoffs = new Map(scoreQuantities(rows, summaries)
+    .filter(quantity => quantity.kind === 'quantification')
+    .flatMap(quantity => quantity.slices.map(slice => [slice.key, { key: slice.key, label: slice.label }] as const)))
+  return [...cutoffs.values()].sort((first, second) => Number(first.key) - Number(second.key))
+}
+
+export type ScoreGroup = 'main' | 'other'
+
+/** ProteoBench's main-plot scores and every other score, each in display order; an empty group is left out. */
+export function scoreGroups (metrics: string[]): { kind: ScoreGroup; metrics: string[] }[] {
+  const ordered = orderedScores(metrics)
+  const groups: { kind: ScoreGroup; metrics: string[] }[] = [
+    { kind: 'main', metrics: ordered.filter(metric => MAIN_PLOT_SCORES.includes(metric)) },
+    { kind: 'other', metrics: ordered.filter(metric => !MAIN_PLOT_SCORES.includes(metric)) }
+  ]
+  return groups.filter(group => group.metrics.length)
 }

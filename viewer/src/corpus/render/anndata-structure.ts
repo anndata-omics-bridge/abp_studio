@@ -1,5 +1,5 @@
-import type { AnnDataDiagram, AnnDataStructure, ApbMetadata, Layer, MuDataStructure, NamedTable, Representation, TableDescription } from '../types.js'
-import { alignedSummary, matrixSummary, structureViews } from '../representation.js'
+import type { AnnDataDiagram, AnnDataStructure, ApbMetadata, FeatureRelation, Layer, MuDataStructure, NamedTable, Representation, ResultStructure, TableDescription } from '../types.js'
+import { alignedSummary, matrixSummary, structureLayout, structureViews } from '../representation.js'
 import { dataTable, jsonTree, node } from './dom.js'
 import { renderTabs } from './tabs.js'
 
@@ -48,11 +48,12 @@ function columns (description: Pick<TableDescription, 'columns'> | null | undefi
   }), 'No columns')
 }
 
-function axisSlot (name: string, title: string, description: TableDescription | null | undefined): HTMLElement {
+/** An AnnData axis names its index ``obs_names``/``var_names``; a DuckDB or Parquet level has key columns. */
+function axisSlot (name: string, title: string, description: TableDescription | null | undefined, annData: boolean): HTMLElement {
   const keys = (description?.key_columns ?? []).join(', ') || 'none'
   const content = document.createElement('div')
   content.append(
-    node('p', `${name}_names ← ${keys}`, 'structure-index'),
+    node('p', annData ? `${name}_names ← ${keys}` : `key columns: ${keys}`, 'structure-index'),
     columns(description)
   )
   return slot(
@@ -162,7 +163,7 @@ function alignedSlot (name: string, values: NamedTable[]): HTMLElement {
 
 interface UnsPart { uns: ApbMetadata; unsKey: string; hasStorage: boolean }
 
-function unsGroups (part: UnsPart, objectPath: string): HTMLElement {
+function unsGroups (part: UnsPart, objectPath: string | null): HTMLElement {
   const content = document.createElement('div')
   const groups = document.createElement('div')
   groups.className = 'structure-uns-groups'
@@ -171,7 +172,7 @@ function unsGroups (part: UnsPart, objectPath: string): HTMLElement {
     const group = document.createElement('section')
     group.append(
       node('h6', tool),
-      node('code', `${objectPath}.${part.unsKey}[${JSON.stringify(tool)}]`, 'structure-path'),
+      node('code', `${objectPath ? `${objectPath}.` : ''}${part.unsKey}[${JSON.stringify(tool)}]`, 'structure-path'),
       jsonTree(value)
     )
     groups.append(group)
@@ -182,22 +183,31 @@ function unsGroups (part: UnsPart, objectPath: string): HTMLElement {
   return content
 }
 
-/** One uns slot holding every APB part of an object: a standalone H5AD has a root and a level part. */
-function unsSlot (parts: UnsPart[], objectPath: string): HTMLElement {
+/** One slot holding every APB part of an object: a standalone H5AD has a root and a level part. */
+function unsSlot (parts: UnsPart[], objectPath: string | null, emptyText = 'Empty'): HTMLElement {
   const content = document.createElement('div')
   content.append(...parts.map(part => unsGroups(part, objectPath)))
   const children = parts.reduce((total, part) => total + Object.keys(part.uns).length, 0)
   const stored = parts.some(part => part.hasStorage)
-  if (!children && !stored) {
-    content.append(node('p', 'Empty; this annotation AnnData has no APB metadata. Annotation provenance belongs to the MuData container.', 'structure-empty'))
-  }
+  if (!children && !stored) content.append(node('p', emptyText, 'structure-empty'))
   const title = parts.filter(part => Object.keys(part.uns).length).map(part => part.unsKey).join(' · ')
   return slot(
     'uns',
-    title || 'uns',
-    stored ? `${count(children)} direct ${children === 1 ? 'child' : 'children'} · storage omitted` : 'Empty',
+    title || (objectPath == null ? 'apb' : 'uns'),
+    children || stored
+      ? `${count(children)} direct ${children === 1 ? 'child' : 'children'}${stored ? ' · storage omitted' : ''}`
+      : 'Empty',
     content
   )
+}
+
+function relationsSlot (title: string, relations: FeatureRelation[], emptyText: string): HTMLElement {
+  return slot('varp', title, `${count(relations.length)} relations`,
+    relations.length
+      ? dataTable(['Relation', 'From', 'To', 'Links'], relations.flatMap(relation =>
+          relation.blocks.map(block => [relation.name, block.source, block.target, count(block.links)])
+        ))
+      : node('p', emptyText, 'structure-empty'))
 }
 
 function diagramNode (view: AnnDataStructure): HTMLElement {
@@ -205,18 +215,21 @@ function diagramNode (view: AnnDataStructure): HTMLElement {
   const result = document.createElement('div')
   result.className = 'anndata-diagram'
   result.setAttribute('role', 'group')
-  result.setAttribute('aria-label', `${diagram.name} AnnData structure`)
+  const annData = view.objectPath != null
+  result.setAttribute('aria-label', `${diagram.name} structure`)
   result.append(
-    axisSlot('var', 'var', diagram.var),
+    axisSlot('var', 'var', diagram.var, annData),
     alignedSlot('obsp', diagram.aligned.obsp),
     layerSlot(diagram, view.annotation),
-    axisSlot('obs', 'obs', diagram.obs),
+    axisSlot('obs', 'obs', diagram.obs, annData),
     alignedSlot('obsm', diagram.aligned.obsm),
     layersSlot(diagram),
     unsSlot([
       ...(view.rootUns ? [{ uns: view.rootUns, unsKey: 'uns["apb"]', hasStorage: true }] : []),
       { uns: diagram.uns, unsKey: view.unsKey, hasStorage: view.hasStorage }
-    ], view.objectPath),
+    ], view.objectPath, view.annotation
+      ? 'Empty; this annotation AnnData has no APB metadata. Annotation provenance belongs to the MuData container.'
+      : 'Empty'),
     alignedSlot('varm', diagram.aligned.varm),
     alignedSlot('varp', diagram.aligned.varp)
   )
@@ -228,7 +241,7 @@ function annDataSection (host: HTMLElement, view: AnnDataStructure): void {
   section.className = 'structure-level'
   section.append(
     node('h4', `${view.label} · ${count(view.diagram.dimensions.observations)} observations × ${count(view.diagram.dimensions.variables)} variables`),
-    node('code', view.objectPath, 'structure-path'),
+    ...(view.objectPath ? [node('code', view.objectPath, 'structure-path')] : []),
     diagramNode(view)
   )
   host.append(section)
@@ -246,44 +259,76 @@ function muDataSection (host: HTMLElement, view: MuDataStructure): void {
       modality.name, count(modality.dimensions.observations), count(modality.dimensions.variables)
     ])),
     unsSlot([{ uns: view.uns, unsKey: 'uns["apb"]', hasStorage: view.hasStorage }], view.objectPath),
-    slot('varp', 'varp · feature relations', `${count(view.relations.length)} relations`,
-      view.relations.length
-        ? dataTable(['Relation', 'From', 'To', 'Links'], view.relations.flatMap(relation =>
-            relation.blocks.map(block => [relation.name, block.source, block.target, count(block.links)])
-          ))
-        : node('p', 'No cross-modality feature relations.', 'structure-empty')),
+    relationsSlot('varp · feature relations', view.relations, 'No cross-modality feature relations.'),
     node('p', 'The representation describes modality axes. MuData’s merged root axes and alignment maps are not included.', 'structure-intro')
   )
   host.append(section)
 }
 
-/** Render the AnnData slots described by one APB result representation. */
+function resultSection (host: HTMLElement, view: ResultStructure): void {
+  const section = document.createElement('section')
+  section.className = 'structure-container'
+  section.append(
+    node('h4', view.label),
+    node('p', 'Root metadata, annotation tables and feature relations belong here. Open a level subtab to inspect its X, layers, axes and aligned slots.', 'structure-intro'),
+    node('h5', 'Levels'),
+    dataTable(['Level', 'Observations', 'Variables'], view.levels.map(level => [
+      level.name, count(level.dimensions.observations), count(level.dimensions.variables)
+    ])),
+    node('h5', 'Annotation tables'),
+    view.annotationTables.length
+      ? dataTable(['Table', 'Rows', 'Columns', 'Keys'], view.annotationTables.map(table => [
+          table.name, count(table.row_count), count(table.columns?.length), (table.key_columns ?? []).join(', ') || 'none'
+        ]))
+      : node('p', 'No annotation tables.', 'structure-empty'),
+    unsSlot([{ uns: view.uns, unsKey: 'apb', hasStorage: false }], null),
+    relationsSlot('Feature relations', view.relations, 'No feature relations.')
+  )
+  host.append(section)
+}
+
+const TABLE_FORMATS: Record<string, string> = { duckdb: 'DuckDB', parquet: 'Parquet' }
+
+/** Render the slots described by one APB result representation: AnnData objects in h5, levels otherwise. */
 export async function renderAnnDataStructure (host: HTMLElement, representation: Representation): Promise<void> {
-  const embedded = representation.artifact?.physical_format === 'h5mu'
+  const layout = structureLayout(representation)
+  const format = representation.artifact?.physical_format ?? ''
+  const tables = TABLE_FORMATS[format]
   const article = document.createElement('article')
   article.className = 'representation'
   article.append(
-    node('h3', embedded ? 'MuData container and embedded AnnData structures' : 'AnnData structure · H5AD'),
+    node('h3', layout === 'mudata'
+      ? 'MuData container and embedded AnnData structures'
+      : layout === 'anndata' ? 'AnnData structure · H5AD' : `Result structure · ${tables ?? (format || 'unknown format')}`),
     node(
       'p',
-      embedded
+      layout === 'mudata'
         ? 'One subtab per object: the MuData container, then each embedded AnnData. Each diagram shows only the slots owned by that AnnData.'
-        : 'One AnnData object with two APB parts, never merged: the root part in uns["apb"] and the level part in uns[level]["apb"]. Each groups provenance and results by tool.',
+        : layout === 'anndata'
+          ? 'One AnnData object with two APB parts, never merged: the root part in uns["apb"] and the level part in uns[level]["apb"]. Each groups provenance and results by tool.'
+          : 'One subtab per object: the result root, then each level. Each diagram shows only the slots owned by that level.',
       'structure-intro'
     )
   )
+  if (tables) {
+    article.append(node(
+      'p',
+      `${tables} stores the result as generated tables plus an APB2 manifest; physical table names are not in the representation.`,
+      'structure-intro'
+    ))
+  }
   const views = structureViews(representation)
   host.append(article)
   if (!views.length) {
-    article.append(node('p', 'No AnnData levels.', 'empty-note'))
-  } else if (embedded) {
-    await renderTabs(article, 'MuData and AnnData structures', views.map(view => ({
+    article.append(node('p', 'No levels.', 'empty-note'))
+  } else if (layout === 'anndata') {
+    for (const view of views) if (view.kind === 'anndata') annDataSection(article, view)
+  } else {
+    await renderTabs(article, layout === 'mudata' ? 'MuData and AnnData structures' : 'Result root and levels', views.map(view => ({
       label: view.label,
       render: panel => view.kind === 'mudata'
         ? muDataSection(panel, view)
-        : annDataSection(panel, view)
+        : view.kind === 'result' ? resultSection(panel, view) : annDataSection(panel, view)
     })))
-  } else {
-    for (const view of views) if (view.kind === 'anndata') annDataSection(article, view)
   }
 }
