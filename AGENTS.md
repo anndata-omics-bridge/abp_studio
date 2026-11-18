@@ -68,3 +68,7 @@ Studio acquires fixtures, executes concrete Python workflows over `corpus.csv`, 
 After execution changes, run the configured `routine` corpus and report actual APB outcomes; `fixture download routine` fetches exactly its datasets. Changes to a workflow's tool contract are worth running under both a single-tool and a multi-tool workflow. Confirm an inspection with `--no-force --dry-run` and the same corpus, cores, workflow, and format schedules zero jobs. For deliberate broader benchmark coverage, use the larger-corpus lines of [scripts/collected_other_options.fish](scripts/collected_other_options.fish). Keep quality gates at their existing strength.
 
 The fixture, corpus, catalog and rules viewers compile strict TypeScript to local ES-module bundles. Dependencies are locked in `viewer/package-lock.json`; no CDN is required. Node is needed for development and CI, while installed viewers need only a file server, such as `corpus view` locally, and a browser. Their servers serve files and do not launch jobs.
+
+## Output style
+
+Every reply must follow the output style that `outputStyle` selects in [settings.json](/Users/wolski/.claude/settings.json), currently [Answer-first](/Users/wolski/.claude/output-styles/answer-first.md). Read that file if your harness does not load it. No exceptions for long, investigative or follow-up replies.
