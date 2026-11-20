@@ -1734,6 +1734,8 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
         and row.module != "dda_peptidoform"
         and row.software_name != "Sage"
         and row.vendor_parameter_file
+        # ProteoBench submissions only: the Zenodo examples reuse its module names.
+        and not row.dataset.startswith("zenodo/")
         # A garbled sample name loses a run; kept in corpuses/problems.csv instead.
         and "5691d485" not in row.input_file
     }

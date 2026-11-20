@@ -6,6 +6,7 @@ FragPipe,all
 FragPipe (DIA-NN quant),all
 MSAngel,all
 MaxQuant,all;rlm_confidence_case;rlm_confidence_precision
+MetaMorpheus,all
 PEAKS,all
 ProlineStudio,all
 Sage,all

@@ -315,7 +315,7 @@ docs = [{ name = "mkdocs-material", specifier = ">=9.7,<10" }]
 
 [[package]]
 name = "apb2"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "../apb2" }
 dependencies = [
     { name = "anndata" },
