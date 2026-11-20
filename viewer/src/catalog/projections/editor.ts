@@ -49,7 +49,7 @@ export const READ_ONLY = ['versions']
 
 /** Columns each table fills itself: a catalog.csv row repeats its term's kind, PSI-MS terms and
  * whether the term fixes the row's qualifier value, so the editor takes them from terms.csv. */
-export const DERIVED: Record<string, string[]> = { catalog: ['kind', 'fixed', 'psi_ms'] }
+export const DERIVED: Record<string, string[]> = { catalog: ['kind', 'fixed', 'cv_accession'] }
 
 /** The columns one APB2 rule level writes, from the rules bundle's levels.json, and for each
  * name, as `<layer or table>/<column>`, the vendor column it is read from and the rule's note on it. */
@@ -281,7 +281,7 @@ export class CatalogDraft {
     const first = term[0]
     if (first === undefined) return
     row.cells.kind = first.cells.kind ?? ''
-    row.cells.psi_ms = first.cells.psi_ms ?? ''
+    row.cells.cv_accession = first.cells.cv_accession ?? ''
     const fixes = term.some(found => (found.cells.qualifier ?? '') !== '' && found.cells.qualifier === row.cells.qualifier && found.cells.value === row.cells.value)
     row.cells.fixed = fixes ? 'true' : 'false'
   }

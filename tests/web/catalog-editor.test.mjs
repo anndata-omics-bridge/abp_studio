@@ -164,12 +164,12 @@ test('a set needs no kind unknown, declared alone or with kinds', () => {
 // protein level: what the name dropdown and the cells filled from the term read.
 const MAPPING = {
   resources: [
-    { name: 'terms', path: 'terms.csv', schema: { fields: ['set', 'location', 'key', 'kind', 'qualifier', 'value', 'psi_ms'].map(name => ({ name })), primaryKey: ['set', 'location', 'key', 'qualifier'] } },
+    { name: 'terms', path: 'terms.csv', schema: { fields: ['set', 'location', 'key', 'kind', 'qualifier', 'value', 'cv_accession'].map(name => ({ name })), primaryKey: ['set', 'location', 'key', 'qualifier'] } },
     {
       name: 'catalog',
       path: 'catalog.csv',
       schema: {
-        fields: [{ name: 'set' }, { name: 'source' }, { name: 'location' }, { name: 'name' }, { name: 'key' }, { name: 'kind' }, { name: 'qualifier' }, { name: 'value' }, { name: 'fixed', type: 'boolean' }, { name: 'psi_ms' }, { name: 'basis' }, { name: 'evidence_url' }],
+        fields: [{ name: 'set' }, { name: 'source' }, { name: 'location' }, { name: 'name' }, { name: 'key' }, { name: 'kind' }, { name: 'qualifier' }, { name: 'value' }, { name: 'fixed', type: 'boolean' }, { name: 'cv_accession' }, { name: 'basis' }, { name: 'evidence_url' }],
         primaryKey: ['set', 'source', 'location', 'name', 'key', 'qualifier'],
         foreignKeys: [{ fields: ['set', 'key', 'location'], reference: { resource: 'terms', fields: ['set', 'key', 'location'] } }]
       }
@@ -196,7 +196,7 @@ const RULES = {
 
 test('a catalog row names what APB2 writes there, and takes kind, PSI-MS terms and fixed from its term', () => {
   const draft = new CatalogDraft(parseSchemas(MAPPING), new Map([
-    ['terms', [{ set: 'a', location: 'protein/layers', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', psi_ms: 'MS:1001850' }]],
+    ['terms', [{ set: 'a', location: 'protein/layers', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', cv_accession: 'MS:1001850' }]],
     ['versions', [{ software: 'DIA-NN', version: '2.x', software_version_pattern: '^2\\.' }]]
   ]))
   draft.rules = parseRuleLevels(RULES)
@@ -207,7 +207,7 @@ test('a catalog row names what APB2 writes there, and takes kind, PSI-MS terms a
     draft.update('catalog', row.id, column, value)
   }
   draft.update('catalog', row.id, 'basis', 'PG.MaxLFQ: the protein group MaxLFQ quantity.')
-  assert.deepEqual([row.cells.kind, row.cells.psi_ms, row.cells.fixed], ['intensity', 'MS:1001850', 'true'])
+  assert.deepEqual([row.cells.kind, row.cells.cv_accession, row.cells.fixed], ['intensity', 'MS:1001850', 'true'])
   assert.deepEqual(draft.problems(), [])
   draft.update('catalog', row.id, 'value', 'none')
   assert.equal(row.cells.fixed, 'false')
@@ -216,8 +216,8 @@ test('a catalog row names what APB2 writes there, and takes kind, PSI-MS terms a
 
 test('naming a field starts its basis from the rule, which stays incomplete until it says what the value means', () => {
   const draft = new CatalogDraft(parseSchemas(MAPPING), new Map([
-    ['terms', [{ set: 'a', location: 'protein/layers', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', psi_ms: '' }]],
-    ['catalog', [{ set: 'a', source: 'DIA-NN/*', location: 'protein/layers', name: 'PG_MaxLFQ/-', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', fixed: 'true', psi_ms: '', basis: 'PG.MaxLFQ: MaxLFQ.', evidence_url: 'https://github.com/vdemichev/DiaNN' }]],
+    ['terms', [{ set: 'a', location: 'protein/layers', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', cv_accession: '' }]],
+    ['catalog', [{ set: 'a', source: 'DIA-NN/*', location: 'protein/layers', name: 'PG_MaxLFQ/-', key: 'intensity_norm_settings', kind: 'intensity', qualifier: 'normalization', value: 'run_setting', fixed: 'true', cv_accession: '', basis: 'PG.MaxLFQ: MaxLFQ.', evidence_url: 'https://github.com/vdemichev/DiaNN' }]],
     ['versions', [{ software: 'DIA-NN', version: '2.x', software_version_pattern: '^2\\.' }]]
   ]))
   draft.rules = parseRuleLevels(RULES)
