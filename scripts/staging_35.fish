@@ -27,7 +27,7 @@ uv run corpus run large_inputs convert_no_param --cores 1 --strict --output-root
 uv run corpus run large_inputs convert_no_param --format duckdb --cores 1 --strict --output-root apb_publish_output; or exit 1
 uv run corpus run large_inputs convert_no_param --format parquet --cores 1 --strict --output-root apb_publish_output; or exit 1
 
-# ProteoBench scoring and pMultiQC: the 197 ProteoBench submissions of proteobench_f3
+# ProteoBench scoring and pMultiQC: the 198 ProteoBench submissions of proteobench_f3
 uv run corpus run proteobench proteobench_pmultiqc --strict --output-root apb_publish_output; or exit 1
 
 # site copy: viewer plus every run above

@@ -3,7 +3,9 @@
 # One [[records]] block per Zenodo record; its `name` is both the store folder
 # (`zenodo/<name>/`) and the corpus it is exported into (`corpuses/<name>.csv`). Each
 # dataset lands in `zenodo/<record>/<dataset>/`, with every record file stored under the
-# name on the left of `files` (gzipped record files are decompressed). `input` names the
+# name on the left of `files` (gzipped record files are decompressed). A dataset published as
+# one zip names it as `archive`; the right of `files` is then the member path inside the zip,
+# `<dataset>/<file>`. New uploads use one zip per dataset. `input` names the
 # vendor table a corpus row points at; without it the row points at the dataset folder, so
 # APB reads related tables together by their own names. Tables whose samples differ, such as
 # fractionated MaxQuant evidence (raw files) and peptides.txt (experiments), cannot share one
@@ -16,7 +18,7 @@ schema_version = 1
 # Shared APB example outputs; pin a published record version, not a concept DOI.
 [[records]]
 name = "apb_examples"
-record_id = 23737139
+record_id = 24418695
 
 [[records.datasets]]
 name = "metamorpheus_ionstar"
@@ -24,7 +26,8 @@ module = "PXD003881"
 software_name = "MetaMorpheus"
 software_version = "1.0.7alpha"
 input = "QuantifiedPeaks.tsv"
-files = { "QuantifiedPeaks.tsv" = "metamorpheus_ionstar__QuantifiedPeaks.tsv.gz", "FlashLfqSettings.toml" = "metamorpheus_ionstar__FlashLfqSettings.toml", "PXD003881_community_annotated.sdrf.tsv" = "metamorpheus_ionstar__PXD003881_community_annotated.sdrf.tsv", "sdrf.tsv" = "metamorpheus_ionstar__sdrf.tsv", "provenance.json" = "metamorpheus_ionstar__provenance.json" }
+archive = "metamorpheus_ionstar.zip"
+files = { "QuantifiedPeaks.tsv" = "metamorpheus_ionstar/QuantifiedPeaks.tsv", "FlashLfqSettings.toml" = "metamorpheus_ionstar/FlashLfqSettings.toml", "PXD003881_community_annotated.sdrf.tsv" = "metamorpheus_ionstar/PXD003881_community_annotated.sdrf.tsv", "sdrf.tsv" = "metamorpheus_ionstar/sdrf.tsv", "provenance.json" = "metamorpheus_ionstar/provenance.json" }
 
 # FGCZ MaxQuant 2.0.1.0 searches of the ProteoBench DDA samples, all four MaxQuant levels. One
 # raw file per experiment, so the tables share samples and the folder is one run. The search
@@ -35,7 +38,8 @@ module = "dda_qexactive"
 software_name = "MaxQuant"
 software_version = "2.0.1.0"
 parameters = "mqpar.xml"
-files = { "evidence.txt" = "maxquant_dda_qexactive__evidence.txt.gz", "modificationSpecificPeptides.txt" = "maxquant_dda_qexactive__modificationSpecificPeptides.txt.gz", "peptides.txt" = "maxquant_dda_qexactive__peptides.txt.gz", "proteinGroups.txt" = "maxquant_dda_qexactive__proteinGroups.txt.gz", "mqpar.xml" = "maxquant_dda_qexactive__mqpar.xml.gz", "parameters.txt" = "maxquant_dda_qexactive__parameters.txt.gz", "summary.txt" = "maxquant_dda_qexactive__summary.txt.gz", "p34486_Proteobench_TripleProteome_20240614.fasta" = "maxquant_dda_qexactive__p34486_Proteobench_TripleProteome_20240614.fasta.gz", "provenance.json" = "maxquant_dda_qexactive__provenance.json" }
+archive = "maxquant_dda_qexactive.zip"
+files = { "evidence.txt" = "maxquant_dda_qexactive/evidence.txt", "modificationSpecificPeptides.txt" = "maxquant_dda_qexactive/modificationSpecificPeptides.txt", "peptides.txt" = "maxquant_dda_qexactive/peptides.txt", "proteinGroups.txt" = "maxquant_dda_qexactive/proteinGroups.txt", "mqpar.xml" = "maxquant_dda_qexactive/mqpar.xml", "parameters.txt" = "maxquant_dda_qexactive/parameters.txt", "summary.txt" = "maxquant_dda_qexactive/summary.txt", "p34486_Proteobench_TripleProteome_20240614.fasta" = "maxquant_dda_qexactive/p34486_Proteobench_TripleProteome_20240614.fasta", "provenance.json" = "maxquant_dda_qexactive/provenance.json" }
 
 [[records.datasets]]
 name = "maxquant_dda_astral"
@@ -43,7 +47,30 @@ module = "dda_astral"
 software_name = "MaxQuant"
 software_version = "2.0.1.0"
 parameters = "mqpar.xml"
-files = { "evidence.txt" = "maxquant_dda_astral__evidence.txt.gz", "modificationSpecificPeptides.txt" = "maxquant_dda_astral__modificationSpecificPeptides.txt.gz", "peptides.txt" = "maxquant_dda_astral__peptides.txt.gz", "proteinGroups.txt" = "maxquant_dda_astral__proteinGroups.txt.gz", "mqpar.xml" = "maxquant_dda_astral__mqpar.xml.gz", "parameters.txt" = "maxquant_dda_astral__parameters.txt.gz", "summary.txt" = "maxquant_dda_astral__summary.txt.gz", "p34486_Proteobench_TripleProteome_20240614.fasta" = "maxquant_dda_astral__p34486_Proteobench_TripleProteome_20240614.fasta.gz", "provenance.json" = "maxquant_dda_astral__provenance.json" }
+archive = "maxquant_dda_astral.zip"
+files = { "evidence.txt" = "maxquant_dda_astral/evidence.txt", "modificationSpecificPeptides.txt" = "maxquant_dda_astral/modificationSpecificPeptides.txt", "peptides.txt" = "maxquant_dda_astral/peptides.txt", "proteinGroups.txt" = "maxquant_dda_astral/proteinGroups.txt", "mqpar.xml" = "maxquant_dda_astral/mqpar.xml", "parameters.txt" = "maxquant_dda_astral/parameters.txt", "summary.txt" = "maxquant_dda_astral/summary.txt", "p34486_Proteobench_TripleProteome_20240614.fasta" = "maxquant_dda_astral/p34486_Proteobench_TripleProteome_20240614.fasta", "provenance.json" = "maxquant_dda_astral/provenance.json" }
+
+# Two public ProteoBench DIA ZenoTOF submissions that ProteoBench's catalog no longer lists
+# (21 Nov 2026), kept here unchanged; Apache-2.0 like their results repository.
+[[records.datasets]]
+name = "proteobench_zenotof_alphadia_0d6d0437"
+module = "dia_zenotof"
+software_name = "AlphaDIA"
+software_version = "1.12.2"
+input = "input_file.tsv"
+parameters = "param_0..txt"
+archive = "proteobench_zenotof_alphadia_0d6d0437.zip"
+files = { "input_file.tsv" = "proteobench_zenotof_alphadia_0d6d0437/input_file.tsv", "input_file_secondary.tsv" = "proteobench_zenotof_alphadia_0d6d0437/input_file_secondary.tsv", "param_0..txt" = "proteobench_zenotof_alphadia_0d6d0437/param_0..txt", "comment.txt" = "proteobench_zenotof_alphadia_0d6d0437/comment.txt", "result_performance.csv" = "proteobench_zenotof_alphadia_0d6d0437/result_performance.csv", "provenance.json" = "proteobench_zenotof_alphadia_0d6d0437/provenance.json" }
+
+[[records.datasets]]
+name = "proteobench_zenotof_diann_51d66907"
+module = "dia_zenotof"
+software_name = "DIA-NN"
+software_version = "2.1.0"
+input = "input_file.parquet"
+parameters = "param_0..txt"
+archive = "proteobench_zenotof_diann_51d66907.zip"
+files = { "input_file.parquet" = "proteobench_zenotof_diann_51d66907/input_file.parquet", "param_0..txt" = "proteobench_zenotof_diann_51d66907/param_0..txt", "comment.txt" = "proteobench_zenotof_diann_51d66907/comment.txt", "result_performance.csv" = "proteobench_zenotof_diann_51d66907/result_performance.csv", "provenance.json" = "proteobench_zenotof_diann_51d66907/provenance.json" }
 
 [[records]]
 name = "maxquant_entrapment"

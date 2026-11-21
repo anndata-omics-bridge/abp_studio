@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -132,7 +134,7 @@ def test_full_metamorpheus_example_is_managed_and_selected_for_routine_conversio
     corpuses = Path(__file__).parents[1] / "corpuses"
     key = zenodo_fixtures.zenodo_key(record, dataset)
 
-    assert record.record_id == 23737139
+    assert record.record_id == 24418695
     assert key == "zenodo/apb_examples/metamorpheus_ionstar"
     assert key in load_corpus(corpuses / "apb_examples.csv")
     assert key in load_corpus(corpuses / "routine.csv")
@@ -141,7 +143,8 @@ def test_full_metamorpheus_example_is_managed_and_selected_for_routine_conversio
     assert dataset.input == "QuantifiedPeaks.tsv"
     assert dataset.parameters is None, "FlashLFQ settings are not MetaMorpheus search parameters"
     assert dataset.module == "PXD003881", "the experiment is not a ProteoBench benchmark"
-    assert dataset.files[dataset.input] == "metamorpheus_ionstar__QuantifiedPeaks.tsv.gz"
+    assert dataset.archive == "metamorpheus_ionstar.zip", "one zip per dataset"
+    assert dataset.files[dataset.input] == "metamorpheus_ionstar/QuantifiedPeaks.tsv"
     assert {
         "FlashLfqSettings.toml",
         "PXD003881_community_annotated.sdrf.tsv",
@@ -235,6 +238,103 @@ def test_gzip_acquisition_keeps_tables_gzipped_and_parameters_plain(
     asked.clear()
     zenodo_fixtures.acquire(store, record, GzipTables())
     assert asked == [], "a stored gzipped dataset is not fetched again"
+
+
+def _zip(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
+        for name, data in members.items():
+            bundle.writestr(name, data)
+    return buffer.getvalue()
+
+
+ZIPPED_FILES = {**TABLES, "mqpar.xml": b"<MaxQuantParams/>"}
+
+
+def _zipped_record() -> ZenodoRecord:
+    return ZenodoRecord(
+        name="testrecord",
+        record_id=42,
+        datasets=(
+            ZenodoDataset(
+                name="zipped",
+                module="some_module",
+                software_name="MaxQuant",
+                parameters="mqpar.xml",
+                archive="zipped.zip",
+                files={name: f"zipped/{name}" for name in ZIPPED_FILES},
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("tables", "stored"),
+    [
+        (PlainTables(), {"evidence.txt", "peptides.txt", "mqpar.xml"}),
+        (GzipTables(), {"evidence.txt.gz", "peptides.txt.gz", "mqpar.xml"}),
+    ],
+)
+def test_a_zipped_dataset_is_verified_unpacked_and_its_zip_removed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tables: PlainTables | GzipTables,
+    stored: set[str],
+) -> None:
+    store = Store(root=tmp_path)
+    record = _zipped_record()
+    remote = {"zipped.zip": _zip({f"zipped/{name}": data for name, data in ZIPPED_FILES.items()})}
+    asked = _serve(monkeypatch, remote)
+
+    zenodo_fixtures.acquire(store, record, tables)
+
+    folder = store.zenodo_dataset_dir("testrecord", "zipped")
+    assert {path.name for path in folder.iterdir()} == stored, "no zip or scratch folder left"
+    evidence = folder / sorted(name for name in stored if name.startswith("evidence"))[0]
+    data = evidence.read_bytes()
+    assert (gzip.decompress(data) if evidence.suffix == ".gz" else data) == TABLES["evidence.txt"]
+    assert (folder / "mqpar.xml").read_bytes() == ZIPPED_FILES["mqpar.xml"]
+    assert zenodo_fixtures.is_present(store, record, record.datasets[0])
+    asked.clear()
+    zenodo_fixtures.acquire(store, record, tables)
+    assert asked == [], "a stored zipped dataset is not fetched again"
+
+
+def test_a_partly_unpacked_dataset_keeps_its_stored_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = Store(root=tmp_path)
+    record = _zipped_record()
+    remote = {"zipped.zip": _zip({f"zipped/{name}": data for name, data in ZIPPED_FILES.items()})}
+    _serve(monkeypatch, remote)
+    folder = store.zenodo_dataset_dir("testrecord", "zipped")
+    folder.mkdir(parents=True)
+    (folder / "evidence.txt").write_bytes(b"kept from an interrupted run")
+
+    zenodo_fixtures.acquire(store, record, PlainTables())
+
+    assert (folder / "evidence.txt").read_bytes() == b"kept from an interrupted run"
+    assert (folder / "peptides.txt").read_bytes() == TABLES["peptides.txt"]
+
+
+def test_an_archive_the_record_lacks_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _serve(monkeypatch, {"other.zip": b""})
+
+    with pytest.raises(ValueError, match="has no file 'zipped.zip'"):
+        zenodo_fixtures.acquire(Store(root=tmp_path), _zipped_record(), PlainTables())
+
+
+def test_an_archive_member_must_lie_inside_the_archive() -> None:
+    with pytest.raises(ValidationError, match="inside the archive"):
+        ZenodoDataset(
+            name="escape",
+            module="m",
+            software_name="Tool",
+            archive="escape.zip",
+            files={"a.txt": "../a.txt"},
+        )
 
 
 def test_a_checksum_mismatch_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

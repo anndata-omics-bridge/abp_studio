@@ -1,6 +1,6 @@
 # External datasets
 
-Four Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. `config/zenodo.toml` lists the records, their datasets and the files each dataset stores; `fixture download all` acquires all four, and `fixture download NAME` the datasets a corpus lists.
+Five Zenodo records hold search-engine outputs that ProteoBench submissions do not provide. `config/zenodo.toml` lists the records, their datasets and the files each dataset stores; `fixture download all` acquires all five, and `fixture download NAME` the datasets a corpus lists.
 
 | Record | Acquire | Corpus | Workflows |
 | --- | --- | --- | --- |
@@ -8,10 +8,11 @@ Four Zenodo records hold search-engine outputs that ProteoBench submissions do n
 | directLFQ mirror | `uv run fixture download directlfq` | `directlfq` | `convert_no_param` only: no parameter files |
 | MSstats+ DIA reports | `uv run fixture download msstats_plus` | `msstats_plus` | `convert_no_param` only: no parameter files |
 | APB quantification examples | `uv run fixture download apb_examples` | `apb_examples`, also `routine` for MetaMorpheus | conversion; MaxQuant with `mqpar.xml`, MetaMorpheus without search parameters |
+| FragPipe TMT PSMs | `uv run fixture download fragpipe_tmt` | `fragpipe_tmt` | conversion with `fragpipe.workflow`, once apb2 has a FragPipe TMT rule |
 
 ## APB quantitative proteomics example datasets
 
-The shared [Zenodo record 23737139](https://doi.org/10.5281/zenodo.23737139) (version 2; version 1 was 23691153) holds complete software outputs from different studies. Each dataset keeps its own source, software versions, licence and checksums. New additions require a new published version and an explicit configuration pin update; the directLFQ and MSstats+ records retain their study-specific scope.
+The shared [Zenodo record 24418695](https://doi.org/10.5281/zenodo.24418695) (version 4, Apache-2.0; version 2 was 23737139, version 1 23691153, version 3 was deleted) holds complete software outputs from different studies, one zip per dataset, `<dataset>.zip` holding `<dataset>/`. Version 4 adds two ProteoBench DIA ZenoTOF submissions that ProteoBench's catalog no longer lists, `proteobench_zenotof_alphadia_0d6d0437` (AlphaDIA 1.12.2) and `proteobench_zenotof_diann_51d66907` (DIA-NN 2.1.0), unchanged. Each dataset keeps its own source, software versions, licence and checksums. New additions require a new published version and an explicit configuration pin update; the directLFQ and MSstats+ records retain their study-specific scope.
 
 The first entry, `zenodo/apb_examples/metamorpheus_ionstar`, is the complete IonStar table from the MetaMorpheus 1.0.7alpha → standalone FlashLFQ 1.3alpha workflow of the [PIP-ECHO study](https://doi.org/10.1021/acs.jproteome.5c00065), mirrored from PRIDE PXD057758 (original experiment PXD003881). It has 798,879 rows, 26 columns, 20 runs and 255,817,791 uncompressed bytes. Gzip is the only change to the table: no feature or condition filtering, row reordering, intensity scaling or imputation. Original data are CC0.
 
@@ -20,6 +21,22 @@ The dataset includes matching FlashLFQ settings, the original public SDRF, a sep
 Version 2 adds `maxquant_dda_qexactive` and `maxquant_dda_astral`: complete MaxQuant 2.0.1.0 searches run at FGCZ on the ProteoBench DDA samples, Q Exactive HF-X (PRIDE PXD028735) and 15-min Orbitrap Astral, six runs each. Each folder holds `evidence.txt`, `modificationSpecificPeptides.txt`, `peptides.txt` and `proteinGroups.txt`, the `mqpar.xml`, MaxQuant's `parameters.txt` and `summary.txt`, the search FASTA and provenance. Every raw file is its own experiment, so all four levels share samples and the folder is one APB run. The modules `dda_qexactive` and `dda_astral` assign the HYE FASTA, which holds the same proteins as the search FASTA. Both are selected in `apb_examples` only.
 
 Each dataset lands MD5-verified in `test_data_download/zenodo/<record>/<dataset>/`, with its tables kept gzipped and only the parameter file decompressed, or, with `--no-gzip`, fully decompressed, and gets a `downloads.csv` row keyed `zenodo/<record>/<dataset>`, the key a corpus file lists. A dataset of related tables names its folder as input; APB reads the tables inside by their MaxQuant names. A dataset without a parameter file has an empty `vendor_parameter_file_paths`, which workflows reading vendor parameters refuse; one with several, as a quantms submission's `param_0` and `param_1`, lists them `;`-separated.
+
+## FragPipe TMT PSM tables
+
+FragPipe TMT `psm.tsv` files from the prophosqua example archive, version 2, which adds an FGCZ QC run to the Maculins et al. outputs (eLife 2021, doi:10.7554/eLife.62320).
+
+- DOI: [10.5281/zenodo.15879865](https://doi.org/10.5281/zenodo.15879865) (version 2, CC-BY-4.0); version 1 was 15850771
+- Layout: one zip, `PTM_experiment_FP_22_Maculins_and_QC.zip`, holding the study under `PTM_example/`; each dataset stores its members from it
+- Per dataset: `psm.tsv`, `fragpipe.workflow`, the search FASTA
+
+| Dataset | FragPipe | Channels | Channel columns |
+| --- | --- | --- | --- |
+| `maculins_p1` | 22.0 | 11, TMT16 plex 1 | sample names after `Mapped Proteins` |
+| `maculins_p2` | 22.0 | 11, TMT16 plex 2 | sample names after `Mapped Proteins` |
+| `qcmini` | 19.0 | 18, TMTpro, Arabidopsis QC | `QCmini_<tag>` after `Quan Usage` |
+
+Limit: no FragPipe 24 `psm.tsv`, whose `Intensity <sample>` / `SNR <sample>` layout has no public example yet.
 
 ## ProteoBench entrapment DIA — MaxQuant 2.8.1.0 related tables
 

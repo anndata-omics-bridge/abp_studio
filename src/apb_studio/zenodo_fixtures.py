@@ -3,17 +3,20 @@
 The records and their files are facts about published data, so they live in
 ``config/zenodo.toml`` and are validated here. Every dataset is fetched with checksum
 verification and stored under its own folder, decompressed or, with ``GzipTables``, with its
-tables gzipped. Its manifest row names either one vendor table or the folder of related
+tables gzipped. A dataset published as one zip names it as ``archive``; its files are then
+members of that zip. Its manifest row names either one vendor table or the folder of related
 tables APB reads together.
 """
 
 from __future__ import annotations
 
 import hashlib
+import shutil
 import tomllib
+import zipfile
 from collections.abc import Sequence
 from functools import lru_cache, partial
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Self
 
 import requests
@@ -34,7 +37,11 @@ REPO_PREFIX = "zenodo/"
 
 
 class ZenodoDataset(BaseModel):
-    """One dataset: record files stored in one folder, exported as one corpus row."""
+    """One dataset: record files stored in one folder, exported as one corpus row.
+
+    ``files`` maps each stored name to its record file, or, when ``archive`` names the zip
+    holding the dataset, to its member path inside that zip.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -43,6 +50,7 @@ class ZenodoDataset(BaseModel):
     software_name: str = Field(min_length=1)
     software_version: str = ""
     files: dict[str, str] = Field(min_length=1)
+    archive: str | None = None
     input: str | None = None
     parameters: str | None = None
 
@@ -52,9 +60,12 @@ class ZenodoDataset(BaseModel):
         for field, value in (("input", self.input), ("parameters", self.parameters)):
             if value is not None and value not in self.files:
                 raise ValueError(f"{self.name}: {field} {value!r} is not one of its files")
-        for stored in self.files:
+        for stored, source in self.files.items():
             if Path(stored).name != stored:
                 raise ValueError(f"{self.name}: stored name {stored!r} must be a plain file name")
+            member = PurePosixPath(source)
+            if self.archive is not None and (member.is_absolute() or ".." in member.parts):
+                raise ValueError(f"{self.name}: member {source!r} must lie inside the archive")
         return self
 
 
@@ -178,6 +189,14 @@ def acquire(
             remote = _record_files(record)
         folder = store.zenodo_dataset_dir(record.name, dataset.name)
         folder.mkdir(parents=True, exist_ok=True)
+        if dataset.archive is not None:
+            if dataset.archive not in remote:
+                raise ValueError(f"record {record.record_id} has no file {dataset.archive!r}")
+            url, md5 = remote[dataset.archive]
+            archive = fetch_file(url, folder / dataset.archive, partial(_check_md5, md5))
+            _unpack(archive, dataset, tables)
+            logger.info("[{}] stored {}", record.name, folder)
+            continue
         for stored, key in dataset.files.items():
             if find_stored_table(folder, stored) is not None:
                 continue
@@ -187,6 +206,27 @@ def acquire(
             downloaded = fetch_file(url, folder / key, partial(_check_md5, md5))
             tables.keep_download(downloaded, folder / stored, table=stored != dataset.parameters)
         logger.info("[{}] stored {}", record.name, folder)
+
+
+def _unpack(archive: Path, dataset: ZenodoDataset, tables: TableStorage) -> None:
+    """Store each listed member of a dataset's verified zip, then remove the zip.
+
+    Members are extracted into a scratch folder first, so an interrupted run leaves no stored
+    file that looks finished.
+    """
+    folder = archive.parent
+    scratch = folder / ".unpack"
+    scratch.mkdir(exist_ok=True)
+    with zipfile.ZipFile(archive) as bundle:
+        for stored, member in dataset.files.items():
+            if find_stored_table(folder, stored) is not None:
+                continue
+            extracted = scratch / PurePosixPath(member).name
+            with bundle.open(member) as source, extracted.open("wb") as target:
+                shutil.copyfileobj(source, target, 1 << 20)
+            tables.keep_download(extracted, folder / stored, table=stored != dataset.parameters)
+    shutil.rmtree(scratch)
+    archive.unlink()
 
 
 def _size(path: Path) -> int:

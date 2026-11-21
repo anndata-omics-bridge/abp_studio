@@ -1753,7 +1753,7 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
     all_rows = committed_corpus(None)
     proteobench_rows = committed_corpus("proteobench")
 
-    assert len(proteobench_rows) == 197
+    assert len(proteobench_rows) == 198
     quant_modules = set(packaged_config().module_names) - SEPARATELY_SCORED
     expected = {
         row.input_file: row
