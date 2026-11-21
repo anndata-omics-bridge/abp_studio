@@ -1,7 +1,7 @@
 import type { ColumnDefinition } from '../../shared/tabulator.js'
 import type { Submission, View } from '../types.js'
 
-// One submission in depth: its facts, its columns, its metadata, its parameter file.
+// One submission in depth: its facts, its columns, its metadata, its parameter files.
 // Pure: data in, view descriptors out.
 
 const FACTS: Array<[keyof Submission, string]> = [
@@ -18,7 +18,7 @@ const FACTS: Array<[keyof Submission, string]> = [
   ['delimiter', 'Delimiter'],
   ['rows', 'Rows'],
   ['columns', 'Columns'],
-  ['parameter_file', 'Parameter file']
+  ['parameter_files', 'Parameter files']
 ]
 
 const KEY_VALUE_COLUMNS: ColumnDefinition[] = [
@@ -26,8 +26,19 @@ const KEY_VALUE_COLUMNS: ColumnDefinition[] = [
   { title: '', field: 'value' }
 ]
 
-export function detailViews (row: Submission, metadata: unknown, parameterText: string): View[] {
-  const facts = FACTS.map(([field, key]) => ({ key, value: row[field] ?? '' }))
+export function detailViews (row: Submission, metadata: unknown, parameterTexts: string[]): View[] {
+  const facts = FACTS.map(([field, key]) => {
+    const value = row[field]
+    return { key, value: Array.isArray(value) ? value.join('; ') : value ?? '' }
+  })
+  const parameters: View[] = row.parameter_files.length
+    ? row.parameter_files.map((path, index) => ({
+      key: `detail-parameters-${index}`,
+      backend: 'note',
+      title: `Parameter file ${path.split('/').at(-1) ?? path}`,
+      text: parameterTexts[index] ?? ''
+    }))
+    : [{ key: 'detail-parameters', backend: 'note', title: 'Parameter file', text: 'not downloaded yet' }]
   return [
     {
       key: 'detail-facts',
@@ -49,11 +60,6 @@ export function detailViews (row: Submission, metadata: unknown, parameterText: 
       title: 'Submission JSON',
       text: metadata ? JSON.stringify(metadata, null, 2) : 'not catalogued yet'
     },
-    {
-      key: 'detail-parameters',
-      backend: 'note',
-      title: 'Parameter file',
-      text: parameterText || 'not downloaded yet'
-    }
+    ...parameters
   ]
 }

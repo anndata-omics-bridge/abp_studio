@@ -13,7 +13,7 @@ from apb_studio.table_storage import stored_table
 
 CORPUS_COLUMNS = ("dataset", "note")
 """A hand-curated corpus file: the dataset keys to run; ``note`` is for the reader only."""
-DATASET_COLUMNS = ("dataset", "input_file", "vendor_parameter_file", "module", "software_name")
+DATASET_COLUMNS = ("dataset", "input_file", "vendor_parameter_files", "module", "software_name")
 """One resolved dataset, as a run snapshot and each workflow job read it."""
 INPUT_METADATA_COLUMNS = ("input_file", "input_file_size_bytes")
 DOWNLOAD_INPUT_COLUMN = "input_file_path"

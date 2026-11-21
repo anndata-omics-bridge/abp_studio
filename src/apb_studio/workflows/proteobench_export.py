@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from apb_studio.corpus.models import Artifact, StepSpec
+from apb_studio.corpus.parameters import required_parameter_inputs
 from apb_studio.corpus.tables import resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext
 from apb_studio.workflows.artifacts import representation, single_level_result_path
@@ -19,7 +20,7 @@ def export_and_report_steps(
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
     vendor_source = source.parent if secondary_inputs else source
-    parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
+    parameters = required_parameter_inputs(context.data_root, dataset)
     fasta_path = resolve_file(context.data_root, fasta)
     scored = single_level_result_path(context.output_dir, "scored", context.format)
     export = context.output_dir / "proteobench-export"
@@ -38,8 +39,7 @@ def export_and_report_steps(
                 "quant",
                 str(vendor_source),
                 str(fasta_path),
-                "--params",
-                str(parameters),
+                *[argument for path in parameters for argument in ("--params", str(path))],
                 "--software",
                 parameter_software(dataset.software_name),
                 "--module",
@@ -61,7 +61,7 @@ def export_and_report_steps(
                     Artifact(role="vendor_secondary", path=secondary)
                     for secondary in secondary_inputs
                 ],
-                Artifact(role="vendor_parameter_file", path=parameters),
+                *[Artifact(role="vendor_parameter_file", path=path) for path in parameters],
                 Artifact(role="fasta", path=fasta_path),
             ],
             outputs=[

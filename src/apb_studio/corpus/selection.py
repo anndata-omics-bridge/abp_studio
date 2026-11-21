@@ -60,7 +60,11 @@ def _dataset(row: Mapping[str, str]) -> Dataset:
     return Dataset(
         dataset=row["dataset"],
         input_file=row["input_file_path"] if downloaded else row["dataset_dir"],
-        vendor_parameter_file=row["vendor_parameter_file_path"] if downloaded else "",
+        vendor_parameter_files=(
+            tuple(path for path in row["vendor_parameter_file_paths"].split(";") if path)
+            if downloaded
+            else ()
+        ),
         module=row["module"],
         software_name=row["software_name"],
     )

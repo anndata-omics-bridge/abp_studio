@@ -15,6 +15,14 @@ function optionalString (value: unknown, field: string): string | undefined {
   return value
 }
 
+function optionalStrings (value: unknown, field: string): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || !value.every(item => typeof item === 'string')) {
+    throw new TypeError(`${field}: expected a list of strings`)
+  }
+  return value as string[]
+}
+
 function optionalNumber (value: unknown, field: string): number | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${field}: expected a finite number`)
@@ -65,7 +73,7 @@ export function parseSummary (value: unknown): SubmissionSummary | null {
     rows: data.rows === null ? null : optionalNumber(data.rows, 'rows'),
     columns: data.columns === null ? null : optionalNumber(data.columns, 'columns'),
     column_names: optionalString(data.column_names, 'column_names'),
-    parameter_file: optionalString(data.parameter_file, 'parameter_file'),
+    parameter_files: optionalStrings(data.parameter_files, 'parameter_files'),
     downloaded_at: optionalString(data.downloaded_at, 'downloaded_at')
   }
 }
@@ -109,7 +117,7 @@ export function joinSubmissions (
       rows: summary?.rows ?? null,
       columns: summary?.columns ?? null,
       column_names: summary?.column_names ?? '',
-      parameter_file: summary?.parameter_file ?? '',
+      parameter_files: summary?.parameter_files ?? [],
       downloaded_at: summary?.downloaded_at ?? '',
       downloaded_on: (summary?.downloaded_at ?? '').slice(0, 10)
     }

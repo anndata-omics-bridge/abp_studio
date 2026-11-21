@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from apb_studio.disk import atomic_write_text
 
@@ -31,15 +31,27 @@ class Dataset(Record):
     """One corpus dataset resolved through the fixture manifest; paths are below the data root.
 
     ``dataset`` is the key a corpus file names. ``input_file`` is the stored vendor table or
-    folder of related tables, or the dataset's store folder when it is not downloaded. An
-    empty ``vendor_parameter_file`` means the dataset has none.
+    folder of related tables, or the dataset's store folder when it is not downloaded.
+    ``vendor_parameter_files`` are the stored parameter files, none when the dataset has none,
+    two for a tool that writes two (MetaMorpheus, quantms). CSV and JSON write them as one
+    ``;``-separated string.
     """
 
     dataset: str = Field(min_length=1)
     input_file: str = Field(min_length=1)
-    vendor_parameter_file: str
+    vendor_parameter_files: tuple[str, ...]
     module: str = Field(min_length=1)
     software_name: str = Field(min_length=1)
+
+    @field_validator("vendor_parameter_files", mode="before")
+    @classmethod
+    def _split_parameter_files(cls, value: object) -> object:
+        """Read the ``;``-separated string a CSV row or JSON record stores."""
+        return tuple(path for path in value.split(";") if path) if isinstance(value, str) else value
+
+    @field_serializer("vendor_parameter_files")
+    def _join_parameter_files(self, paths: tuple[str, ...]) -> str:
+        return ";".join(paths)
 
 
 class InputMetadata(Record):

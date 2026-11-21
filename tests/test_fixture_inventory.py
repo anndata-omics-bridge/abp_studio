@@ -115,6 +115,22 @@ def test_inventory_requires_exactly_one_input_and_parameter(tmp_path: Path) -> N
     assert "2 input file(s)" in fixture.diagnostic
 
 
+def test_inventory_accepts_several_parameter_files(tmp_path: Path) -> None:
+    """quantms ships its versions and its settings as param_0 and param_1."""
+    row = _catalog_row()
+    _write_catalog(tmp_path, [row])
+    directory = tmp_path / "json_dir" / str(row["repo_name"]) / str(row["intermediate_hash"])
+    directory.mkdir(parents=True)
+    (directory / "input_file.csv").write_text("Run\n")
+    (directory / "param_0..yml").write_text("Workflow: {}\n")
+    (directory / "param_1..yml").write_text("{}\n")
+
+    fixture = fixture_inventory.load_fixture_inventory(tmp_path).fixtures[0]
+
+    assert fixture.local_state is fixture_inventory.LocalFixtureState.COMPLETE
+    assert [path.name for path in fixture.parameter_files] == ["param_0..yml", "param_1..yml"]
+
+
 def test_settings_updates_one_application_root_without_resetting_other(
     tmp_path: Path,
 ) -> None:

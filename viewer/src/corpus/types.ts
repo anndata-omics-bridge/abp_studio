@@ -6,7 +6,8 @@ export interface CsvRow { [field: string]: string }
 export type CsvRows = CsvRow[] & { columns?: string[] }
 export interface CorpusRow extends CsvRow {
   input_file: string
-  vendor_parameter_file: string
+  /** The dataset's parameter files, `;`-separated. */
+  vendor_parameter_files: string
   module: string
   software_name: string
 }
@@ -68,7 +69,7 @@ export interface DatasetRow extends ReportLink {
   [field: string]: unknown
   module: string
   software_name: string
-  vendor_parameter_file?: string
+  vendor_parameter_files?: string
   input_file_name: string
   input_file_parent: string
   input_file_size_bytes?: string | number
@@ -131,7 +132,7 @@ export interface DatasetSearchSettings {
   module: string
   status: string
   source_path: string
-  parameters: { file_name: string; sha256: string; recovered: string[] } | null
+  parameters: { files: { file_name: string; sha256: string }[]; recovered: string[] } | null
   notes: string[]
 }
 export interface RunSearchSettings {
@@ -253,15 +254,15 @@ export type ParameterValue = string | number | boolean | null | MassTolerance | 
 export interface SearchParametersRecord {
   parameters: Record<string, ParameterValue>
 }
-/** One file apb2 read for a result; the parameter file has role `parameter_file`. */
+/** One file apb2 read for a result; each parameter file has role `parameter_file`. */
 export interface InputFileRecord {
   role: string
   file_name: string
   sha256: string
 }
-/** A result's recorded search parameters and the parameter file entry they came from. */
+/** A result's recorded search parameters and the parameter file entries they came from. */
 export interface RecordedParameterFile {
-  file: InputFileRecord | null
+  files: InputFileRecord[]
   record: SearchParametersRecord
 }
 export interface ApbMetadata extends Record<string, unknown> {

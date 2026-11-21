@@ -1,7 +1,7 @@
 """Project the search parameters APB recorded into one static run summary.
 
 apb2 records the parameters it read in the root part's parse provenance as ``search_parameters``,
-and the parameter file's name and SHA-256 as its ``parameter_file`` entry in ``input_files``. This
+and each parameter file's name and SHA-256 as a ``parameter_file`` entry in ``input_files``. This
 module only reads those records from the displayed representation and counts, per software, the
 datasets where each setting was recovered; Studio never parses a parameter file.
 """
@@ -39,11 +39,17 @@ class SearchSetting(Record):
     label: str
 
 
-class RecordedParameters(Record):
-    """The parameter file one result records, and which settings it recovered."""
+class RecordedFile(Record):
+    """One parameter file a result records."""
 
     file_name: str
     sha256: str
+
+
+class RecordedParameters(Record):
+    """The parameter files one result records, and which settings it recovered."""
+
+    files: list[RecordedFile]
     recovered: list[str]
     """Recovered setting names, in ``SETTINGS`` order."""
 
@@ -51,7 +57,8 @@ class RecordedParameters(Record):
 class DatasetSearchSettings(Record):
     dataset: str
     input_file: str
-    vendor_parameter_file: str
+    vendor_parameter_files: str
+    """The dataset's parameter files, ``;``-separated as its CSV row stores them."""
     software_name: str
     module: str
     status: str
@@ -137,20 +144,20 @@ def dataset_search_settings(report: DatasetReport) -> DatasetSearchSettings:
         result.source_path = str(artifact.path)
         provenance = evidence.root.apb.parse.provenance
         record = provenance.search_parameters
-        parameter_file = next(
-            (file for file in provenance.input_files if file.role == "parameter_file"), None
-        )
+        parameter_files = [file for file in provenance.input_files if file.role == "parameter_file"]
         if record is None:
             result.notes.append("The displayed result records no parameter file.")
-        elif parameter_file is None:
+        elif not parameter_files:
             result.notes.append(
                 "The displayed result records search parameters but no parameter file "
                 "among its input files."
             )
         else:
             result.parameters = RecordedParameters(
-                file_name=parameter_file.file_name,
-                sha256=parameter_file.sha256,
+                files=[
+                    RecordedFile(file_name=file.file_name, sha256=file.sha256)
+                    for file in parameter_files
+                ],
                 recovered=[
                     name for name in SETTINGS if recovered(name, record.parameters.get(name))
                 ],

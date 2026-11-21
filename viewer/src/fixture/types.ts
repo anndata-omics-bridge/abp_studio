@@ -19,7 +19,7 @@ export interface SubmissionSummary {
   rows?: number | null
   columns?: number | null
   column_names?: string
-  parameter_file?: string
+  parameter_files?: string[]
   downloaded_at?: string
 }
 
@@ -40,7 +40,7 @@ export interface Submission {
   rows: number | null
   columns: number | null
   column_names: string
-  parameter_file: string
+  parameter_files: string[]
   downloaded_at: string
   downloaded_on: string
 }

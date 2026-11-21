@@ -122,18 +122,13 @@ class FixtureRecord(BaseModel):
 
     @property
     def complete(self) -> bool:
-        """Return whether exactly one input and one parameter file exist."""
+        """Return whether exactly one input and at least one parameter file exist."""
         return self.local_state is LocalFixtureState.COMPLETE
 
     @property
     def input_path(self) -> Path | None:
         """Return the unique input path for a complete fixture."""
         return self.input_files[0] if self.complete else None
-
-    @property
-    def parameter_path(self) -> Path | None:
-        """Return the unique parameter path for a complete fixture."""
-        return self.parameter_files[0] if self.complete else None
 
     def as_catalog_row(self) -> dict[str, Any]:
         """Render legacy table fields without replacing raw catalog software."""
@@ -197,7 +192,7 @@ def load_fixture_inventory(
         module, repo_name, intermediate_hash = identity
         directory = fixture_directory(paths, repo_name, intermediate_hash)
         inputs = _matching_files(directory, "input_file.*")
-        parameters = _matching_files(directory, "param_0.*")
+        parameters = _matching_files(directory, "param_*")
         local_state, diagnostic = _local_state(inputs, parameters)
         history = manifest.get(identity, {})
         fixtures.append(
@@ -290,13 +285,13 @@ def _local_state(
     parameters: tuple[Path, ...],
 ) -> tuple[LocalFixtureState, str | None]:
     """Classify local completeness solely from live files."""
-    if len(inputs) == 1 and len(parameters) == 1:
+    if len(inputs) == 1 and parameters:
         return LocalFixtureState.COMPLETE, None
     if not inputs and not parameters:
         return LocalFixtureState.NOT_LOCAL, None
     return (
         LocalFixtureState.INCOMPLETE,
-        "Expected exactly one input_file.* and one param_0.*; "
+        "Expected exactly one input_file.* and at least one param_*; "
         f"found {len(inputs)} input file(s) and {len(parameters)} parameter file(s).",
     )
 

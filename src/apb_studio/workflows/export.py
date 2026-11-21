@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from apb_studio.corpus.models import Artifact, StepSpec
+from apb_studio.corpus.parameters import required_parameter_inputs
 from apb_studio.corpus.tables import read_rows, resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext
 from apb_studio.workflows.artifacts import representation
@@ -49,7 +50,7 @@ def export_step(
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
     vendor_source = source.parent if secondary_inputs else source
-    parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
+    parameters = required_parameter_inputs(context.data_root, dataset)
     output = context.output_dir / f"{target}{EXTENSIONS[target]}"
     return StepSpec(
         name=f"export-{target}",
@@ -58,8 +59,7 @@ def export_step(
             target,
             str(vendor_source),
             str(output),
-            "--params",
-            str(parameters),
+            *[argument for path in parameters for argument in ("--params", str(path))],
             "--software",
             parameter_software(dataset.software_name),
             *(["--fasta", str(fasta)] if fasta is not None else []),
@@ -67,7 +67,7 @@ def export_step(
         inputs=[
             Artifact(role="vendor_table", path=source),
             *[Artifact(role="vendor_secondary", path=secondary) for secondary in secondary_inputs],
-            Artifact(role="vendor_parameter_file", path=parameters),
+            *[Artifact(role="vendor_parameter_file", path=path) for path in parameters],
             *([Artifact(role="fasta", path=fasta)] if fasta is not None else []),
         ],
         outputs=[Artifact(role="export", path=output), representation(output)],

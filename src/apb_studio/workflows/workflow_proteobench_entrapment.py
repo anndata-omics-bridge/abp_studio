@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from apb_studio.corpus.models import Artifact, StepSpec
+from apb_studio.corpus.parameters import required_parameter_inputs
 from apb_studio.corpus.tables import join_workflow, resolve_file, resolve_secondary_inputs
 from apb_studio.corpus.workflow_cli import WorkflowContext, main
 from apb_studio.workflows.artifacts import representation, single_level_result_path
@@ -30,7 +31,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
     source = resolve_file(context.data_root, dataset.input_file)
     secondary_inputs = resolve_secondary_inputs(context.data_root, dataset.input_file)
     vendor_source = source.parent if secondary_inputs else source
-    parameters = resolve_file(context.data_root, dataset.vendor_parameter_file)
+    parameters = required_parameter_inputs(context.data_root, dataset)
     fasta = resolve_file(context.data_root, workflow["fasta"])
     scored = single_level_result_path(context.output_dir, "scored", context.format)
     scores = context.output_dir / SCORES_NAME
@@ -45,8 +46,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                 "entrapment",
                 str(vendor_source),
                 str(fasta),
-                "--params",
-                str(parameters),
+                *[argument for path in parameters for argument in ("--params", str(path))],
                 "--software",
                 parameter_software(dataset.software_name),
                 "--module",
@@ -64,7 +64,7 @@ def steps(context: WorkflowContext) -> list[StepSpec]:
                     Artifact(role="vendor_secondary", path=secondary)
                     for secondary in secondary_inputs
                 ],
-                Artifact(role="vendor_parameter_file", path=parameters),
+                *[Artifact(role="vendor_parameter_file", path=path) for path in parameters],
                 Artifact(role="fasta", path=fasta),
             ],
             outputs=[

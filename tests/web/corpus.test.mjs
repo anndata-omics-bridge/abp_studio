@@ -19,7 +19,7 @@ test('viewer distinguishes pending, running, tool failure and interrupted work',
 test('dataset rows retain the basename and merge workflow fields', () => {
   const manifest = { reports: [{ input_file: 'submissions/hash/input_file.txt', path: 'report', progress: 'progress' }] }
   const corpus = [{
-    input_file: 'submissions/hash/input_file.txt', vendor_parameter_file: 'submissions/hash/params.json',
+    input_file: 'submissions/hash/input_file.txt', vendor_parameter_files: 'submissions/hash/params.json',
     module: 'dda_qexactive', software_name: 'MaxQuant'
   }]
   const workflowRows = [{ software_name: 'MaxQuant', start_level: 'peptidoform_ion', method: 'mean' }]

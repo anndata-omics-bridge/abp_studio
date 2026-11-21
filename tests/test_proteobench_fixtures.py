@@ -463,7 +463,7 @@ def test_download_writes_manifest_statuses(tmp_path: Path, monkeypatch: pytest.M
     assert manifest.loc["a", "dataset"] == "Repo/a"
     assert manifest.loc["a", "status"] == "ok"
     assert manifest.loc["a", "input_file_path"] == "submissions/Repo/a/input_file.tsv.gz"
-    assert manifest.loc["a", "vendor_parameter_file_path"] == "submissions/Repo/a/param_0..json"
+    assert manifest.loc["a", "vendor_parameter_file_paths"] == "submissions/Repo/a/param_0..json"
     assert manifest.loc["b", "status"] == "input_file_missing", "extracted, but no table in it"
     assert manifest.loc["c", "status"] == "not_on_server"
     assert manifest.loc["e", "status"] == "not_selected", "manifest still covers the catalog"
@@ -551,6 +551,7 @@ def test_a_summary_is_written_beside_each_submission(tmp_path: Path) -> None:
     ok.mkdir(parents=True)
     (ok / "input_file.tsv").write_text("a\tb\n1\t2\n", encoding="utf-8")
     (ok / "param_0..txt").write_text("params", encoding="utf-8")
+    (ok / "param_1..yml").write_text("{}", encoding="utf-8")
 
     written = rawdb.write_submission_summary(store, "Repo", "a")
     assert written is not None
@@ -561,8 +562,11 @@ def test_a_summary_is_written_beside_each_submission(tmp_path: Path) -> None:
     assert document["input_file"] == "submissions/Repo/a/input_file.tsv"
     assert document["rows"] == 1
     assert document["columns"] == 2
-    assert document["parameter_file"] == "submissions/Repo/a/param_0..txt"
-    assert document["parameter_size_bytes"] == 6
+    assert document["parameter_files"] == [
+        "submissions/Repo/a/param_0..txt",
+        "submissions/Repo/a/param_1..yml",
+    ]
+    assert document["parameter_size_bytes"] == 8
 
     # The table's own mtime, so re-summarising an old download does not redate it.
     table = ok / "input_file.tsv"

@@ -213,7 +213,7 @@ def download_rows(store: Store, config: ZenodoConfig) -> list[dict[str, str]]:
                 "software_version": dataset.software_version,
                 "dataset_dir": folder.relative_to(store.root).as_posix(),
                 "input_file_path": source.relative_to(store.root).as_posix() if present else "",
-                "vendor_parameter_file_path": (
+                "vendor_parameter_file_paths": (
                     (folder / dataset.parameters).relative_to(store.root).as_posix()
                     if present and dataset.parameters is not None
                     else ""

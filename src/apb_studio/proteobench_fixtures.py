@@ -354,12 +354,12 @@ def _write_downloads(target: Store, catalog_df: pd.DataFrame, requested: pd.Data
             "dataset_dir": extract_dir.relative_to(target.root).as_posix(),
         }
         inputs = sorted(extract_dir.glob("input_file.*")) if extract_dir.is_dir() else []
-        parameters = sorted(extract_dir.glob("param_0.*")) if extract_dir.is_dir() else []
+        parameters = sorted(extract_dir.glob("param_*")) if extract_dir.is_dir() else []
         if inputs:
             record |= {
                 "input_file_path": inputs[0].relative_to(target.root).as_posix(),
-                "vendor_parameter_file_path": (
-                    parameters[0].relative_to(target.root).as_posix() if parameters else ""
+                "vendor_parameter_file_paths": ";".join(
+                    path.relative_to(target.root).as_posix() for path in parameters
                 ),
                 "input_file_size_bytes": inputs[0].stat().st_size,
                 "status": DOWNLOADED,
@@ -367,14 +367,14 @@ def _write_downloads(target: Store, catalog_df: pd.DataFrame, requested: pd.Data
         elif extract_dir.is_dir():
             record |= {
                 "input_file_path": "",
-                "vendor_parameter_file_path": "",
+                "vendor_parameter_file_paths": "",
                 "input_file_size_bytes": None,
                 "status": "input_file_missing",
             }
         else:
             record |= {
                 "input_file_path": "",
-                "vendor_parameter_file_path": "",
+                "vendor_parameter_file_paths": "",
                 "input_file_size_bytes": None,
                 "status": (
                     "not_on_server"
@@ -525,7 +525,7 @@ def write_submission_summary(target: Store, repo_name: str, intermediate_hash: s
     tables = sorted(folder.glob("input_file.*"))
     if not tables:
         return None
-    parameters = sorted(folder.glob("param_0.*"))
+    parameters = sorted(folder.glob("param_*"))
     document: dict[str, Any] = {
         "repo_name": repo_name,
         "intermediate_hash": intermediate_hash,
@@ -536,8 +536,10 @@ def write_submission_summary(target: Store, repo_name: str, intermediate_hash: s
             timespec="seconds"
         ),
         **summarize_table(tables[0]),
-        "parameter_file": (parameters[0].relative_to(target.root).as_posix() if parameters else ""),
-        "parameter_size_bytes": parameters[0].stat().st_size if parameters else None,
+        "parameter_files": [path.relative_to(target.root).as_posix() for path in parameters],
+        "parameter_size_bytes": sum(path.stat().st_size for path in parameters)
+        if parameters
+        else None,
     }
     summary = target.submission_summary(repo_name, intermediate_hash)
     summary.write_text(json.dumps(document, indent=1), encoding="utf-8")

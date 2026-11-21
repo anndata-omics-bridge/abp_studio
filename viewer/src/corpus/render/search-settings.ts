@@ -43,15 +43,19 @@ export function renderSearchSettings (host: HTMLElement, summary: RunSearchSetti
   host.append(details)
 }
 
-/** One result's recorded parameter file: where it came from, each field, then the whole record. */
-export function renderSearchParameters (host: HTMLElement, { file, record }: RecordedParameterFile, href: string): void {
-  const source = node('p', 'Parameter file: ', 'empty-note')
-  if (file) {
-    source.append(
-      href ? fileLink(href, file.file_name) : node('span', file.file_name),
-      node('span', ` · SHA-256 ${file.sha256.slice(0, 12)}…`)
-    )
-    source.title = file.sha256
+/** One result's recorded parameter files: where they came from, each field, then the whole record. */
+export function renderSearchParameters (host: HTMLElement, { files, record }: RecordedParameterFile, hrefs: Record<string, string>): void {
+  const source = node('p', files.length > 1 ? 'Parameter files: ' : 'Parameter file: ', 'empty-note')
+  if (files.length) {
+    files.forEach((file, index) => {
+      const href = hrefs[file.file_name] ?? ''
+      source.append(
+        ...(index ? [node('span', '; ')] : []),
+        href ? fileLink(href, file.file_name) : node('span', file.file_name),
+        node('span', ` · SHA-256 ${file.sha256.slice(0, 12)}…`)
+      )
+    })
+    source.title = files.map(file => file.sha256).join('\n')
   } else {
     source.append(node('span', 'not recorded'))
   }

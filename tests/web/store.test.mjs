@@ -34,7 +34,7 @@ test("a submission's own summary is what says it is downloaded", () => {
     rows: 34259,
     columns: 14,
     column_names: 'x|y',
-    parameter_file: 'submissions/Repo/a/param_0..yml',
+    parameter_files: ['submissions/Repo/a/param_0..yml', 'submissions/Repo/a/param_1..yml'],
     downloaded_at: '2026-09-04T21:30:00+00:00'
   }
   const [row, missing] = joinSubmissions(CATALOG, [], new Map([['a', summary]]))
@@ -45,6 +45,7 @@ test("a submission's own summary is what says it is downloaded", () => {
   assert.equal(row.columns, 14)
   assert.equal(row.column_names, 'x|y')
   assert.equal(row.input_file, 'submissions/Repo/a/input_file.csv')
+  assert.deepEqual(row.parameter_files, ['submissions/Repo/a/param_0..yml', 'submissions/Repo/a/param_1..yml'])
   assert.equal(row.downloaded_at, '2026-09-04T21:30:00+00:00')
   assert.equal(row.downloaded_on, '2026-09-04', 'the day alone, for grouping')
   assert.equal(row.is_temporary, false)

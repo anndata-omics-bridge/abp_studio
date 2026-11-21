@@ -9,7 +9,7 @@ import { fileLink } from './links.js'
 
 const SUPPORTING_ROLES = new Set(['representation', 'tool_timings'])
 const SOURCE_FIELDS: Record<string, string> = {
-  vendor_table: 'input_file', vendor_parameter_file: 'vendor_parameter_file', fasta: 'fasta'
+  vendor_table: 'input_file', vendor_parameter_file: 'vendor_parameter_files', fasta: 'fasta'
 }
 const ROLE_NAMES: Record<string, string> = {
   vendor_table: 'Vendor data', vendor_parameter_file: 'Parameters', fasta: 'FASTA',
@@ -17,11 +17,12 @@ const ROLE_NAMES: Record<string, string> = {
   representation: 'APB representation', tool_timings: 'Tool timings'
 }
 
+// A source field may list several files, `;`-separated, as a dataset's parameter files do.
 function sourcePath (row: DatasetRow, item: FlowArtifact): string {
   const candidate = row[SOURCE_FIELDS[item.artifact.role]]
-  return typeof candidate === 'string' && candidate &&
-    (item.artifact.path === candidate || item.artifact.path.endsWith(`/${candidate}`))
-    ? candidate : ''
+  if (typeof candidate !== 'string') return ''
+  return candidate.split(';').find(path => path &&
+    (item.artifact.path === path || item.artifact.path.endsWith(`/${path}`))) ?? ''
 }
 
 function renderFile (row: DatasetRow, run: string, steps: FlowStep[], item: FlowArtifact, direction: 'input' | 'output'): HTMLElement {

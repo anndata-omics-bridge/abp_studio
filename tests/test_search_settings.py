@@ -7,6 +7,7 @@ from typing import Any
 from apb_studio.corpus.models import Artifact, Dataset, DatasetReport, RunManifest, StepResult
 from apb_studio.corpus.search_settings import (
     SETTINGS,
+    RecordedFile,
     RunSearchSettings,
     dataset_search_settings,
     publish_search_settings,
@@ -60,7 +61,7 @@ def _report(name: str, software: str, steps: list[StepResult]) -> DatasetReport:
         dataset=Dataset(
             dataset=f"Repo/{name}",
             input_file=f"{name}.tsv",
-            vendor_parameter_file=f"{name}.params" if software != "Free" else "",
+            vendor_parameter_files=(f"{name}.params",) if software != "Free" else (),
             module="dda",
             software_name=software,
         ),
@@ -104,8 +105,7 @@ def test_the_article_rule_decides_what_counts_as_recovered(tmp_path: Path) -> No
     )
 
     assert result.parameters is not None
-    assert result.parameters.file_name == "params.txt"
-    assert result.parameters.sha256 == "0" * 64
+    assert result.parameters.files == [RecordedFile(file_name="params.txt", sha256="0" * 64)]
     assert result.parameters.recovered == [
         "software_version",
         "enzyme",

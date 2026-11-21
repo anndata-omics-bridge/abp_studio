@@ -16,11 +16,13 @@ from apb_studio.workflows.workflow_aggregate_medpolish import steps as medpolish
 from apb_studio.workflows.workflow_convert import steps as convert_steps
 
 
-def _dataset(input_file: str, parameters: str = "", software: str = "MaxQuant") -> Dataset:
+def _dataset(
+    input_file: str, parameters: tuple[str, ...] = (), software: str = "MaxQuant"
+) -> Dataset:
     return Dataset(
         dataset=f"zenodo/directlfq/{Path(input_file).stem}",
         input_file=input_file,
-        vendor_parameter_file=parameters,
+        vendor_parameter_files=parameters,
         module="directlfq",
         software_name=software,
     )
@@ -57,7 +59,7 @@ def test_full_conversion_preserves_all_compatible_levels_with_optional_parameter
     source.mkdir()
     (source / "evidence.txt").write_text("peptidoform_ion", encoding="utf-8")
     (source / "peptides.txt").write_text("peptide", encoding="utf-8")
-    row = _dataset("MaxQuant", "params.xml" if has_parameters else "")
+    row = _dataset("MaxQuant", ("params.xml",) if has_parameters else ())
     context = _context(tmp_path, row, storage_format)
 
     step = convert_steps(context)[0]
@@ -85,7 +87,9 @@ def test_parameter_free_compound_software_uses_the_result_producer(tmp_path: Pat
     without_parameters = convert_steps(_context(tmp_path, row, "hdf5"))[0]
     with_parameters = convert_steps(
         _context(
-            tmp_path, row.model_copy(update={"vendor_parameter_file": "fragpipe.params"}), "hdf5"
+            tmp_path,
+            row.model_copy(update={"vendor_parameter_files": ("fragpipe.params",)}),
+            "hdf5",
         )
     )[0]
 
@@ -97,7 +101,9 @@ def test_proteobench_wombat_is_passed_as_wombat_p(tmp_path: Path) -> None:
     row = _dataset("input_file.csv", software="WOMBAT")
     without_parameters = convert_steps(_context(tmp_path, row, "hdf5"))[0]
     with_parameters = convert_steps(
-        _context(tmp_path, row.model_copy(update={"vendor_parameter_file": "param.yml"}), "hdf5")
+        _context(
+            tmp_path, row.model_copy(update={"vendor_parameter_files": ("param.yml",)}), "hdf5"
+        )
     )[0]
 
     for step in (without_parameters, with_parameters):
@@ -127,7 +133,7 @@ def test_parameter_free_aggregation_keeps_general_layers_and_primary_medpolish_d
 def test_mixed_corpus_dependencies_track_provided_parameters_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workflow: str
 ) -> None:
-    parameterized = _dataset("parameterized.txt", "params.xml")
+    parameterized = _dataset("parameterized.txt", ("params.xml",))
     parameter_free = _dataset("parameter_free.txt")
     for row in (parameterized, parameter_free):
         (tmp_path / row.input_file).write_text("data", encoding="utf-8")
@@ -168,7 +174,7 @@ def test_mixed_corpus_dependencies_track_provided_parameters_only(
 
 
 def test_parameter_contract_preserves_ignored_and_required_workflows(tmp_path: Path) -> None:
-    parameterized = _dataset("evidence.txt", "params.xml")
+    parameterized = _dataset("evidence.txt", ("params.xml",))
     parameter_free = _dataset("evidence.txt")
 
     assert workflow_parameter_inputs("convert_no_param", tmp_path, parameterized) == ()

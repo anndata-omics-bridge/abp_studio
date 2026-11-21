@@ -101,7 +101,7 @@ def dataset() -> Dataset:
     return Dataset(
         dataset="Repo/vendor",
         input_file="vendor.txt",
-        vendor_parameter_file="params.txt",
+        vendor_parameter_files=("params.txt",),
         module="dia_aif",
         software_name="DIA-NN",
     )
@@ -151,8 +151,8 @@ def write_manifest(path: Path, rows: Collection[Dataset], missing: Collection[st
                 "software_version": "",
                 "dataset_dir": f"store/{row.dataset}",
                 "input_file_path": "" if row.dataset in missing else row.input_file,
-                "vendor_parameter_file_path": (
-                    "" if row.dataset in missing else row.vendor_parameter_file
+                "vendor_parameter_file_paths": (
+                    "" if row.dataset in missing else ";".join(row.vendor_parameter_files)
                 ),
                 "input_file_size_bytes": "" if row.dataset in missing else _size(path, row),
                 "status": "not_selected" if row.dataset in missing else "ok",
@@ -215,10 +215,39 @@ def test_a_folder_input_has_no_secondary_inputs(tmp_path: Path) -> None:
     assert resolve_secondary_inputs(tmp_path, "dataset") == ()
 
 
+def test_a_dataset_keeps_several_parameter_files_in_one_csv_field(tmp_path: Path) -> None:
+    """quantms writes two parameter files: the CSV row joins them, a workflow passes both."""
+    pair = ("submission/param_0..yml", "submission/param_1..yml")
+    row = dataset().model_copy(update={"vendor_parameter_files": pair})
+    context = WorkflowContext(
+        corpus=tmp_path / "corpus.csv",
+        data_root=tmp_path,
+        dataset=row,
+        format="hdf5",
+        output_dir=tmp_path / "outputs",
+        report=tmp_path / "report.json",
+        tools={"apb2": tmp_path / "apb2"},
+    )
+
+    stored = row.model_dump()
+    [step] = convert_peptidoform_ion_steps(context)
+
+    assert stored["vendor_parameter_files"] == ";".join(pair)
+    assert Dataset.model_validate(stored) == row
+    expected = [(tmp_path / path).resolve() for path in pair]
+    command = step.command
+    assert [command[i + 1] for i, token in enumerate(command) if token == "--params"] == [
+        str(path) for path in expected
+    ]
+    assert [
+        artifact.path for artifact in step.inputs if artifact.role == "vendor_parameter_file"
+    ] == expected
+
+
 def test_a_dataset_without_parameters_refuses_parameter_workflows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    row = Dataset.model_validate({**dataset().model_dump(), "vendor_parameter_file": ""})
+    row = Dataset.model_validate({**dataset().model_dump(), "vendor_parameter_files": ""})
     (tmp_path / row.input_file).write_text("data")
     corpus = write_corpus(tmp_path / "corpus.csv", [row])
     workflows = tmp_path / "workflows"
@@ -242,8 +271,7 @@ def test_a_dataset_without_parameters_refuses_parameter_workflows(
 
     with pytest.raises(ValueError, match="has no vendor parameter file"):
         runs.dataset_dependencies(root, manifest, row, manifest.reports[0])
-    with pytest.raises(ValueError, match="Empty file path"):
-        resolve_file(tmp_path, row.vendor_parameter_file)
+    assert row.vendor_parameter_files == ()
 
 
 def test_download_sizes_join_only_selected_inputs_with_explicit_columns(tmp_path: Path) -> None:
@@ -447,7 +475,7 @@ def test_run_snapshots_selected_download_sizes_without_changing_corpus(tmp_path:
     second = first.model_copy(update={"dataset": "Repo/other", "input_file": "other.txt"})
     for row, content in ((first, "data"), (second, "another")):
         (tmp_path / row.input_file).write_text(content)
-    (tmp_path / first.vendor_parameter_file).write_text("parameters")
+    (tmp_path / first.vendor_parameter_files[0]).write_text("parameters")
     corpus = tmp_path / "corpuses" / "routine.csv"
     write_corpus(corpus, [first, second])
     downloads = write_manifest(tmp_path / "downloads.csv", [first, second])
@@ -479,7 +507,7 @@ def test_run_snapshots_selected_download_sizes_without_changing_corpus(tmp_path:
 def test_run_snapshots_and_index_validation(tmp_path: Path) -> None:
     row = dataset()
     (tmp_path / row.input_file).write_text("data")
-    (tmp_path / row.vendor_parameter_file).write_text("parameters")
+    (tmp_path / row.vendor_parameter_files[0]).write_text("parameters")
     corpus = tmp_path / "corpuses" / "routine.csv"
     write_corpus(corpus, [row])
     settings = ExecutionSettings(
@@ -560,7 +588,7 @@ def test_dependencies_track_shared_workflow_implementation(
     (tmp_path / row.input_file).write_text("data")
     secondary = tmp_path / "vendor_secondary.txt"
     secondary.write_text("secondary")
-    (tmp_path / row.vendor_parameter_file).write_text("parameters")
+    (tmp_path / row.vendor_parameter_files[0]).write_text("parameters")
     corpus = tmp_path / "corpus.csv"
     write_corpus(corpus, [row])
     workflows = tmp_path / "workflows"
@@ -601,7 +629,7 @@ def test_dependencies_track_editable_apb_source_without_importing_apb(
 ) -> None:
     row = dataset()
     (tmp_path / row.input_file).write_text("data")
-    (tmp_path / row.vendor_parameter_file).write_text("parameters")
+    (tmp_path / row.vendor_parameter_files[0]).write_text("parameters")
     corpus = tmp_path / "corpus.csv"
     write_corpus(corpus, [row])
     project = tmp_path / "editable-apb"
@@ -776,7 +804,7 @@ def test_a_corpus_resolves_its_keys_through_the_fixture_manifest(tmp_path: Path)
     selection = resolve_corpus(["Repo/absent", "Repo/vendor"], manifest)
 
     assert selection.datasets == [
-        absent.model_copy(update={"input_file": "store/Repo/absent", "vendor_parameter_file": ""}),
+        absent.model_copy(update={"input_file": "store/Repo/absent", "vendor_parameter_files": ()}),
         stored,
     ]
     assert selection.not_downloaded == {"Repo/absent"}
@@ -1128,7 +1156,7 @@ def test_convert_peptidoform_ion_workflow_selects_only_peptidoform_ion_and_keeps
         dataset=dataset().model_copy(
             update={
                 "input_file": "submission/input_file.tsv",
-                "vendor_parameter_file": "submission/params.txt" if parameters else "",
+                "vendor_parameter_files": ("submission/params.txt",) if parameters else (),
             }
         ),
         format=storage_format,
@@ -1733,7 +1761,7 @@ def test_proteobench_corpus_excludes_peptidoform_and_sage_datasets() -> None:
         if row.module in quant_modules
         and row.module != "dda_peptidoform"
         and row.software_name != "Sage"
-        and row.vendor_parameter_file
+        and row.vendor_parameter_files
         # ProteoBench submissions only: the Zenodo examples reuse its module names.
         and not row.dataset.startswith("zenodo/")
         # A garbled sample name loses a run; kept in corpuses/problems.csv instead.

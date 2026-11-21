@@ -88,7 +88,7 @@ wheels = [
 
 [[package]]
 name = "apb-catalog"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "../apb-catalog" }
 dependencies = [
     { name = "anndata" },
@@ -132,7 +132,7 @@ docs = [
 
 [[package]]
 name = "apb-fasta"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "../apb-fasta" }
 dependencies = [
     { name = "apb2" },

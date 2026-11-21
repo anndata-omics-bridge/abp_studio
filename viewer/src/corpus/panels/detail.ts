@@ -260,8 +260,10 @@ export function createDetailPanel (app: CorpusApp, readRepresentation: (path: st
         panel.className = 'detail-panel'
         panel.hidden = true
         element('detail').append(panel)
+        const sources = Object.fromEntries((row.vendor_parameter_files ?? '').split(';').filter(Boolean)
+          .map(path => [path.split('/').at(-1) ?? path, sourceUrl(path)]))
         registerTab('search-parameters', 'Search parameters', panel, host => renderSearchParameters(
-          host, parameters, row.vendor_parameter_file ? sourceUrl(row.vendor_parameter_file) : ''
+          host, parameters, sources
         ))
       }
       const views = representationViews(preferred.representation)

@@ -72,8 +72,8 @@ test('the record lives in the root part; a parameter-free result has none', () =
   const file = { role: 'parameter_file', file_name: 'params.json', sha256: '0'.repeat(64) }
   const root = provenance => ({ root: { apb: { parse: { provenance } } }, levels: [] })
 
-  assert.deepEqual(searchParametersRecord(root({ search_parameters: record, input_files: [table, file] })), { file, record })
-  assert.deepEqual(searchParametersRecord(root({ search_parameters: record, input_files: [table] })), { file: null, record })
+  assert.deepEqual(searchParametersRecord(root({ search_parameters: record, input_files: [table, file] })), { files: [file], record })
+  assert.deepEqual(searchParametersRecord(root({ search_parameters: record, input_files: [table] })), { files: [], record })
   assert.equal(searchParametersRecord(root({ input_files: [table] })), null)
   assert.equal(searchParametersRecord({ levels: [] }), null)
 })

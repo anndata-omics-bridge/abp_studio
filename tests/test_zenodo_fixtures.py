@@ -231,7 +231,7 @@ def test_gzip_acquisition_keeps_tables_gzipped_and_parameters_plain(
         "zenodo/testrecord/related",
         "zenodo/testrecord/single/report.tsv.gz",
     ], "the manifest names the stored file"
-    assert rows[0]["vendor_parameter_file_path"] == "zenodo/testrecord/related/mqpar.xml"
+    assert rows[0]["vendor_parameter_file_paths"] == "zenodo/testrecord/related/mqpar.xml"
     asked.clear()
     zenodo_fixtures.acquire(store, record, GzipTables())
     assert asked == [], "a stored gzipped dataset is not fetched again"
@@ -270,7 +270,7 @@ def test_manifest_rows_name_a_folder_or_a_table_once_stored(
 
     assert [tuple(row) for row in rows] == [DOWNLOAD_COLUMNS] * 2
     assert [
-        (row["input_file_path"], row["vendor_parameter_file_path"], row["software_name"])
+        (row["input_file_path"], row["vendor_parameter_file_paths"], row["software_name"])
         for row in rows
     ] == [
         ("zenodo/testrecord/related", "zenodo/testrecord/related/mqpar.xml", "MaxQuant"),
@@ -334,7 +334,7 @@ def test_download_fetches_exactly_what_a_corpus_lists_and_writes_no_corpus(
         "zenodo/testrecord/single": "ok",
     }
     assert rows["Repo/regular"]["input_file_path"] == ("submissions/Repo/regular/input_file.tsv.gz")
-    assert rows["Repo/regular"]["vendor_parameter_file_path"] == (
+    assert rows["Repo/regular"]["vendor_parameter_file_paths"] == (
         "submissions/Repo/regular/param_0..txt"
     )
     assert sorted(path.name for path in corpuses.iterdir()) == ["pair.csv"]

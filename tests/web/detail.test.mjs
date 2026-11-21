@@ -226,7 +226,7 @@ test('Search parameters tab lists the recorded file and its fields; a result wit
     ]
   } }
   const { panel, hosts } = controller(async () => result)
-  await panel.refresh([{ ...row('Sage'), vendor_parameter_file: 'submissions/hash/params.json' }])
+  await panel.refresh([{ ...row('Sage'), vendor_parameter_files: 'submissions/hash/params.json' }])
   assert.deepEqual(hosts['detail-tabs'].children.map(button => button.dataset.detailTab).slice(0, 3), [
     'anndata', 'scientific-anndata-structure', 'search-parameters'
   ], 'parameters sit right after the scientific views')

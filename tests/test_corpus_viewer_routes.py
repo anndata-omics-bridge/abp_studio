@@ -37,7 +37,7 @@ def _dataset(input_file: str) -> Dataset:
     return Dataset(
         dataset=f"Repo/{input_file}",
         input_file=input_file,
-        vendor_parameter_file="",
+        vendor_parameter_files=(),
         module="test",
         software_name="Vendor",
     )

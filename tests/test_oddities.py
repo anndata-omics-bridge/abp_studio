@@ -82,7 +82,7 @@ def _report(steps: list[StepResult], status: StepStatus = "succeeded") -> Datase
         dataset=Dataset(
             dataset="Repo/input",
             input_file="input.tsv",
-            vendor_parameter_file="",
+            vendor_parameter_files=(),
             module="dda",
             software_name="Synthetic",
         ),

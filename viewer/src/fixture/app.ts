@@ -53,9 +53,9 @@ function resize (host: HTMLElement): void {
 
 async function showDetail (app: FixtureApp, row: Submission): Promise<void> {
   const generation = ++detailGeneration
-  const [metadata, parameters] = await Promise.all([
+  const [metadata, ...parameters] = await Promise.all([
     fetchText(dataUrl('metadata', row.repo_name, `${row.intermediate_hash}.json`)),
-    row.parameter_file ? fetchText(dataUrl(...row.parameter_file.split('/'))) : ''
+    ...row.parameter_files.map(async path => fetchText(dataUrl(...path.split('/'))))
   ])
   if (generation !== detailGeneration) return
   await show(app.hostFor('detail'), detailViews(row, parseSubmissionJson(metadata), parameters))

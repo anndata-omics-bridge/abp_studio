@@ -19,7 +19,8 @@ TABLE_NAMES = (CATALOG_NAME, DOWNLOADS_NAME, RESOURCES_NAME)
 # configured Zenodo dataset. ``dataset`` is ``<repo_name>/<intermediate_hash>``, the key a
 # corpus file lists. The paths are the stored files exactly, ``.gz`` included, so a corpus
 # never needs to know how the store keeps them; ``dataset_dir`` is where the dataset lives
-# whether or not it has been downloaded.
+# whether or not it has been downloaded. ``vendor_parameter_file_paths`` is ``;``-separated:
+# quantms and MetaMorpheus write two parameter files.
 DOWNLOAD_COLUMNS = (
     "dataset",
     "module",
@@ -29,7 +30,7 @@ DOWNLOAD_COLUMNS = (
     "software_version",
     "dataset_dir",
     "input_file_path",
-    "vendor_parameter_file_path",
+    "vendor_parameter_file_paths",
     "input_file_size_bytes",
     "status",
 )

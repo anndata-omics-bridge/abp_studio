@@ -149,7 +149,7 @@ def representation_candidates(report: DatasetReport) -> list[tuple[StepResult, A
 def dataset_oddities(report: DatasetReport) -> DatasetOddities:
     """Select the displayed scientific output, falling back to available earlier evidence."""
     result = DatasetOddities(
-        **report.dataset.model_dump(exclude={"vendor_parameter_file"}),
+        **report.dataset.model_dump(exclude={"vendor_parameter_files"}),
         status=report.status,
     )
     for step, artifact in representation_candidates(report):

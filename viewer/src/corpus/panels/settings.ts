@@ -26,16 +26,23 @@ const tableOptions: Options = {
 
 function columnsFor (rows: CsvRows): ColumnDefinition[] {
   return (rows.columns ?? Object.keys(rows[0] ?? {})).map(field => {
-    if (!['input_file', 'vendor_parameter_file', 'fasta'].includes(field)) {
+    if (!['input_file', 'vendor_parameter_files', 'fasta'].includes(field)) {
       return { title: field, field }
     }
     return {
       title: field,
       field,
       formatter: cell => {
-        const path: unknown = cell.getValue()
-        if (typeof path !== 'string' || !path) return ''
-        return fileLink(sourceUrl(path), path)
+        const value: unknown = cell.getValue()
+        if (typeof value !== 'string' || !value) return ''
+        const [first, ...rest] = value.split(';')
+        if (!rest.length) return fileLink(sourceUrl(first), first)
+        const links = document.createElement('span')
+        for (const path of [first, ...rest]) {
+          if (links.childNodes.length) links.append('; ')
+          links.append(fileLink(sourceUrl(path), path))
+        }
+        return links
       }
     }
   })
